@@ -58,3 +58,7 @@ config/workshop.local.json
 
 # Example locks are generated alongside their compiled modules.
 examples/native-mods/**/mods/**/mod.dluma.lock.json
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md
