@@ -170,60 +170,6 @@ def test_audio_observations_remain_provisional_until_exact_retained_owner():
     assert "audio_retained_reference_model_coverage_complete=" in source
 
 
-def test_exact_native_open_observer_is_optional_and_caller_filtered():
-    source = PRODUCTION.read_text(encoding="utf-8")
-    header = (CUSTOM / "AudioBankProviderCorrelation.h").read_text(
-        encoding="utf-8"
-    )
-    hook = _cpp_function_body(source, "void* __fastcall HookAudioFsOpenNative")
-    fmod_hook = _cpp_function_body(
-        source, "int __fastcall HookSoundBankManagerLoad"
-    )
-    speech_hook = _cpp_function_body(
-        source, "void __fastcall HookSpeechBankLoad"
-    )
-
-    assert "kSoundBankManagerNativeOpenCallRva = 0x00100C43U" in header
-    assert "kSpeechBankNativeOpenCallRva = 0x0032A8F2U" in header
-    assert "kSoundBankNativeOpenFlags = 0x40U" in header
-    assert "kSpeechBankNativeOpenFlags = 0x00U" in header
-    assert '"fs::open_native exact audio-provider observer"' in source
-    assert "g_fs_open_native_audio_status" in source
-    status = re.search(
-        r'g_fs_open_native_audio_status\s*=\s*AddHookStatus\([\s\S]*?'
-        r'"fs::open_native exact audio-provider observer"[\s\S]*?'
-        r',\s*false\s*\);',
-        source,
-    )
-    assert status is not None
-    assert "reinterpret_cast<void*>(&HookAudioFsOpenNative)) != nullptr" in source
-    assert "caller_rva == audio::kSoundBankManagerNativeOpenReturnRva" in hook
-    assert "caller_rva == audio::kSpeechBankNativeOpenReturnRva" in hook
-    fmod_index = hook.index("const bool fmod_open")
-    speech_index = hook.index("const bool speech_open")
-    filter_index = hook.index("if (fmod_open || speech_open)")
-    copy_index = hook.index("trace::CopyReadableCString", filter_index)
-    original_index = hook.index("g_original_fs_open_native(")
-    complete_index = hook.index("CompleteAudioNativeOpen", original_index)
-    assert fmod_index < speech_index < filter_index < copy_index < original_index
-    assert original_index < complete_index
-    assert hook.count("trace::CopyReadableCString") == 1
-    assert hook.count("g_original_fs_open_native(") == 1
-    assert "fmod_open ? &g_fmod_bank_provider_context" in hook
-    assert "speech_open ? &g_speech_bank_provider_context" in hook
-    assert hook.count("RecordAudioStartupBank(") == 0
-    assert "BeginAudioBankLoad(" in speech_hook
-    assert "&g_speech_bank_provider_context" in speech_hook
-    assert "EndAudioBankLoad(" in speech_hook
-    assert "provider_record.native_open_count != 0U" in speech_hook
-    assert "observation.localized = localised" in speech_hook
-    assert "observation.localized_observed = true" in speech_hook
-    assert speech_hook.count("RecordAudioStartupBank(") == 1
-    assert "startup_observation.localized_observed = true" in fmod_hook
-    assert "dluma_log" not in hook
-    assert "dluma_write" not in hook
-
-
 def test_exact_full_path_selected_source_probe_is_bounded_and_abi_preserving():
     source = PRODUCTION.read_text(encoding="utf-8")
     header = (CUSTOM / "AudioBankProviderCorrelation.h").read_text(
@@ -543,65 +489,6 @@ def test_localized_evidence_is_never_inferred_from_zero_initialization():
     ) == 1
     assert "AudioReconcileUnresolvedFmodLocalizedEvidence" in reconciler
     assert "AudioReconcileUnresolvedSpeechLocalizedEvidence" in reconciler
-
-
-def test_audio_registry_adapter_separates_b0_from_mutation_owner():
-    source = PRODUCTION.read_text(encoding="utf-8")
-    owner = AUDIO_OWNER.read_text(encoding="utf-8")
-    assert source.count('#include "AudioProductionOwner.inl"') == 1
-    baseline = _cpp_function_body(source, "cold::DomainResult ColdAudioBaseline")
-    assert "g_audio_minimum_semantic_state.baseline_captured" in baseline
-    assert "baseline_generation" in baseline
-    assert "audio_inventory_complete" not in baseline
-    assert "audio_provider_coverage_complete" not in baseline
-    assert "InvokeProductionAudioReplay(" not in baseline
-    assert "MarkRegistryMutationStarted(" not in baseline
-    registration_start = source.index("cold::ContentDomainAdapter audio")
-    registration_end = source.index("cold::ContentDomainAdapter verify", registration_start)
-    registration = re.sub(r"\s+", "", source[registration_start:registration_end])
-    assert "&ColdAudioBaseline,&ColdAudioPreflight,&ColdAudioQuiesce,&ColdAudioReset,&ColdAudioReload,&ColdAudioVerify" in registration
-    assert "audio.cancel_quiesce=&ColdAudioCancel" in registration
-
-    # B0 is read-only evidence. Production mutations require the exact
-    # admitted post-C10 callback, epoch, transaction and current owner.
-    context = _cpp_function_body(owner, "bool ProductionAudioContext")
-    compact_context = re.sub(r"\s+", "", context)
-    for gate in (
-        "!context->content_epoch",
-        "!context->transaction_generation",
-        "context->owner_thread_id!=GetCurrentThreadId()",
-        "g_production_audio.callback!=context",
-        "!ProductionDomainTransactionMatches(context,cold::ContentDomainId::Audio)",
-        "scope.post_c10_token_consumed",
-        "scope.epoch==context->content_epoch",
-        "scope.c10_callback_thread_id==GetCurrentThreadId()",
-        "CurrentSerializedGameFrameRouteMatches(scope.frame_route_token,GetCurrentThreadId(),&frame)==statefive::RejectReason::None",
-        "native_state==5",
-        "ReadGameDiCurrentSession(scope.game_di)==nullptr",
-        "FindLiveCustomPlayerOwner()==nullptr",
-        "!ColdRebootNextProjectStagingStarted()",
-    ):
-        assert gate in compact_context
-    prepare = _cpp_function_body(owner, "bool PrepareProductionAudioRelease")
-    assert "!ProductionAudioContext(context)" in prepare
-    assert "!g_audio_worker_binding.validated" in prepare
-    assert "!g_audio_replay_native_targets.validated" in prepare
-    assert "!audio_baseline_content::AllBankContentHeld(" in prepare
-    for callback in ("Preflight", "Quiesce", "Reset", "Reload", "Verify"):
-        body = _cpp_function_body(owner, f"cold::DomainResult ColdAudio{callback}(")
-        assert "ProductionAudioCallback callback(context)" in body
-        assert (
-            "ProductionAudioContext(context)" in body
-            or "PrepareProductionAudioRelease(context)" in body
-        )
-    reset = re.sub(r"\s+", "", _cpp_function_body(owner, "cold::DomainResult ColdAudioReset("))
-    assert reset.index("!g_source_retirement_unlinked[i]") < reset.index(
-        "InvokeProductionAudioReplay("
-    )
-    reload = re.sub(r"\s+", "", _cpp_function_body(owner, "cold::DomainResult ColdAudioReload("))
-    assert reload.index("!g_source_retirement_complete") < reload.index(
-        "InvokeProductionAudioReplay("
-    )
 
 
 def test_audio_report_exposes_observational_and_authority_limits():

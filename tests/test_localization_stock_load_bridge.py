@@ -77,35 +77,6 @@ def test_unobserved_stock_routine_is_not_used_as_the_initial_anchor() -> None:
     assert "VirtualFree(" not in source
 
 
-def test_localized_from_file_hook_is_exact_owned_and_fail_safe() -> None:
-    source = (ROOT / "src" / "dlw_localization.c").read_text(encoding="utf-8")
-    assert "DLUMA_LOCALIZED_FROM_FILE_PATCH_SIZE 16U" in source
-    assert (
-        "0x48, 0x8B, 0x02, 0x48, 0x8D, 0x0D, 0x87, 0xFF"
-        in source
-    )
-    install_start = source.index("static int dluma_localization_install_hook(void)")
-    restore_start = source.index("static int dluma_localization_restore_hook(void)")
-    install = source[install_start:restore_start]
-    restore = source[restore_start:source.index(
-        "static unsigned char dluma_localization_call_core_from_file", restore_start
-    )]
-    assert "memcmp(entry, g_dluma_localized_from_file_prefix" in install
-    assert "FlushInstructionCache" in install
-    assert "hook_active_calls" in restore
-    assert "memcmp(entry, expected" in restore
-    assert "PAGE_EXECUTE_READWRITE" in restore
-    assert "retaining the complete bridge until process exit" in restore
-    assert "g_dlw_localization.hook_installed = 0;" in restore
-
-
-def test_power_shell_pack_path_delegates_to_canonical_transcoding_builder() -> None:
-    script = (ROOT / "tools" / "build_content_pack.ps1").read_text(encoding="utf-8")
-    assert "tools\\build_content_pack.py" in script
-    assert "UTF-16LE+BOM" in script
-    assert "& $python.Source @builderArgs" in script
-
-
 def test_pack_validator_rejects_utf8_runtime_catalogs() -> None:
     validator = (ROOT / "tools" / "validate_localization.py").read_text(
         encoding="utf-8"

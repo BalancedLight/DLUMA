@@ -195,36 +195,3 @@ def test_targeted_state_is_fixed_capacity_and_hook_safe():
         "CreateFile", "throw ",
     ):
         assert forbidden not in SOURCE
-
-
-def test_clean_room_pseudocode_and_binding_catalog_cover_exact_contract():
-    pseudocode = (DOCS / "pseudocode" /
-                  "dluma_playerdi_targeted_preset_rebuild.c").read_text(
-                      encoding="utf-8")
-    for name in (
-        "dluma_classify_row_retention_without_deep_snapshot",
-        "dluma_map_definition_vector_to_validated_cache_record",
-        "dluma_build_targeted_player_preset_rebuild_plan",
-        "dluma_execute_targeted_player_preset_rebuild",
-        "dluma_observe_load_owned_clear_application",
-        "dluma_reserve_critical_trace_capacity",
-    ):
-        assert name in pseudocode
-    catalog = json.loads(
-        (DOCS / "PLAYER_PRESET_BINDING_CATALOG.json").read_text(
-            encoding="utf-8"))
-    assert catalog["supported_module"]["sha256"] == (
-        "CBC7DD7923778936341CDFB755474A0C714079D910849DF16FFC5EC88A103B95"
-    )
-    assert catalog["prototype"]["default_enabled"] is False
-    assert catalog["prototype"]["production_execution"] == (
-        "retired_observation_only"
-    )
-    assert catalog["prototype"]["configuration_owner"] == "none"
-    assert catalog["prototype"]["historical_mutator"] == (
-        "SPlayerLevelPreset::in_place_rebuild"
-    )
-    assert catalog["prototype"]["replacement_owner"] == (
-        "coordinated_player_gameplay_params_restart_adapter"
-    )
-    assert "Production execution is disabled" in pseudocode

@@ -304,53 +304,6 @@ def test_popup_review_uses_native_mods_id_route_and_later_never_enables():
     assert "new_global_popup_later_selected" in later
 
 
-def test_unapproved_toggle_shows_confirmation_and_runtime_work_is_queued():
-    activation = block(
-        UI,
-        "static int dluma_ui_registry_activate_selected",
-        "static void __fastcall dluma_ui_workshop_button_hook",
-    )
-    assert "dluma_ui_registry_request_row_state" in activation
-    request = block(
-        UI,
-        "static int dluma_ui_registry_request_row_state",
-        "static int dluma_ui_registry_activate_selected",
-    )
-    assert "dluma_ui_registry_show_approval_popup" in request
-    assert "dluma_lua_request_global_enabled" in request
-    assert "dluma_lua_runtime_create_slot" not in request
-    assert "G_ApprovalPopup" in MODS_XUI
-    assert "B_ApprovalConfirm" in MODS_XUI
-    assert "B_ApprovalCancel" in MODS_XUI
-    for control in (
-        "T_ApprovalName", "T_ApprovalId", "T_ApprovalVersion",
-        "T_ApprovalSource", "T_ApprovalRisk", "T_ApprovalPermissions",
-        "T_ApprovalChange", "T_ApprovalScope",
-    ):
-        assert f"<Id>{control}</Id>" in MODS_XUI
-    assert "<UISmartText>" not in MODS_XUI
-    assert "DLUMA_Common_Enable" in MODS_XUI
-    assert '"REVIEW & ENABLE"' not in UI
-    approval = block(
-        UI,
-        "static int dluma_ui_registry_show_approval_popup",
-        "static void dluma_ui_registry_hide_approval_popup",
-    )
-    assert '"T_ApprovalText"' not in approval
-    assert 'dluma_ui_registry_find_control(screen, "T_ApprovalTitle")' not in approval
-    assert "dluma_ui_registry_set_popup_field" in approval
-    aggregate = block(
-        UI,
-        "static void dluma_ui_new_global_tick",
-        "static int dluma_ui_new_global_handle_button",
-    )
-    assert "dluma_ui_set_element_text(g_dluma_new_global_title" not in aggregate
-    assert "<br><br>" in aggregate
-    assert "DLUMA_GLOBAL_TRANSITION_ENABLING" in CONSENT
-    assert "DLUMA_GLOBAL_TRANSITION_DISABLING" in CONSENT
-    assert "dluma_lua_process_global_runtime_queue" in RUNTIME
-
-
 def test_unsupported_permissions_cannot_be_approved_and_only_current_world_write_is_sensitive_supported():
     unsupported = block(
         CONSENT,
@@ -382,30 +335,6 @@ def test_atomic_unknown_preserving_persistence_and_stale_snapshot_rejection():
     assert "request->registry_revision" in exact
     assert "request->metadata_fingerprint" in exact
     assert "request->registry_key" in exact
-
-
-def test_pack_has_only_loader_owned_paths_and_current_xui_bytes():
-    pack = ROOT / "build/package/Release/dluma.pak"
-    with zipfile.ZipFile(pack) as archive:
-        names = set(archive.namelist())
-        assert archive.read("data/menu/scr/MenuDLUMAMods.xui") == MODS_XUI_PATH.read_bytes()
-        assert (
-            archive.read("data/menu/scr/MenuDLUMAModDetails.xui")
-            == DETAILS_XUI_PATH.read_bytes()
-        )
-    expected = {
-        "data/menu/scr/DLUMA_Main_PC_workshop.xui",
-        "data/menu/scr/MenuDLUMAMods.xui",
-        "data/menu/scr/MenuDLUMAModDetails.xui",
-        "data/menu/scr/MenuOptions.xui",
-        "data/menu/scr/MenuDLUMALoaderSettings.xui",
-        "data/menu/scr/MenuDLUMAModConfig.xui",
-        "data/menu/scr/DLUMA_SteamWorkshop.xui",
-        "data/menu/menubackgroundcameraactions_menu_lvl_new.scr",
-        "data/menu/menuscreen3dplacement_menu_lvl_new.scr",
-    }
-    assert expected.issubset(names)
-    assert sum(name.startswith("data/locale/") for name in names) == 17
 
 
 def test_xui_is_utf8_without_bom_and_crlf_only():

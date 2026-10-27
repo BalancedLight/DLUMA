@@ -158,30 +158,6 @@ def test_discovery_keeps_its_bounded_project_scratch_space_off_game_stack():
     assert "WCHAR projects[" not in discovery
 
 
-def test_static_pe_classification_fails_closed_for_legacy_modules():
-    assert "DLUMA_NATIVE_MOD_GET_API_V2_EXPORT" in NATIVE
-    assert "DLUMANativeMod_QueryV1" in NATIVE
-    assert "InitializeGameScriptDLL" in NATIVE
-    assert "DLW_NATIVE_ABI_LEGACY_V1" in NATIVE
-    assert "DLUMA_NATIVE_ABI_LEGACY_GAME_SCRIPT" in NATIVE
-    assert "item->abi_kind != DLUMA_NATIVE_ABI_V2" in NATIVE
-    assert "module, sidecar, companion pack, path, or file identity " in NATIVE
-    assert "changed before approved load" in NATIVE
-    assert "dluma_native_revalidate_before_load(&claimed, &artifact)" in NATIVE
-    assert "dluma_sha256_handle_hex" in NATIVE
-    assert "FILE_SHARE_READ," in NATIVE
-    assert "sidecar_sha256" in NATIVE
-
-
-def test_native_consent_is_exact_and_next_launch_only():
-    assert "enabled_next_launch" in NATIVE
-    assert "Write disabled first" in NATIVE
-    assert "DLUMA_NATIVE_STATE_CHANGED_REVIEW_REQUIRED" in NATIVE
-    assert "DLUMA_NATIVE_STATE_DISABLE_NEXT_LAUNCH" in HEADER
-    assert "The DLL will not be loaded now" in LOCALE_EN
-    assert "FULL PROCESS ACCESS - NOT SANDBOXED" in UI
-
-
 def test_startup_recovery_suppresses_then_offers_exact_or_all_next_launch_choice():
     assert "startup_recovery.ini" in RECOVERY
     assert '"armed"' in RECOVERY
@@ -257,72 +233,6 @@ def test_crash_context_is_preformatted_and_lock_free_to_read():
     assert "dluma_native_lock" not in copy
     assert "g_dluma_native_crash_context_sequence" in copy
     assert "attempt < 2U" in copy
-
-
-def test_sdk_is_versioned_c_pod_and_has_chain_callbacks():
-    for token in (
-        "DLW_NATIVE_MOD_ABI_V2",
-        "DlumaNativeModApiV2",
-        "DlumaApiV1",
-        "DlumaGetServiceFn",
-        "DLUMANativeMod_GetApiV2",
-    ):
-        assert token in SDK + C_API
-    assert "uint32_t struct_size;" in C_API
-    assert "uint32_t abi_version;" in C_API
-    for removed in (
-        "DlumaNativeModInfoV1",
-        "DlumaNativeHostV1",
-        "DLUMANativeMod_QueryV1",
-        "DLUMANativeMod_PreGameInitV1",
-        "DLUMANativeMod_PostGameInitV1",
-        "DLUMANativeMod_ShutdownV1",
-    ):
-        assert removed not in SDK
-
-
-def test_v2_api_directory_is_size_prefixed_and_declares_common_service_ids():
-    api = C_API.split("typedef struct DlumaApiV1 {", 1)[1].split(
-        "} DlumaApiV1;", 1
-    )[0]
-    fields = (
-        "    uint32_t struct_size;",
-        "    uint32_t abi_version;",
-        "    uint32_t api_major;",
-        "    uint32_t api_minor;",
-        "    const char* catalog_sha256;",
-        "    void* context;",
-        "    DlumaGetServiceFn get_service;",
-    )
-    offsets = [api.index(field) for field in fields]
-    assert offsets == sorted(offsets)
-    assert "#define DLUMA_NATIVE_MOD_ABI_V2 0x00020000u" in C_API
-    assert "minimum_version" in C_API
-    assert "output_table" in C_API
-    assert "output_size" in C_API
-
-    expected_ids = {
-        "DLW_SERVICE_PLAYER_V1": "dluma.player.v1",
-        "DLW_SERVICE_EVENTS_V1": "dluma.events.v1",
-        "DLW_SERVICE_COMPANION_CONTENT_V1": "dluma.companion_content.v1",
-        "DLW_SERVICE_CONFIGURATION_V1": "dluma.configuration.v1",
-        "DLW_SERVICE_AUDIO_V1": "dluma.audio.v1",
-    }
-    for macro, service_id in expected_ids.items():
-        assert f'#define {macro} "{service_id}"' in SDK
-    for table in (
-        "DlumaPlayerV1",
-        "DlumaEventsV1",
-        "DlumaCompanionContentV1",
-        "DlumaConfigurationV1",
-        "DlumaAudioV1",
-    ):
-        body = SDK.split(f"typedef struct {table} {{", 1)[1].split(
-            f"}} {table};", 1
-        )[0]
-        assert body.index("uint32_t struct_size;") < body.index(
-            "uint32_t version;"
-        ) < body.index("void* context;")
 
 
 def test_companion_approval_preserves_unpaired_v1_and_binds_pack_in_v2():

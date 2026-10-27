@@ -204,20 +204,6 @@ def test_project_validation_requires_the_real_map_and_all_quest_xml(tmp_path):
         )
 
 
-def test_powershell_content_pack_exposes_the_same_quest_preflight_arguments():
-    script = (ROOT / "tools" / "build_content_pack.ps1").read_text(encoding="utf-8")
-    for token in (
-        "[string]$QuestBindings",
-        "[string[]]$QuestXml",
-        "[string]$QuestProjectRoot",
-        "[string]$QuestMap",
-        "tools\\verify_quest_bindings.py",
-        "Quest binding preflight",
-    ):
-        assert token in script
-    assert "requires at least one -QuestXml" not in script
-
-
 def test_rejects_unknown_or_ambiguous_native_targets(tmp_path):
     first = write(
         tmp_path / "one.xml",

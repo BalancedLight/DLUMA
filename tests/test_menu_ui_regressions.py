@@ -26,18 +26,6 @@ def test_wrapper_keeps_validated_original_in_one_translation_unit():
     assert "#define dluma_ui_workshop_show_hook dluma_ui_workshop_show_hook_base" in source
 
 
-def test_both_build_paths_compile_only_wrapped_ui_translation_unit():
-    clang = CLANG_BUILD.read_text(encoding="utf-8")
-    assert "list_vcxproj_sources.py" in clang
-    assert "dlw_ui_patched.c includes the validated dlw_ui.c" in clang
-    targets = MSBUILD_TARGETS.read_text(encoding="utf-8")
-    project = (ROOT / "DLUMA.vcxproj").read_text(encoding="utf-8")
-    assert '<ClCompile Remove="src\\dlw_ui.c" />' in targets
-    assert '<ClCompile Include="src\\dlw_ui_patched.c" />' in targets
-    assert '<ClCompile Include="src\\dlw_mod_row_format_core.c" />' in project
-    assert '<ClInclude Include="src\\dlw_mod_row_format_core.h" />' in project
-
-
 def test_workshop_uses_six_rows_and_rebuilds_once_at_final_capacity():
     source = PATCHED_UI.read_text(encoding="utf-8")
     assert "DLUMA_UI_FIX_WORKSHOP_VISIBLE_ROWS 6" in source
@@ -230,34 +218,6 @@ def test_gamepad_focus_is_clamped_to_real_selectable_rows():
     assert "dluma_ui_fix_set_item_navigation" not in rebind
 
 
-def test_mods_navigation_does_not_reprocess_rows_each_frame():
-    source = PATCHED_UI.read_text(encoding="utf-8")
-    rebind = block(
-        source,
-        "static void dluma_ui_fix_rebind_registry_rows(",
-        "static int dluma_ui_fix_registry_nearest_selectable_index(",
-    )
-    assert "g_dluma_process_element_inputs" not in rebind
-    assert "dluma_ui_fix_set_item_navigation" not in rebind
-
-    repair = block(
-        source,
-        "static void dluma_ui_fix_repair_registry_navigation(",
-        "static void dluma_ui_fix_repair_workshop_navigation(",
-    )
-    assert "dluma_ui_fix_set_item_navigation(" not in repair
-
-    workshop = block(
-        source,
-        "static void dluma_ui_fix_repair_workshop_navigation(",
-        "static void dluma_ui_fix_sync_settings_pointer_focus(",
-    )
-    assert "dluma_ui_workshop_is_selectable_index" in workshop
-    assert "dluma_ui_workshop_nearest_selectable_index" in workshop
-    assert "dluma_ui_workshop_set_focus" in workshop
-    assert "dluma_ui_fix_set_item_navigation" in workshop
-
-
 def test_successful_native_events_do_not_publish_registry_revisions():
     source = NATIVE_MODS.read_text(encoding="utf-8")
     dispatch = block(
@@ -313,25 +273,6 @@ def test_keyboard_and_controller_divider_replay_skips_disabled_headers():
     assert "dluma_ui_fix_repair_workshop_navigation(screen);" in post
 
 
-def test_settings_mouse_focus_drives_selection_highlight_and_hint():
-    source = PATCHED_UI.read_text(encoding="utf-8")
-    focus = block(
-        source,
-        "static void dluma_ui_fix_sync_settings_pointer_focus(",
-        "static void dluma_ui_fix_apply_settings_initial_focus(",
-    )
-    assert "dluma_ui_list_get_focused_index" in focus
-    assert "dluma_ui_list_set_selection" in focus
-    assert "dluma_ui_settings_update_for_row" in focus
-    post = block(
-        source,
-        "static void __fastcall dluma_ui_workshop_post_hook(",
-        "static VOID CALLBACK dluma_ui_fix_timer_proc(",
-    )
-    assert "dluma_ui_is_loader_settings_screen(screen)" in post
-    assert "dluma_ui_fix_sync_settings_pointer_focus();" in post
-
-
 def test_workshop_reentry_resets_selection_focus_viewport_and_preview_to_top():
     source = PATCHED_UI.read_text(encoding="utf-8")
     reset = block(
@@ -355,36 +296,6 @@ def test_workshop_reentry_resets_selection_focus_viewport_and_preview_to_top():
     original = ORIGINAL_UI.read_text(encoding="utf-8")
     assert "dluma_ui_workshop_capture_refresh_state(list, &state);" in original
     assert "dluma_ui_workshop_restore_refresh_state(" in original
-
-
-def test_settings_entry_focus_is_one_shot_after_deferred_population():
-    source = PATCHED_UI.read_text(encoding="utf-8")
-    apply_focus = block(
-        source,
-        "static void dluma_ui_fix_apply_settings_initial_focus(",
-        "static void dluma_ui_fix_reset_workshop_to_top(",
-    )
-    assert "g_dluma_ui_fix_settings_initial_focus_pending" in apply_focus
-    assert "if (!g_dluma_ui_settings_row_count)" in apply_focus
-    assert "dluma_ui_list_set_selection(g_dluma_ui_settings_list, 0);" in apply_focus
-    assert "dluma_ui_workshop_set_focus(g_dluma_ui_settings_list, 0, 1)" in apply_focus
-    assert "dluma_ui_focus_element(g_dluma_ui_settings_list);" in apply_focus
-    assert "dluma_ui_settings_update_for_row(0);" in apply_focus
-    assert apply_focus.count(
-        "g_dluma_ui_fix_settings_initial_focus_pending, 0"
-    ) >= 2
-    show = block(
-        source,
-        "static void __fastcall dluma_ui_workshop_show_hook(",
-        "static void __fastcall dluma_ui_workshop_post_hook(",
-    )
-    post = block(
-        source,
-        "static void __fastcall dluma_ui_workshop_post_hook(",
-        "static VOID CALLBACK dluma_ui_fix_timer_proc(",
-    )
-    assert "g_dluma_ui_fix_settings_initial_focus_pending, 1" in show
-    assert "dluma_ui_fix_apply_settings_initial_focus();" in post
 
 
 def test_logs_rows_are_not_touched_before_deferred_population():

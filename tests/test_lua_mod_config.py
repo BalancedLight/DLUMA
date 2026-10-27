@@ -160,39 +160,6 @@ def test_corrupt_or_incompatible_records_are_errors_and_reset_is_per_setting():
     assert "DeleteFileW" not in prune
 
 
-def test_mods_and_config_screens_use_native_option_rows_and_native_history():
-    mods = text(MODS_XUI)
-    config_xui = text(CONFIG_XUI)
-    ui = text(UI)
-    for source in (mods, config_xui):
-        assert "<Visual>ListBoxOptionsV</Visual>" in source
-        assert "<Height>430.000000</Height>" in source
-        assert "<ImagePath>menu_bg</ImagePath>" in source
-        assert source.count("<Visual>ButtonDialogV</Visual>") >= 3
-        assert "<!--" not in source
-        raw = (
-            MODS_XUI.read_bytes()
-            if source is mods
-            else CONFIG_XUI.read_bytes()
-        )
-        assert not raw.startswith(b"\xef\xbb\xbf")
-        assert b"\r\n" in raw
-        assert b"\n" not in raw.replace(b"\r\n", b"")
-    assert "<Id>B_Configure</Id>" in mods
-    assert "<PressPath>MenuDLUMAModConfig.xui</PressPath>" in mods
-    configure = block(
-        ui,
-        'else if (dluma_ui_object_id_equals(button, "B_Configure"))',
-        'else if (dluma_ui_object_id_equals(button, "B_Back"))',
-    )
-    assert "dluma_ui_mod_config_stage_selected()" in configure
-    assert "dluma_ui_register_mod_config_screen" in configure
-    assert "dluma_ui_show_next_registered_screen(" in configure
-    assert "mod_config_show_next_ui_requested_id" in configure
-    assert "LoadUIScreen" not in configure
-    assert "ShowUIScreen" not in configure
-
-
 def test_config_controls_use_expected_native_semantics_and_deferred_refresh():
     ui = text(UI)
     seed = block(

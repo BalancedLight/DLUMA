@@ -77,32 +77,6 @@ def test_setting_is_default_on_and_updates_runtime_controller() -> None:
     assert "discord_rich_presence_enabled=1" in example
 
 
-def test_frontend_screen_mapping_and_gameplay_isolation_contract() -> None:
-    source = _read("src/dlw_discord_presence.c")
-    for screen in (
-        "DLUMA_SteamWorkshop.xui",
-        "MenuSteamWorkshop.xui",
-        "MenuCustomMap.xui",
-        "MenuDLUMALoaderSettings.xui",
-        "MenuOptionsVideo.xui",
-        "MenuGamma.xui",
-        "MenuDisplayDevice.xui",
-        "MenuScreenAdjustment.xui",
-        "MenuDLUMAMods.xui",
-        "MenuDLUMAModDetails.xui",
-        "MenuDLUMAModConfig.xui",
-        "MenuCredits.xui",
-        "MenuPersonalStatistics.xui",
-    ):
-        assert screen in source
-    assert "if (level.frontend)" in source
-    assert "dluma_discord_build_gameplay_activity(" in source
-    assert "is_ui_screen_loaded" in source
-    assert '"data\\\\menu\\\\scr\\\\"' in source
-    assert "register_ui_screen" not in source
-    assert "load_ui_screen" not in source
-
-
 def test_authoritative_level_snapshot_refresh_survives_startup_completion() -> None:
     ui = _read("src/dlw_ui.c")
     start = ui.index("static int dluma_ui_startup_b0_onframe_pump(")

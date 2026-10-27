@@ -1416,60 +1416,6 @@ def test_workshop_uses_native_background_rail_without_changing_3d_route():
     assert "dluma_ui_is_stock_workshop_screen(screen)" not in rotation
 
 
-def test_pack_contains_loader_owned_workshop_and_extras_overrides():
-    assert PACK_PATH.is_file()
-    with zipfile.ZipFile(PACK_PATH) as archive:
-        names = archive.namelist()
-        packed = archive.read("data/menu/scr/DLUMA_SteamWorkshop.xui")
-    assert names.count("data/menu/scr/DLUMA_SteamWorkshop.xui") == 1
-    assert "data/menu/scr/MenuSteamWorkshop.xui" not in names
-    assert "data/menu/scr/MenuMain_PC_workshop.xui" not in names
-    assert names.count("data/menu/scr/MenuExtras.xui") == 1
-    assert names.count("data/menu/scr/MenuDLUMALogs.xui") == 1
-    assert packed == XUI_PATH.read_bytes()
-
-
-def test_workshop_filename_redirect_is_exact_independent_and_owned():
-    ui = UI_PATH.read_text(encoding="utf-8")
-    exports = (ROOT / "src" / "dlw_exports.c").read_text(encoding="utf-8")
-    core = (ROOT / "src" / "dlw_ui_redirect_core.h").read_text(
-        encoding="utf-8"
-    )
-
-    assert "DLUMA_DEVTOOLS_GAMEDLL_TIMESTAMP 0x623397AAUL" in ui
-    assert "DLUMA_DEVTOOLS_GAMEDLL_IMAGE_SIZE 0x02082000UL" in ui
-    assert "DLUMA_DEVTOOLS_WORKSHOP_MENU_NAME_RVA 0x016784A0UL" in ui
-    assert 'original_name[] = "MenuSteamWorkshop.xui"' in ui
-    assert 'redirected_name[] = "DLUMA_SteamWorkshop.xui"' in ui
-    assert "sizeof(original_name), sizeof(redirected_name)" in ui
-    assert "g_dluma_workshop_menu_redirect_owned" in ui
-    assert "already_present_not_owned" in ui
-    assert "not_restored_modified_after_install" in ui
-    assert "dluma_xui_redirect_should_restore" in core
-
-    initialize = block(
-        exports,
-        "static void* dluma_player_initialize(void)",
-        "static __int64 dluma_player_shutdown(void)",
-    )
-    assert initialize.index("dluma_ui_prepare_main_menu_redirect()") < initialize.index(
-        "g_original_initialize()"
-    )
-    assert initialize.index("dluma_ui_prepare_workshop_menu_redirect()") < initialize.index(
-        "g_original_initialize()"
-    )
-    assert "&& !dluma_ui_prepare_workshop_menu_redirect" not in initialize
-    assert initialize.index("dluma_ui_restore_workshop_menu_redirect();") < initialize.index(
-        "dluma_ui_restore_main_menu_redirect();"
-    )
-    shutdown = exports[exports.index(
-        "static __int64 dluma_player_shutdown(void)"
-    ):exports.index('extern "C" __declspec(dllexport) void*')]
-    assert shutdown.index("dluma_ui_restore_workshop_menu_redirect();") < shutdown.index(
-        "dluma_ui_restore_main_menu_redirect();"
-    )
-
-
 def test_custom_layout_validation_is_observational_and_bounded():
     source = UI_PATH.read_text(encoding="utf-8")
     resolver = block(

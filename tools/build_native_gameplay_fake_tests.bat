@@ -7,12 +7,12 @@ where cl.exe >nul 2>nul || (
 )
 if not exist build\native-fake mkdir build\native-fake
 
-cl.exe /nologo /c /TC /MT /O2 /Oi- /W4 /WX /DDLW_NATIVE_FAKE_TESTS /I src ^
+cl.exe /nologo /c /TC /MT /O2 /Oi- /W4 /WX /DDLUMA_NATIVE_FAKE_TESTS /I src ^
   /Fd"build\native-fake\native_gameplay_fake_harness.pdb" ^
   /Fo"build\native-fake\native_gameplay_fake_harness.obj" ^
   tests\native_gameplay_fake_harness.c || exit /b 1
 
-cl.exe /nologo /c /TC /MT /O2 /Oi- /W4 /WX /DDLW_NATIVE_FAKE_TESTS /I src ^
+cl.exe /nologo /c /TC /MT /O2 /Oi- /W4 /WX /DDLUMA_NATIVE_FAKE_TESTS /I src ^
   /Fd"build\native-fake\native_gameplay_fake_harness.pdb" ^
   /Fo"build\native-fake\dlw_native_gameplay.obj" ^
   src\dlw_native_gameplay.c || exit /b 1

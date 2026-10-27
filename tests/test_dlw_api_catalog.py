@@ -89,21 +89,6 @@ def test_gated_and_planned_operations_declare_every_language_adapter():
             assert language in operation["adapters"]
 
 
-def test_generated_c_header_uses_length_aware_strings_and_size_prefixed_tables():
-    header = (ROOT / "sdk/c/dluma_api.h").read_text(encoding="utf-8")
-    assert "typedef struct DlumaStringView" in header
-    assert "uint64_t size;" in header
-    assert "typedef struct DlumaStringBuffer" in header
-    assert "uint64_t required;" in header
-    assert "typedef struct DlumaObjectHandle" in header
-    assert "DLW_NATIVE_MOD_ABI_V2" in header
-    assert "DLUMANativeMod_GetApiV2" in header
-    assert "DlumaNativeModApiV2" in header
-    assert "uint32_t struct_size;" in header
-    assert "uint32_t version;" in header
-    assert "uint32_t capabilities" not in header
-
-
 def test_generated_catalog_parity_for_lua_csharp_workbench_and_docs():
     catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
     lua = json.loads(

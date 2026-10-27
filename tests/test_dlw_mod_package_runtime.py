@@ -10,7 +10,7 @@ HARNESS = (
     ROOT
     / "build"
     / "package-runtime"
-    / "dluma_mod_package_runtime_harness.exe"
+    / "dlw_mod_package_runtime_harness.exe"
 )
 
 

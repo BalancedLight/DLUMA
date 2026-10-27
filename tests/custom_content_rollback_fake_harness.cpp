@@ -62,12 +62,12 @@ static bool CasePathNormalizationAndSourceClassification()
     char path[content::kSourcePathCapacity];
     CHECK(content::NormalizePhysicalPath(
         "X:/Workshop//MapA/", root, sizeof(root)));
-    CHECK(std::strcmp(root, "X:\\workshop\\mapa") == 0);
+    CHECK(std::strcmp(root, "x:\\workshop\\mapa") == 0);
     CHECK(content::NormalizeLogicalPath(
         "//DATA//Scripts/Foo.SCR", path, sizeof(path)));
     CHECK(std::strcmp(path, "data\\scripts\\foo.scr") == 0);
     CHECK(content::PathsEqual("X:/WORKSHOP/MapA/Data/",
-                              "X:\\workshop\\mapa\\data"));
+                              "x:\\workshop\\mapa\\data"));
     CHECK(content::PathWithinRoot("X:/Workshop/MapA/Data", root));
     CHECK(!content::PathWithinRoot("X:/Workshop/MapAB/Data", root));
     char rejected[256];
@@ -81,25 +81,25 @@ static bool CasePathNormalizationAndSourceClassification()
         content::CustomSourceKind expected;
     };
     const ClassificationCase cases[] = {
-        {"X:\\workshop\\mapa",
+        {"x:\\workshop\\mapa",
          content::CustomSourceKind::ProjectRoot},
-        {"X:\\workshop\\mapa\\data",
+        {"x:\\workshop\\mapa\\data",
          content::CustomSourceKind::DataDirectory},
-        {"X:\\workshop\\mapa\\dataworkshop_0.pak",
+        {"x:\\workshop\\mapa\\dataworkshop_0.pak",
          content::CustomSourceKind::DataWorkshopPak},
-        {"X:\\workshop\\mapa\\dataen",
+        {"x:\\workshop\\mapa\\dataen",
          content::CustomSourceKind::LocaleDirectory},
-        {"X:\\workshop\\mapa\\dataen.pak",
+        {"x:\\workshop\\mapa\\dataen.pak",
          content::CustomSourceKind::LocalePak},
-        {"X:\\workshop\\mapa\\speechen",
+        {"x:\\workshop\\mapa\\speechen",
          content::CustomSourceKind::SpeechDirectory},
-        {"X:\\workshop\\mapa\\speechen.pak",
+        {"x:\\workshop\\mapa\\speechen.pak",
          content::CustomSourceKind::SpeechPak},
-        {"X:\\workshop\\mapa\\assets_pc",
+        {"x:\\workshop\\mapa\\assets_pc",
          content::CustomSourceKind::AssetsPc},
-        {"X:\\workshop\\mapa\\unclassified.pak",
+        {"x:\\workshop\\mapa\\unclassified.pak",
          content::CustomSourceKind::UnknownProjectSource},
-        {"X:\\workshop\\other\\data",
+        {"x:\\workshop\\other\\data",
          content::CustomSourceKind::UnknownProjectSource},
     };
     for (const ClassificationCase& item : cases)
@@ -119,19 +119,19 @@ static bool CaseExplicitEpochAttributionCannotDrift()
         '\\', 'M', 'a', 'p', 'B', 0};
     const std::uint32_t first = content::BeginEpoch(
         &g_content, "ProjectA", root_a,
-        "X:\\workshop\\mapa", 1);
+        "x:\\workshop\\mapa", 1);
     CHECK(first != 0);
     const std::uint32_t second = content::BeginEpoch(
         &g_content, "ProjectB", root_b,
-        "X:\\workshop\\mapb", 2);
+        "x:\\workshop\\mapb", 2);
     CHECK(second != 0 && second != first);
     CHECK(!content::RecordSuccessfulSourceAddForEpoch(
         &g_content, first, FakePointer(0x1100), "map-a-data",
-        "X:\\workshop\\mapa\\data", 1,
+        "x:\\workshop\\mapa\\data", 1,
         content::CustomSourceKind::DataDirectory, true, 3));
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, second, FakePointer(0x1200), "map-b-data",
-        "X:\\workshop\\mapb\\data", 1,
+        "x:\\workshop\\mapb\\data", 1,
         content::CustomSourceKind::DataDirectory, true, 4));
     CHECK(g_content.source_count == 1);
     CHECK(g_content.sources[0].epoch == second);
@@ -149,7 +149,7 @@ static bool CaseCurrentEpochReadDistinguishesZeroFromContention()
         'E', ':', '\\', 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p',
         '\\', 'M', 'a', 'p', 'A', 0};
     const std::uint32_t epoch = content::BeginEpoch(
-        &g_content, "ProjectA", root, "X:\\workshop\\mapa", 1);
+        &g_content, "ProjectA", root, "x:\\workshop\\mapa", 1);
     CHECK(epoch != 0);
     CHECK(content::TryGetCurrentEpochId(&g_content, &observed));
     CHECK(observed == epoch);
@@ -168,7 +168,7 @@ static bool CaseCompleteSnapshotRejectsDroppedOwnership()
     CHECK(BeginContentEpoch(&g_content));
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, 1, FakePointer(0x1300), "map-a-data",
-        "X:\\workshop\\mapa\\data", 1,
+        "x:\\workshop\\mapa\\data", 1,
         content::CustomSourceKind::DataDirectory, true, 2));
     content::SourceSnapshotResult snapshot =
         content::SnapshotActiveSourcesThroughEpochComplete(
@@ -192,7 +192,7 @@ static bool CasePackPointerReuseCreatesNewestRecord()
     CHECK(BeginContentEpoch(&g_content));
     void* const reused = FakePointer(0x1400);
     const char* const pack =
-        "X:\\workshop\\mapa\\assets_pc\\shared.rpack";
+        "x:\\workshop\\mapa\\assets_pc\\shared.rpack";
     CHECK(content::RecordPackLoad(&g_content, reused, pack, 2));
     CHECK(content::RecordPackRelease(&g_content, reused, nullptr, 3));
     CHECK(content::RecordPackLoad(&g_content, reused, pack, 4));
@@ -210,12 +210,12 @@ static bool CaseCustomSourceExclusionsAreNonDestructive()
     CHECK(BeginContentEpoch(&g_content));
     CHECK(!content::RecordSuccessfulSourceAdd(
         &g_content, FakePointer(0x1000), "X:\\Base\\Data",
-        "X:\\base\\data", 1,
+        "x:\\base\\data", 1,
         content::CustomSourceKind::UnknownProjectSource, true, 2));
     CHECK(content::RecordSuccessfulSourceAdd(
         &g_content, FakePointer(0x1001),
         "X:\\Workshop\\MapA\\LoaderOwnedButExcluded",
-        "X:\\workshop\\mapa\\loaderownedbutexcluded", 1,
+        "x:\\workshop\\mapa\\loaderownedbutexcluded", 1,
         content::CustomSourceKind::UnknownProjectSource, false, 3));
     CHECK(content::CountActiveCustomSources(&g_content) == 0);
     CHECK(content::SnapshotActiveSourcesForReset(
@@ -229,7 +229,7 @@ static bool CaseCustomSourceExclusionsAreNonDestructive()
     CHECK(content::RecordSuccessfulSourceAdd(
         &g_content, FakePointer(0x1002),
         "X:\\Workshop\\MapA\\Data",
-        "X:\\workshop\\mapa\\data", 2,
+        "x:\\workshop\\mapa\\data", 2,
         content::CustomSourceKind::DataDirectory, true, 5));
     CHECK(content::CountActiveCustomSources(&g_content) == 1);
     CHECK(content::IsTrackedCustomSource(
@@ -246,7 +246,7 @@ static bool CaseSourceLedgerIsBounded()
          index < content::kMaximumSources; ++index) {
         const int written = std::snprintf(
             path, sizeof(path),
-            "X:\\workshop\\mapa\\source_%03u", index);
+            "x:\\workshop\\mapa\\source_%03u", index);
         CHECK(written > 0 &&
               static_cast<std::size_t>(written) < sizeof(path));
         CHECK(content::RecordSuccessfulSourceAdd(
@@ -256,8 +256,8 @@ static bool CaseSourceLedgerIsBounded()
     }
     CHECK(!content::RecordSuccessfulSourceAdd(
         &g_content, FakePointer(0x9999),
-        "X:\\workshop\\mapa\\overflow",
-        "X:\\workshop\\mapa\\overflow", 0,
+        "x:\\workshop\\mapa\\overflow",
+        "x:\\workshop\\mapa\\overflow", 0,
         content::CustomSourceKind::UnknownProjectSource, true, 999));
     CHECK(g_content.source_count == content::kMaximumSources);
     CHECK(g_content.ownership_mutation_loss > 0);
@@ -324,15 +324,15 @@ static bool CaseSourceResetUsesReverseSuccessfulAddOrder()
      * then ProjectRoot in strict reverse successful-add order. */
     CHECK(BeginContentEpoch(&g_content));
     CHECK(content::RecordSuccessfulSourceAdd(
-        &g_content, FakePointer(0x4100), "mapa", "X:\\workshop\\mapa",
+        &g_content, FakePointer(0x4100), "mapa", "x:\\workshop\\mapa",
         1, content::CustomSourceKind::ProjectRoot, true, 2, true));
     CHECK(content::RecordSuccessfulSourceAdd(
         &g_content, FakePointer(0x4200), "mapa-data",
-        "X:\\workshop\\mapa\\data", 2,
+        "x:\\workshop\\mapa\\data", 2,
         content::CustomSourceKind::DataDirectory, true, 3, true));
     CHECK(content::RecordSuccessfulSourceAdd(
         &g_content, FakePointer(0x4300), "mapa-assets",
-        "X:\\workshop\\mapa\\assets_pc", 3,
+        "x:\\workshop\\mapa\\assets_pc", 3,
         content::CustomSourceKind::AssetsPc, true, 4, true));
     std::size_t count = content::SnapshotActiveSourcesForReset(
         &g_content, g_source_snapshot, content::kMaximumSources, 5);
@@ -360,15 +360,15 @@ static bool CaseSourceResetUsesReverseSuccessfulAddOrder()
      * object remains in the cleanup snapshot. */
     CHECK(BeginContentEpoch(&g_content));
     CHECK(content::RecordSuccessfulSourceAdd(
-        &g_content, FakePointer(0x4500), "mapa", "X:\\workshop\\mapa",
+        &g_content, FakePointer(0x4500), "mapa", "x:\\workshop\\mapa",
         1, content::CustomSourceKind::ProjectRoot, true, 2, true));
     CHECK(content::RecordSuccessfulSourceAdd(
         &g_content, FakePointer(0x4600), "mapa-data",
-        "X:\\workshop\\mapa\\data", 2,
+        "x:\\workshop\\mapa\\data", 2,
         content::CustomSourceKind::DataDirectory, true, 3, true));
     CHECK(content::RecordSuccessfulSourceAdd(
         &g_content, FakePointer(0x4700), "mapa-assets",
-        "X:\\workshop\\mapa\\assets_pc", 3,
+        "x:\\workshop\\mapa\\assets_pc", 3,
         content::CustomSourceKind::AssetsPc, true, 4, true));
     CHECK(content::RecordNaturalSourceRemoval(
         &g_content, FakePointer(0x4500), nullptr, true, 5));
@@ -398,10 +398,10 @@ static bool CaseCancelledCleanupVerifiesLiveRegistryExactMinusSources()
     const std::uintptr_t links[] = {
         0x6100U, 0x6200U, 0x6300U, 0x6400U};
     const char* paths[] = {
-        "X:\\workshop\\loader\\mods\\dluma.pak",
-        "X:\\workshop\\mapa",
-        "X:\\workshop\\mapa\\data",
-        "X:\\workshop\\mapa\\assets_pc",
+        "x:\\workshop\\loader\\mods\\dluma.pak",
+        "x:\\workshop\\mapa",
+        "x:\\workshop\\mapa\\data",
+        "x:\\workshop\\mapa\\assets_pc",
     };
     for (std::uint32_t index = 0; index < before.source_count; ++index) {
         before.sources[index].source = sources[index];
@@ -451,7 +451,7 @@ static bool CaseClosedEpochRejectsLateFileOwnership()
     CHECK(content::RecordSuccessfulSourceAdd(
         &g_content, FakePointer(0x4A00),
         "X:\\Workshop\\MapA\\Data",
-        "X:\\workshop\\mapa\\data", 1,
+        "x:\\workshop\\mapa\\data", 1,
         content::CustomSourceKind::DataDirectory, true, 2));
     CHECK(content::CloseEpochForFrontend(&g_content, epoch, 3));
     std::uint32_t observed_epoch = 0;
@@ -468,7 +468,7 @@ static bool CaseClosedEpochRejectsLateFileOwnership()
 static bool CaseAmbiguousPathRemovalCannotSelectAnOwner()
 {
     CHECK(BeginContentEpoch(&g_content));
-    const char* path = "X:\\workshop\\mapa\\data";
+    const char* path = "x:\\workshop\\mapa\\data";
     CHECK(content::RecordSuccessfulSourceAdd(
         &g_content, nullptr, path, path, 1,
         content::CustomSourceKind::UnknownProjectSource, true, 2));
@@ -512,7 +512,7 @@ static bool CaseDuplicateActiveSourceKindFailsClosed()
     for (content::CustomSourceKind kind : singleton_kinds) {
         content::Initialize(&g_content);
         CHECK(BeginContentEpoch(&g_content));
-        const char* path = "X:\\workshop\\mapa\\data";
+        const char* path = "x:\\workshop\\mapa\\data";
         CHECK(
             content::RecordSuccessfulSourceAddForEpochDetailed(
                 &g_content, 1U, FakePointer(0x4C00), path, path, 1,
@@ -540,23 +540,23 @@ static bool CaseDuplicateActiveSourceKindFailsClosed()
         'E', ':', '\\', 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p',
         '\\', 'M', 'a', 'p', 'B', 0};
     const std::uint32_t first_epoch = content::BeginEpoch(
-        &g_content, "MapA", root_a, "X:\\workshop\\mapa", 1);
+        &g_content, "MapA", root_a, "x:\\workshop\\mapa", 1);
     CHECK(first_epoch != 0);
     CHECK(content::RecordSuccessfulSourceAddForEpochDetailed(
               &g_content, first_epoch, FakePointer(0x4D00),
-              "X:\\workshop\\mapa\\assets_pc",
-              "X:\\workshop\\mapa\\assets_pc", 1,
+              "x:\\workshop\\mapa\\assets_pc",
+              "x:\\workshop\\mapa\\assets_pc", 1,
               content::CustomSourceKind::AssetsPc, true, 2, true) ==
           content::SourceAddRecordResult::Recorded);
     CHECK(content::BeginEpoch(
-        &g_content, "MapB", root_b, "X:\\workshop\\mapb", 3));
+        &g_content, "MapB", root_b, "x:\\workshop\\mapb", 3));
     const std::uint32_t fresh_same_root = content::BeginEpoch(
-        &g_content, "MapA", root_a, "X:\\workshop\\mapa", 4);
+        &g_content, "MapA", root_a, "x:\\workshop\\mapa", 4);
     CHECK(fresh_same_root != 0 && fresh_same_root != first_epoch);
     CHECK(content::RecordSuccessfulSourceAddForEpochDetailed(
               &g_content, fresh_same_root, FakePointer(0x4D01),
-              "X:\\workshop\\mapa\\assets_pc",
-              "X:\\workshop\\mapa\\assets_pc", 1,
+              "x:\\workshop\\mapa\\assets_pc",
+              "x:\\workshop\\mapa\\assets_pc", 1,
               content::CustomSourceKind::AssetsPc, true, 5, true) ==
           content::SourceAddRecordResult::
               DuplicateActiveKindRecorded);
@@ -576,7 +576,7 @@ static bool CasePresentationSourceSetCanonicalJoinAndReasons()
     CHECK(epoch != 0U);
     CHECK(std::strcmp(
               g_content.epochs[0].normalized_project_root,
-              "X:\\workshop\\mapa") == 0);
+              "x:\\workshop\\mapa") == 0);
 
     struct RequiredSource {
         void* source;
@@ -616,10 +616,10 @@ static bool CasePresentationSourceSetCanonicalJoinAndReasons()
     CHECK(snapshot.assets_pc_count == 1U);
     CHECK(std::strcmp(
               snapshot.presenter_root_canonical,
-              "X:\\workshop\\mapa") == 0);
+              "x:\\workshop\\mapa") == 0);
     CHECK(std::strcmp(
               snapshot.epoch_root_canonical,
-              "X:\\workshop\\mapa") == 0);
+              "x:\\workshop\\mapa") == 0);
 
     const char* equivalent_roots[] = {
         "X:/WORKSHOP/MapA",
@@ -647,13 +647,13 @@ static bool CasePresentationSourceSetCanonicalJoinAndReasons()
 
     dluma_atomic_exchange(&g_content.lock, 1);
     CHECK(content::SnapshotPresentationSourceSet(
-              &g_content, epoch, "X:\\workshop\\mapa", &snapshot) ==
+              &g_content, epoch, "x:\\workshop\\mapa", &snapshot) ==
           content::PresentationSourceSetSnapshotResult::LedgerBusy);
     dluma_atomic_exchange(&g_content.lock, 0);
 
     g_content.sources[2].exact_handle_available = false;
     CHECK(content::SnapshotPresentationSourceSet(
-              &g_content, epoch, "X:\\workshop\\mapa", &snapshot) ==
+              &g_content, epoch, "x:\\workshop\\mapa", &snapshot) ==
           content::PresentationSourceSetSnapshotResult::
               ExactHandleIncomplete);
     g_content.sources[2].exact_handle_available = true;
@@ -661,34 +661,34 @@ static bool CasePresentationSourceSetCanonicalJoinAndReasons()
         &g_content,
         content::LedgerLossReason::SourceIdentityIncomplete);
     CHECK(content::SnapshotPresentationSourceSet(
-              &g_content, epoch, "X:\\workshop\\mapa", &snapshot) ==
+              &g_content, epoch, "x:\\workshop\\mapa", &snapshot) ==
           content::PresentationSourceSetSnapshotResult::
               OwnershipIncomplete);
 
     CHECK(content::RecordSuccessfulSourceAddForEpochDetailed(
               &g_content, epoch, FakePointer(0x4E03),
-              "X:\\workshop\\mapa\\assets_pc",
-              "X:\\workshop\\mapa\\assets_pc", 3,
+              "x:\\workshop\\mapa\\assets_pc",
+              "x:\\workshop\\mapa\\assets_pc", 3,
               content::CustomSourceKind::AssetsPc, true, 10, true) ==
           content::SourceAddRecordResult::DuplicateActiveKindRecorded);
     CHECK(content::SnapshotPresentationSourceSet(
-              &g_content, epoch, "X:\\workshop\\mapa", &snapshot) ==
+              &g_content, epoch, "x:\\workshop\\mapa", &snapshot) ==
           content::PresentationSourceSetSnapshotResult::
               DuplicateSourceKind);
     CHECK(snapshot.assets_pc_count == 2U);
 
     content::Initialize(&g_content);
     const std::uint32_t incomplete_epoch = content::BeginEpoch(
-        &g_content, "MapA", wide_root, "X:\\workshop\\mapa", 20);
+        &g_content, "MapA", wide_root, "x:\\workshop\\mapa", 20);
     CHECK(incomplete_epoch != 0U);
     CHECK(content::SnapshotPresentationSourceSet(
               &g_content, incomplete_epoch,
-              "X:\\workshop\\mapa", &snapshot) ==
+              "x:\\workshop\\mapa", &snapshot) ==
           content::PresentationSourceSetSnapshotResult::
               RequiredSourceKindMissing);
     CHECK(content::SnapshotPresentationSourceSet(
               &g_content, incomplete_epoch + 1U,
-              "X:\\workshop\\mapa", &snapshot) ==
+              "x:\\workshop\\mapa", &snapshot) ==
           content::PresentationSourceSetSnapshotResult::EpochMissing);
 
     CHECK(std::strcmp(
@@ -718,11 +718,11 @@ static bool CaseUnknownPersistentContentBlocksBaselineMatch()
     CHECK(content::MarkBaselineCaptured(&g_content, true, 2));
     CHECK(content::RecordSuccessfulSourceAdd(
         &g_content, FakePointer(0x5100), "mapa-data",
-        "X:\\workshop\\mapa\\data", 1,
+        "x:\\workshop\\mapa\\data", 1,
         content::CustomSourceKind::DataDirectory, true, 3));
     CHECK(content::RecordCustomFileOpen(
         &g_content, 1, "data\\skills\\default_levels.xml",
-        "X:\\workshop\\mapa\\data", FakePointer(0x5100),
+        "x:\\workshop\\mapa\\data", FakePointer(0x5100),
         0x180003000ULL, 0x3000, "gamedll_x64_rwdi.dll", 13, 4));
     CHECK(content::CloseEpochForFrontend(&g_content, 5));
     CHECK(content::MarkSourceResetResult(&g_content, 0, true, 6));
@@ -740,7 +740,7 @@ static bool CaseUnknownPersistentContentBlocksBaselineMatch()
 
     CHECK(content::RecordPackLoad(
         &g_content, FakePointer(0x5200),
-        "X:\\workshop\\mapa\\assets_pc\\stale.rpack", 9));
+        "x:\\workshop\\mapa\\assets_pc\\stale.rpack", 9));
     CHECK(g_content.packs[0].observed_after_frontend_reset);
     CHECK(!content::CanReportBaselineMatch(&g_content));
     return true;
@@ -1438,7 +1438,7 @@ static bool AddExactOwnedSource(content::CustomContentLedger* ledger,
     return content::RecordSuccessfulSourceAddForEpoch(
         ledger, epoch, source, path, path, flags,
         content::ClassifySourceKind(path,
-                                   "X:\\workshop\\mapa"),
+                                   "x:\\workshop\\mapa"),
         true, sequence, true);
 }
 
@@ -1605,7 +1605,7 @@ static bool CaseFrontendEpochSelectionIsFailClosed()
           content::FrontendEpochSelectionStatus::NoActiveSources);
     CHECK(AddExactOwnedSource(
         &g_content, first, FakePointer(0x7400),
-        "X:\\workshop\\mapa\\data", 1, 2));
+        "x:\\workshop\\mapa\\data", 1, 2));
     selection = content::SelectFrontendResetEpoch(
         &g_content, nullptr, false);
     CHECK(selection.status ==
@@ -1621,11 +1621,11 @@ static bool CaseFrontendEpochSelectionIsFailClosed()
         'E', ':', '\\', 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p',
         '\\', 'M', 'a', 'p', 'B', 0};
     const std::uint32_t second = content::BeginEpoch(
-        &g_content, "MapB", root_b, "X:\\workshop\\mapb", 3);
+        &g_content, "MapB", root_b, "x:\\workshop\\mapb", 3);
     CHECK(second != 0 && second != first);
     CHECK(AddExactOwnedSource(
         &g_content, second, FakePointer(0x7500),
-        "X:\\workshop\\mapb\\data", 1, 4));
+        "x:\\workshop\\mapb\\data", 1, 4));
     /* Manufacture the ambiguous replay state the selector must reject. */
     g_content.epochs[0].active = true;
     g_content.epochs[0].accepting_records = true;
@@ -1647,13 +1647,13 @@ static bool CaseSingleMapOnDestroyResetsOnceAfterOriginal()
     CHECK(BeginContentEpoch(&g_content, &epoch));
     CHECK(AddExactOwnedSource(
         &g_content, epoch, FakePointer(0x7600),
-        "X:\\workshop\\mapa", 1, 2));
+        "x:\\workshop\\mapa", 1, 2));
     CHECK(AddExactOwnedSource(
         &g_content, epoch, FakePointer(0x7601),
-        "X:\\workshop\\mapa\\data", 2, 3));
+        "x:\\workshop\\mapa\\data", 2, 3));
     CHECK(AddExactOwnedSource(
         &g_content, epoch, FakePointer(0x7602),
-        "X:\\workshop\\mapa\\assets_pc", 3, 4));
+        "x:\\workshop\\mapa\\assets_pc", 3, 4));
 
     FakeFrontendReplay replay;
     InitializeFrontendReplay(&replay, &g_content, epoch);
@@ -1682,10 +1682,10 @@ static bool CaseSameProjectTwoMapDefersResetUntilFinalOnDestroy()
     CHECK(BeginContentEpoch(&g_content, &epoch));
     CHECK(AddExactOwnedSource(
         &g_content, epoch, FakePointer(0x7700),
-        "X:\\workshop\\mapa\\data", 1, 2));
+        "x:\\workshop\\mapa\\data", 1, 2));
     CHECK(AddExactOwnedSource(
         &g_content, epoch, FakePointer(0x7701),
-        "X:\\workshop\\mapa\\assets_pc", 2, 3));
+        "x:\\workshop\\mapa\\assets_pc", 2, 3));
 
     lifecycle::FrontendSourceRollbackBarrier transition;
     lifecycle::Initialize(&transition);
@@ -1774,7 +1774,7 @@ static bool CaseMutationLossCategoriesAreIndependent()
     content::Initialize(&g_content);
     CHECK(!content::RecordPackLoad(
         &g_content, FakePointer(0xB100),
-        "X:\\base\\menu_main_pc.rpack", 1));
+        "x:\\base\\menu_main_pc.rpack", 1));
     content::LedgerLossState losses =
         content::CaptureLossState(&g_content);
     CHECK(losses.irrelevant_without_epoch == 1);
@@ -1810,7 +1810,7 @@ static bool CaseExactOwnedUnloadAndReleaseAreRequired()
         CHECK(BeginContentEpoch(&g_content, &epoch));
         CHECK(AddExactOwnedSource(
             &g_content, epoch, FakePointer(0x7800),
-            "X:\\workshop\\mapa\\data", 1, 2));
+            "x:\\workshop\\mapa\\data", 1, 2));
         FakeFrontendReplay replay;
         InitializeFrontendReplay(&replay, &g_content, epoch);
         replay.observe_unload = evidence.unload;
@@ -1851,7 +1851,7 @@ static bool CaseWrongSessionLevelShutdownAndAfterFadeAreRejected()
         CHECK(BeginContentEpoch(&g_content, &epoch));
         CHECK(AddExactOwnedSource(
             &g_content, epoch, FakePointer(0x7900),
-            "X:\\workshop\\mapa\\data", 1, 2));
+            "x:\\workshop\\mapa\\data", 1, 2));
         FakeFrontendReplay replay;
         InitializeFrontendReplay(&replay, &g_content, epoch);
         if (rejection == Rejection::WrongSession)
@@ -1879,7 +1879,7 @@ static bool CaseNestedOnDestroyResetsOnce()
     CHECK(BeginContentEpoch(&g_content, &epoch));
     CHECK(AddExactOwnedSource(
         &g_content, epoch, FakePointer(0x7A00),
-        "X:\\workshop\\mapa\\data", 1, 2));
+        "x:\\workshop\\mapa\\data", 1, 2));
     FakeFrontendReplay replay;
     InitializeFrontendReplay(&replay, &g_content, epoch);
     replay.nested_on_destroy = true;
@@ -1900,7 +1900,7 @@ static bool CaseConsumedBindingCannotResetTwice()
     CHECK(BeginContentEpoch(&g_content, &epoch));
     CHECK(AddExactOwnedSource(
         &g_content, epoch, FakePointer(0x7B00),
-        "X:\\workshop\\mapa\\data", 1, 2));
+        "x:\\workshop\\mapa\\data", 1, 2));
     FakeFrontendReplay replay;
     InitializeFrontendReplay(&replay, &g_content, epoch);
     CHECK(RunBoundFrontendOnDestroy(&replay) ==
@@ -1921,8 +1921,8 @@ static bool CaseDroppedOrNonExactSourcesBlockReset()
         const bool path_created = failure != 1;
         CHECK(content::RecordSuccessfulSourceAddForEpoch(
             &g_content, epoch, FakePointer(0x7C00),
-            "X:\\workshop\\mapa\\data",
-            "X:\\workshop\\mapa\\data", 1,
+            "x:\\workshop\\mapa\\data",
+            "x:\\workshop\\mapa\\data", 1,
             content::CustomSourceKind::DataDirectory, true, 2,
             path_created));
         if (failure == 0)
@@ -1952,7 +1952,7 @@ static bool CaseUnlinkOrDestructorFailureIsRuntimeFailed()
         CHECK(BeginContentEpoch(&g_content, &epoch));
         CHECK(AddExactOwnedSource(
             &g_content, epoch, FakePointer(0x7D00),
-            "X:\\workshop\\mapa\\data", 1, 2));
+            "x:\\workshop\\mapa\\data", 1, 2));
         FakeFrontendReplay replay;
         InitializeFrontendReplay(&replay, &g_content, epoch);
         if (failure == 0)
@@ -1979,7 +1979,7 @@ static bool CaseFrontendLookupBeforeResetFails()
     CHECK(BeginContentEpoch(&g_content, &epoch));
     CHECK(AddExactOwnedSource(
         &g_content, epoch, FakePointer(0x7E00),
-        "X:\\workshop\\mapa\\data", 1, 2));
+        "x:\\workshop\\mapa\\data", 1, 2));
     FakeFrontendReplay replay;
     InitializeFrontendReplay(&replay, &g_content, epoch);
     replay.lookup_during_original = true;
@@ -2001,7 +2001,7 @@ static bool CaseFrontendLookupAfterResetSucceeds()
     CHECK(BeginContentEpoch(&g_content, &epoch));
     CHECK(AddExactOwnedSource(
         &g_content, epoch, FakePointer(0x7F00),
-        "X:\\workshop\\mapa\\data", 1, 2));
+        "x:\\workshop\\mapa\\data", 1, 2));
     FakeFrontendReplay replay;
     InitializeFrontendReplay(&replay, &g_content, epoch);
     CHECK(RunBoundFrontendOnDestroy(&replay) ==
@@ -2032,7 +2032,7 @@ static bool CaseStartupAndNonOnDestroyRoutesDoNotReset()
     CHECK(BeginContentEpoch(&g_content, &epoch));
     CHECK(AddExactOwnedSource(
         &g_content, epoch, FakePointer(0x8000),
-        "X:\\workshop\\mapa\\data", 1, 2));
+        "x:\\workshop\\mapa\\data", 1, 2));
     lifecycle::FrontendSourceRollbackBarrier frontend_to_custom;
     lifecycle::FrontendSourceRollbackBarrier direct_custom_transition;
     lifecycle::Initialize(&frontend_to_custom);
@@ -2109,7 +2109,7 @@ static bool CaseExactSourceIdentityAndWatchedMetadata()
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, first_epoch, reused_source,
         "X:\\Workshop\\MapA\\Data",
-        "X:\\workshop\\mapa\\data", 7,
+        "x:\\workshop\\mapa\\data", 7,
         content::CustomSourceKind::DataDirectory, true, 2, true));
 
     content::CustomSourceIdentitySnapshot identity = {};
@@ -2121,7 +2121,7 @@ static bool CaseExactSourceIdentityAndWatchedMetadata()
     CHECK(identity.kind == content::CustomSourceKind::DataDirectory);
     CHECK(identity.source_active);
     CHECK(std::strcmp(identity.normalized_project_root,
-                      "X:\\workshop\\mapa") == 0);
+                      "x:\\workshop\\mapa") == 0);
     CHECK(!content::LookupExactCustomSourceIdentity(
         &g_content, reused_source, "X:/Workshop/MapA/Assets_PC",
         &identity));
@@ -2140,12 +2140,12 @@ static bool CaseExactSourceIdentityAndWatchedMetadata()
         '\\', 'M', 'a', 'p', 'A', 0};
     const std::uint32_t second_epoch = content::BeginEpoch(
         &g_content, "ProjectA-reloaded", wide_root,
-        "X:\\workshop\\mapa", 6);
+        "x:\\workshop\\mapa", 6);
     CHECK(second_epoch != 0 && second_epoch != first_epoch);
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, second_epoch, reused_source,
         "X:\\Workshop\\MapA\\Data",
-        "X:\\workshop\\mapa\\data", 9,
+        "x:\\workshop\\mapa\\data", 9,
         content::CustomSourceKind::DataDirectory, true, 7, true));
     CHECK(content::LookupExactCustomSourceIdentity(
         &g_content, reused_source, "X:/Workshop/MapA/Data", &identity));
@@ -2202,7 +2202,7 @@ static bool CaseExactMapOwnerProofIsCurrentAndFailClosed()
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, epoch, source,
         "X:\\Workshop\\MapA\\Data",
-        "X:\\workshop\\mapa\\data", 269,
+        "x:\\workshop\\mapa\\data", 269,
         content::CustomSourceKind::DataDirectory, true, 2, true));
     content::CustomSourceIdentitySnapshot identity = {};
     CHECK(content::LookupExactCustomSourceIdentity(
@@ -2226,7 +2226,7 @@ static bool CaseExactMapOwnerProofIsCurrentAndFailClosed()
     CHECK(proof.transition_generation == 7);
     CHECK(std::strcmp(proof.map_name, "nowhere") == 0);
     CHECK(std::strcmp(proof.normalized_project_root,
-                      "X:\\workshop\\mapa") == 0);
+                      "x:\\workshop\\mapa") == 0);
     CHECK(proof.project_root[0] == 'E');
     CHECK(content::ConsumeExactMapOwnerProof(
         &g_content, &proof));
@@ -2282,12 +2282,12 @@ static bool CaseExactMapOwnerProofIsCurrentAndFailClosed()
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, epoch, source_a,
         "X:\\Workshop\\MapA\\Data",
-        "X:\\workshop\\mapa\\data", 269,
+        "x:\\workshop\\mapa\\data", 269,
         content::CustomSourceKind::DataDirectory, true, 6, true));
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, epoch, source_b,
         "X:\\Workshop\\MapA\\DataWorkshop_0.pak",
-        "X:\\workshop\\mapa\\dataworkshop_0.pak", 269,
+        "x:\\workshop\\mapa\\dataworkshop_0.pak", 269,
         content::CustomSourceKind::DataWorkshopPak, true, 7, true));
     content::CustomSourceIdentitySnapshot first = {};
     content::CustomSourceIdentitySnapshot second = {};
@@ -2320,7 +2320,7 @@ static bool CaseExactMapOwnerProofIsCurrentAndFailClosed()
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, epoch, lost_source,
         "X:\\Workshop\\MapA\\Data",
-        "X:\\workshop\\mapa\\data", 269,
+        "x:\\workshop\\mapa\\data", 269,
         content::CustomSourceKind::DataDirectory, true, 11, true));
     content::CustomSourceIdentitySnapshot lost_identity = {};
     CHECK(content::LookupExactCustomSourceIdentity(
@@ -2343,7 +2343,7 @@ static bool CaseExactMapOwnerProofIsCurrentAndFailClosed()
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, epoch, closed_source,
         "X:\\Workshop\\MapA\\Data",
-        "X:\\workshop\\mapa\\data", 269,
+        "x:\\workshop\\mapa\\data", 269,
         content::CustomSourceKind::DataDirectory, true, 14, true));
     content::CustomSourceIdentitySnapshot closed_identity = {};
     CHECK(content::LookupExactCustomSourceIdentity(
@@ -2372,20 +2372,20 @@ static bool CasePlayerPresetProofRejectsDirectProviderTransition()
         'E', ':', '\\', 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p',
         '\\', 'M', 'a', 'p', 'B', 0};
     void* const source_a = FakePointer(0xE100);
-    const char* const provider_a = "X:\\workshop\\mapa\\data";
+    const char* const provider_a = "x:\\workshop\\mapa\\data";
     const std::uint32_t epoch_a = content::BeginEpoch(
-        &g_content, "ProjectA", root_a, "X:\\workshop\\mapa", 1);
+        &g_content, "ProjectA", root_a, "x:\\workshop\\mapa", 1);
     CHECK(epoch_a != 0);
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, epoch_a, source_a, provider_a, provider_a, 1,
         content::CustomSourceKind::DataDirectory, true, 2, true));
     const std::uint32_t epoch_b = content::BeginEpoch(
-        &g_content, "ProjectB", root_b, "X:\\workshop\\mapb", 3);
+        &g_content, "ProjectB", root_b, "x:\\workshop\\mapb", 3);
     CHECK(epoch_b != 0 && epoch_b != epoch_a);
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, epoch_b, FakePointer(0xE200),
-        "X:\\workshop\\mapb\\data",
-        "X:\\workshop\\mapb\\data", 1,
+        "x:\\workshop\\mapb\\data",
+        "x:\\workshop\\mapb\\data", 1,
         content::CustomSourceKind::DataDirectory, true, 4, true));
 
     content::PlayerPresetRepairSourceProof proof = {};
@@ -2407,20 +2407,20 @@ static bool CasePlayerPresetProofAcceptsExactCompletedReset()
         'E', ':', '\\', 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p',
         '\\', 'M', 'a', 'p', 'B', 0};
     void* const source_a = FakePointer(0xE300);
-    const char* const provider_a = "X:\\workshop\\mapa\\data";
+    const char* const provider_a = "x:\\workshop\\mapa\\data";
     const std::uint32_t epoch_a = content::BeginEpoch(
-        &g_content, "ProjectA", root_a, "X:\\workshop\\mapa", 1);
+        &g_content, "ProjectA", root_a, "x:\\workshop\\mapa", 1);
     CHECK(epoch_a != 0);
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, epoch_a, source_a, provider_a, provider_a, 1,
         content::CustomSourceKind::DataDirectory, true, 2, true));
     const std::uint32_t epoch_b = content::BeginEpoch(
-        &g_content, "ProjectB", root_b, "X:\\workshop\\mapb", 3);
+        &g_content, "ProjectB", root_b, "x:\\workshop\\mapb", 3);
     CHECK(epoch_b != 0 && epoch_b != epoch_a);
     CHECK(content::RecordSuccessfulSourceAddForEpoch(
         &g_content, epoch_b, FakePointer(0xE400),
-        "X:\\workshop\\mapb\\data",
-        "X:\\workshop\\mapb\\data", 1,
+        "x:\\workshop\\mapb\\data",
+        "x:\\workshop\\mapb\\data", 1,
         content::CustomSourceKind::DataDirectory, true, 4, true));
     CHECK(content::RecordNaturalSourceRemoval(
         &g_content, source_a, provider_a, true, 5));

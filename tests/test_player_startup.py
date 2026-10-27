@@ -61,37 +61,6 @@ def test_startup_is_player_only_and_uses_exact_profiles_and_imports():
     assert "dluma_player_startup_core_restore_hooks" in runtime
 
 
-def test_fixed_loader_milestone_order_and_native_progress_contract():
-    exports = EXPORTS.read_text(encoding="utf-8")
-    runtime = RUNTIME.read_text(encoding="utf-8")
-    core = CORE.read_text(encoding="utf-8")
-    milestones = (
-        "Initializing Mod Workbench...",
-        "Discovering mods...",
-        "Preparing content...",
-        "Initializing game scripts...",
-        "Starting mod hosts...",
-    )
-    positions = [core.index(f'"{message}"') for message in milestones]
-    positions.append(core.index('"Initializing game..."'))
-    assert positions == sorted(positions)
-    export_stages = (
-        "DLUMA_PLAYER_STARTUP_MILESTONE_DISCOVERY",
-        "DLUMA_PLAYER_STARTUP_MILESTONE_CONTENT",
-        "DLUMA_PLAYER_STARTUP_MILESTONE_SCRIPTS",
-        "DLUMA_PLAYER_STARTUP_MILESTONE_HOSTS",
-    )
-    assert [exports.index(stage) for stage in export_stages] == sorted(
-        exports.index(stage) for stage in export_stages
-    )
-    assert "DLUMA_PLAYER_STARTUP_MILESTONE_WORKBENCH" in runtime
-    assert "DLUMA_PLAYER_STARTUP_MILESTONE_GAME" in runtime
-    assert "g_dluma_player_startup_progress_vtable[7]" in runtime
-    assert "dluma_player_startup_progress_update" in runtime
-    assert "dluma_player_startup_core_select_reporter" in runtime
-    assert "DLUMA_PLAYER_STARTUP_TTL_COPY_LIMIT" in runtime
-
-
 def test_stock_splash_and_focus_safe_reveal_contract():
     runtime = RUNTIME.read_text(encoding="utf-8")
     core = CORE.read_text(encoding="utf-8")

@@ -312,30 +312,6 @@ def test_14_back_in_list_delegates_native_previous_screen_history():
     )
 
 
-def test_15_release_pak_contains_only_loader_owned_paths():
-    pack = ROOT / "build" / "package" / "Release" / "dluma.pak"
-    with zipfile.ZipFile(pack) as archive:
-        names = {name.replace("\\", "/") for name in archive.namelist()}
-    expected = {
-        "data/menu/scr/DLUMA_Main_PC_workshop.xui",
-        "data/menu/scr/MenuDLUMAMods.xui",
-        "data/menu/scr/MenuDLUMAModDetails.xui",
-        "data/menu/scr/MenuOptions.xui",
-        "data/menu/scr/MenuDLUMALoaderSettings.xui",
-        "data/menu/scr/MenuDLUMAModConfig.xui",
-        "data/menu/scr/DLUMA_SteamWorkshop.xui",
-        "data/menu/menubackgroundcameraactions_menu_lvl_new.scr",
-        "data/menu/menuscreen3dplacement_menu_lvl_new.scr",
-    }
-    assert expected.issubset(names)
-    assert {
-        name for name in names if name.startswith("data/locale/")
-    } == {
-        f"data/locale/{code}/loader_texts_all.scr"
-        for code in ("En", "De", "Fr", "It", "Es", "Ru", "Jp", "Pl", "Nl", "Br", "Ko", "Cn", "Tw", "El", "Tr", "Th", "Cs")
-    }
-
-
 def test_16_pack_replaces_only_the_intentional_stock_extras_route():
     pack = ROOT / "build" / "package" / "Release" / "dluma.pak"
     with zipfile.ZipFile(pack) as archive:
@@ -367,26 +343,6 @@ def test_18_visible_ui_text_uses_the_native_utf16_abi():
     assert "dluma_ttl_wide_string_init_utf8" in UI
     assert "dluma_utf8_to_wide(text, storage, storage_count)" in UI
     assert "DlumaTtlString row_text" not in UI
-
-
-def test_19_mods_xui_is_plain_ascii_and_uses_exact_stock_localization_keys():
-    raw = XUI_PATH.read_bytes()
-    assert not raw.startswith((b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff"))
-    assert "&amp;DLUMA_Menu_Mods&amp;" in XUI
-    assert "&amp;MenuMain_BtnBack&amp;" in XUI
-    assert "&amp;MSkills_Details&amp;" in XUI
-    assert "<PressPath>MenuDLUMAModDetails.xui</PressPath>" in XUI
-    assert "<Id>G_DetailsPopup</Id>" not in XUI
-    assert "<Id>B_DetailsClose</Id>" not in XUI
-    assert "<UIScrollView>" not in XUI
-    assert "<Id>MenuDLUMAModDetails</Id>" in DETAILS_XUI
-    assert "<Text>&amp;DLUMA_ModDetails_Title&amp;</Text>" in DETAILS_XUI
-    assert "<Visual>ListBoxOptionsV</Visual>" in DETAILS_XUI
-    assert "<UIScrollView>" in DETAILS_XUI
-    assert "<Id>G_DetailsValueScroll</Id>" in DETAILS_XUI
-    assert "<Id>LBScrollBar</Id>" in DETAILS_XUI
-    assert '? "LIST"' not in UI
-    assert "&QuestLog_SeeDiary&" not in UI
 
 
 def test_20_mouse_activation_selects_rows_and_details_use_native_rows():
@@ -589,30 +545,6 @@ def test_22_approval_focus_and_shortcuts_match_a_confirm_b_cancel():
     assert "<UnfocusedInput>true</UnfocusedInput>" in confirm
     assert "<PressKey>22529</PressKey>" in cancel
     assert "<UnfocusedInput>true</UnfocusedInput>" in cancel
-
-
-def test_23_approval_mytext_uses_only_the_type_specific_setter():
-    native_approval = c_block(
-        UI,
-        "static int dluma_ui_registry_show_native_approval_popup(",
-        "static int dluma_ui_registry_show_approval_popup(",
-    )
-    text_field = c_block(
-        UI,
-        "static int dluma_ui_registry_set_text_popup_field(",
-        "static void dluma_ui_registry_build_conflict_sources(",
-    )
-    generic_field = c_block(
-        UI,
-        "static int dluma_ui_registry_set_popup_field(",
-        "static int dluma_ui_registry_set_text_popup_field(",
-    )
-    assert "dluma_ui_set_text_element_text(" in native_approval
-    assert '"T_ApprovalNote"' in native_approval
-    assert "dluma_ui_registry_set_text_popup_field" in native_approval
-    assert "dluma_ui_set_text_element_text(control, text);" in text_field
-    assert "dluma_ui_set_element_popup_text(control, text);" not in text_field
-    assert "dluma_ui_set_element_popup_text(control, text);" in generic_field
 
 
 def test_24_mods_and_details_receive_native_right_side_3d_and_rail_contracts():

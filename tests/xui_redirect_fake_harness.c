@@ -22,7 +22,7 @@ static int g_passed;
 int main(void)
 {
     static const char stock[] = "MenuSteamWorkshop.xui";
-    static const char alias[] = "DLUMA_SteamWorkshop.xui";
+    static const char alias[] = "DLM_SteamWorkshop.xui";
     unsigned char bytes[sizeof(stock)];
 
     CHECK(dluma_xui_redirect_identity_matches(

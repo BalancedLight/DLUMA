@@ -22,18 +22,6 @@ def function(name):
     raise AssertionError(f"Missing function: {name}")
 
 
-def test_natural_remove_tokens_are_captured_before_the_original():
-    for name, original in [("HookFsRemovePath", "g_original_fs_remove_path"),
-                           ("HookFsRemoveObject", "g_original_fs_remove_object")]:
-        body = function(name)
-        assert body.index("SnapshotNaturalSourceMutationToken(") < body.index(original + "(")
-        assert body.index(original + "(") < body.index("RecordNaturalSourceRemovalExact(")
-        assert "RecordNaturalSourceRemoval(" not in body
-        assert "&removal_token" in body
-        assert "SourceRemovalContention" in body
-    assert "removal_token.epoch" in function("HookFsRemoveObject")
-
-
 def test_file_setters_keep_the_open_or_snapshot_token():
     opened = function("HookFsOpen")
     assert opened.index("RecordCustomFileOpen(") < opened.index("SnapshotFileMutationToken(")

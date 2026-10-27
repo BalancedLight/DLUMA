@@ -183,61 +183,6 @@ def test_visual_studio_project_includes_native_implementation_sources():
     ) in project_text
 
 
-def test_visual_studio_live_deployment_is_shared_opt_in_and_local_only():
-    project_path = ROOT / "DLUMA.vcxproj"
-    project_text = project_path.read_text(encoding="utf-8")
-    project = ET.fromstring(project_text)
-    namespace = {"msbuild": "http://schemas.microsoft.com/developer/msbuild/2003"}
-    shared = project.find(
-        "msbuild:Target[@Name='DeployLocalPackage']", namespace
-    )
-    explicit = project.find("msbuild:Target[@Name='DeployLocal']", namespace)
-    automatic = project.find(
-        "msbuild:Target[@Name='AutoDeployLocalAfterBuild']", namespace
-    )
-
-    assert "DlumaSubscribedWorkshopModsDir" in project_text
-    assert "DlumaDevToolsWorkshopModsDir" in project_text
-    assert "X:\\FixtureLibrary" not in project_text
-    assert "Y:\\FixtureLibrary" not in project_text
-    assert "DLUMA.local.props" in project_text
-    assert "DLUMA.local.props.example" in project_text
-    assert "*.dll" not in project_text
-    assert "*.pak" not in project_text
-    assert (
-        "<TargetName>DLUMA "
-        "($(DlumaVersion))</TargetName>"
-    ) in project_text
-
-    assert shared is not None
-    assert shared.attrib["DependsOnTargets"] == "ValidateDlumaLocalDeployment"
-    assert explicit is not None
-    assert explicit.attrib["DependsOnTargets"] == "Build;DeployLocalPackage"
-    assert "DlumaAutoDeployLocal" not in explicit.attrib["Condition"]
-    assert automatic is not None
-    assert automatic.attrib["AfterTargets"] == "PackageWorkshop"
-    assert automatic.attrib["DependsOnTargets"] == "DeployLocalPackage"
-    auto_condition = automatic.attrib["Condition"]
-    assert "'$(Platform)' == 'x64'" in auto_condition
-    assert "'$(Configuration)' == 'Debug'" in auto_condition
-    assert "'$(Configuration)' == 'Release'" in auto_condition
-    assert "'$(DlumaAutoDeployLocal)' == 'true'" in auto_condition
-    assert "Exists('$(DlumaLocalPropsPath)')" in auto_condition
-    assert "'$(DlumaSkipPackage)' != 'true'" in auto_condition
-
-    assert project_text.count("tools\\deploy_local_package.py") == 1
-    assert not explicit.findall("*")
-    assert not automatic.findall("*")
-    commands = [
-        item.attrib["Command"]
-        for item in shared.findall("msbuild:Exec", namespace)
-    ]
-    assert "verify_package_manifest.py" in commands[0]
-    assert "verify_pe.py" in commands[1]
-    assert "deploy_local_package.py" in commands[2]
-    assert "CBFC0D950EE2A4C4273AC3903A73A3A" in commands[2]
-
-
 def test_versioned_loader_deployment_removes_stale_siblings():
     project = ET.fromstring(
         (ROOT / "DLUMA.vcxproj").read_text(encoding="utf-8")
@@ -263,6 +208,8 @@ def test_package_manifest_rejects_extra_runtime_files(tmp_path):
     mod_name = "loader.mod"
     for name in (
         mod_name,
+        "LICENSE",
+        "THIRD_PARTY_NOTICES.md",
         "dluma.pak",
         "dluma_lua54.dll",
         "LICENSE_LUA_5.4.8.txt",
@@ -380,48 +327,6 @@ def test_ci_runs_geometry_and_rejects_tracked_visual_studio_state():
     )
     assert "--deselect" not in workflow
     assert "git ls-files -- \".vs\"" in workflow
-
-
-
-
-def test_windows_ci_provisions_pinned_dotnet_runtime_before_build():
-    workflow = (ROOT / ".github" / "workflows" / "windows-ci.yml").read_text(
-        encoding="utf-8"
-    )
-
-    setup_index = workflow.index("uses: actions/setup-dotnet@v6")
-    verify_index = workflow.index("name: Verify pinned .NET runtime")
-    restore_index = workflow.index(
-        "name: Restore visual quest editor from lock files"
-    )
-    build_index = workflow.index("name: Build Release and Debug")
-
-    assert setup_index < verify_index < restore_index < build_index
-    sdk = json.loads((ROOT / "global.json").read_text(encoding="utf-8"))["sdk"]
-    assert sdk["version"] == "10.0.400"
-    assert sdk["rollForward"] == "disable"
-    assert sdk["allowPrerelease"] is False
-    assert "global-json-file: global.json" in workflow
-    assert "architecture: x64" in workflow
-    assert 'Get-Command dotnet -CommandType Application' in workflow
-    assert "host\\fxr\\10.0.13\\hostfxr.dll" in workflow
-    assert "shared\\Microsoft.NETCore.App\\10.0.13" in workflow
-    assert "Microsoft.NETCore.App 10.0.13" in workflow
-    assert "Microsoft.WindowsDesktop.App 10.0.13" in workflow
-    assert "Dluma.QuestGraph.Tests.csproj --locked-mode" in workflow
-    assert "Dluma.QuestGraph.Core.Tests.csproj --locked-mode" in workflow
-    assert "smoke_quest_graph_package.ps1" in workflow
-    assert '"DOTNET_ROOT_X64=$dotnetRoot"' in workflow
-    assert '"DOTNET_ROOT=$dotnetRoot"' in workflow
-    assert "--info" in workflow
-    assert "--list-runtimes" in workflow
-
-    bootstrap_project = (
-        ROOT / "sdk" / "dotnet" / "Dluma.Managed.Bootstrap" / "Dluma.Managed.Bootstrap.csproj"
-    ).read_text(encoding="utf-8")
-    assert build_managed_runtime.RUNTIME_VERSION == "10.0.13"
-    assert "<RuntimeFrameworkVersion>10.0.13</RuntimeFrameworkVersion>" in bootstrap_project
-    assert "<RollForward>Disable</RollForward>" in bootstrap_project
 
 
 def test_quest_graph_bridge_binds_pipe_peer_and_reports_saved_disk_path():

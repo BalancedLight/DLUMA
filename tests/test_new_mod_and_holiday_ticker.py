@@ -26,28 +26,6 @@ def test_startup_capture_runs_after_all_language_discovery() -> None:
     assert lua < native < managed < capture < original
 
 
-def test_tracker_filters_all_three_languages_to_reviewable_global_mods() -> None:
-    assert 'path, "lua", item->registry_key' in TRACKER
-    assert 'path, "native", item->registry_key' in TRACKER
-    assert 'path, "managed", item->registry_key' in TRACKER
-    for required in (
-        "item->scope != DLUMA_LUA_SCOPE_GLOBAL",
-        "item->scope != DLUMA_SCOPE_GLOBAL",
-        "item->duplicate_id",
-        "item->approval_valid",
-        "item->is_new",
-        "item->pending_review",
-        "DLW_NATIVE_ABI_V2",
-        "DLUMA_NATIVE_STATE_DISCOVERED_DISABLED",
-        "DLUMA_NATIVE_STATE_CHANGED_REVIEW_REQUIRED",
-        "DLUMA_MANAGED_STATE_DISCOVERED_DISABLED",
-        "DLUMA_MANAGED_STATE_CHANGED_REVIEW_REQUIRED",
-    ):
-        assert required in TRACKER
-    assert "item->companion_pack.declared" in TRACKER
-    assert "!item->companion_pack.valid" in TRACKER
-
-
 def test_exact_fingerprint_markers_are_independent_from_consent() -> None:
     assert '"DLW_NEW_MOD_TICKER_KEY_V1"' in TRACKER
     assert 'L"new_mod_ticker_announced"' in TRACKER

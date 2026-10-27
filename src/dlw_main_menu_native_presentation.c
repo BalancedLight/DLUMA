@@ -356,12 +356,6 @@ static int dluma_main_menu_native_publish_identity(void *menu_main)
             &placeholder, 1U, text) &&
         dluma_main_menu_native_ttl_wide_from_utf8(text, wide, &value))
     {
-        if (!g_dluma.config.developer_mode)
-        {
-            wide[0] = 0;
-            value.size = 0;
-            value.capacity = 0;
-        }
         state->set_text_explicit(control, &value);
         commit_published = 1;
         if (!state->commit_published_logged)

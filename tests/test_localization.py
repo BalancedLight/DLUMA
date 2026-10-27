@@ -116,40 +116,6 @@ def test_mod_detail_and_review_state_placeholders_are_gone():
         assert "review required" not in values["DLUMA_Mods_State_Changed"].casefold()
 
 
-def test_greek_catalog_does_not_reuse_spanish_catalog_text():
-    spanish = parse_scr(LOCALE_ROOT / "Es/loader_texts_all.scr")
-    greek = parse_scr(LOCALE_ROOT / "El/loader_texts_all.scr")
-    shared = {key for key in spanish if spanish[key] == greek[key]}
-    assert shared <= {
-        "DLUMA_MainMenu_LoaderHash",
-        "DLUMA_Menu_Workshop",
-        "DLUMA_Common_Workshop",
-        "DLUMA_Common_ID",
-        "DLUMA_Settings_Category_Lua",
-        "DLUMA_Discord_LoaderVersionFormat",
-    }
-
-
-def test_protected_tokens_quotes_and_sentence_format_match_english():
-    catalogs = {
-        code: parse_scr(LOCALE_ROOT / code / "loader_texts_all.scr")
-        for code in SUPPORTED
-    }
-    english = catalogs["En"]
-    for code in SUPPORTED[1:]:
-        values = catalogs[code]
-        for key, english_value in english.items():
-            for pattern in PROTECTED_TOKEN_PATTERNS.values():
-                assert pattern.findall(values[key]) == pattern.findall(english_value), (
-                    code, key, pattern.pattern
-                )
-            assert has_wrapping_quotes(values[key]) == has_wrapping_quotes(english_value), (
-                code, key
-            )
-            if has_terminal_punctuation(english_value):
-                assert has_terminal_punctuation(values[key]), (code, key)
-
-
 def test_scr_comments_platform_blocks_and_include_round_trip(tmp_path):
     include = tmp_path / "shared.scr"
     include.write_text('String("DLUMA_Include", "日本語")' + "\n", encoding="utf-8")

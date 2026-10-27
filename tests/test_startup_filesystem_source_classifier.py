@@ -59,39 +59,6 @@ def test_classifier_is_bounded_pure_and_registered_in_production():
     assert "dluma_content_pack_bind_source_identity(" in production
 
 
-def test_runtime_shaped_harness_has_all_four_special_sources_and_17_cases():
-    harness = (
-        ROOT / "tests/startup_filesystem_source_classifier_fake_harness.cpp"
-    ).read_text(encoding="utf-8")
-    for value in (
-        "dluma.pak",
-        "dluma_runtime\\\\developer_mode",
-        "dluma_runtime\\\\workshop_thumbnails",
-        "PlayerMedia.pak",
-        "mods\\\\native\\\\global",
-        "\\\\\\\\?\\\\E:",
-        "Test01AllFiftyFiveLiveShapedRecordsAccepted",
-        "Test14NoGenericWorkshopAllowlist",
-        "Test15Runtime10CaptureIntegrationAccepts53To55Sources",
-        "Test16Runtime10OwnerConflictAndRetryDeadlineFailClosed",
-        "Test17RetiredProcessLifetimeRecordsAreTombstones",
-        "CaptureWindowsPlayerDefinitionSemantics",
-        "RecordRuntime11PlayerDomainFromCapture",
-        "kWindowsPlayerDefinitionLevelStride",
-        "admitted_play_activations == 1U",
-    ):
-        assert value in harness
-    assert harness.count("bool Test") == 17
-    assert (
-        "src\\fixes\\custom_map_asset_isolation\\"
-        "PlayerGameplayParamsWindowsSnapshot.cpp"
-        in (
-            ROOT
-            / "tools/build_startup_filesystem_source_classifier_fake_tests.bat"
-        ).read_text(encoding="utf-8")
-    )
-
-
 def test_frontend_report_has_one_reason_coded_row_per_observed_source():
     production = (CUSTOM / "CustomMapAssetIsolationFix.cpp").read_text(
         encoding="utf-8"

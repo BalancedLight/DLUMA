@@ -54,3 +54,7 @@ The complete package is written to `build/package/Release/`. Build and runtime d
 | `tools/` | Build, package, and validation tools |
 
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change. Project source is available under the [MIT license](LICENSE); bundled dependencies retain their own [licenses and notices](THIRD_PARTY_NOTICES.md).
+
+## AI assistance
+
+AI tools have been used to help develop and maintain DLUMA, including code, documentation, and testing.

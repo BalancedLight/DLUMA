@@ -257,7 +257,7 @@ def test_animation_refresh_migration_rejects_ambiguous_ini(content: bytes):
 def test_animation_refresh_migration_rejects_ambiguous_ini_file_casing():
     with pytest.raises(deployment.DeploymentError, match="file casing"):
         deployment._expected_ini_after_animation_refresh(
-            {"dluma.ini": b"", "DL_UNIVERSAL_LOADER.INI": b""}
+            {"dluma.ini": b"", "DLUMA.INI": b""}
         )
 
 

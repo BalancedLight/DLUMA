@@ -178,7 +178,7 @@ static int test_manifest_acceptance(void)
     CHECK(strcmp(manifest.overrides[0].source_path,
                  "data/menu/dluma/dluma_menumain.xui") == 0);
     CHECK(strcmp(manifest.overrides[0].destination,
-                 "DLUMA_Main_PC_workshop.xui") == 0);
+                 "DLM_Main_PC_workshop.xui") == 0);
     CHECK(parse_manifest(legacy_audio, &manifest, diagnostic));
     CHECK(manifest.music_override_count == 1U);
     CHECK(manifest.music_overrides[0].target ==
@@ -315,7 +315,7 @@ static int test_manifest_rejections(void)
         "{\"name\":\"main\",\"overrides\":"
         "\"MenuMain_PC_workshop_with_B_Mods\"},"
         "{\"name\":\"alias\",\"overrides\":"
-        "\"dluma_main_pc_workshop\"}]}";
+        "\"dlm_main_pc_workshop\"}]}";
     static const char case_collision[] =
         "{\"meta\":{\"id\":\"a.casecollision\",\"author\":\"A\"},"
         "\"general\":{\"name\":\"N\",\"description\":\"D\","
@@ -678,10 +678,10 @@ static int test_xui_override_contracts(void)
     CHECK(dluma_custom_main_menu_resolve_override_destination(
         "MenuMain_PC_workshop_with_B_Mods", destination,
         sizeof(destination)));
-    CHECK(strcmp(destination, "DLUMA_Main_PC_workshop.xui") == 0);
+    CHECK(strcmp(destination, "DLM_Main_PC_workshop.xui") == 0);
     CHECK(dluma_custom_main_menu_resolve_override_destination(
         "MenuSteamWorkshop", destination, sizeof(destination)));
-    CHECK(strcmp(destination, "DLUMA_SteamWorkshop.xui") == 0);
+    CHECK(strcmp(destination, "DLM_SteamWorkshop.xui") == 0);
     CHECK(dluma_custom_main_menu_resolve_override_destination(
         "MenuOptions", destination, sizeof(destination)));
     CHECK(strcmp(destination, "MenuOptions.xui") == 0);

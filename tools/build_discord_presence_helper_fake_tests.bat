@@ -12,8 +12,8 @@ mkdir "%DLW_DISCORD_HELPER_FAKE%" || exit /b 1
 
 cl.exe /nologo /c /TP /std:c++20 /EHsc /MT /O2 /W4 /WX ^
   /I"src" ^
-  /DDLW_DISCORD_PRESENCE_HELPER_EXPORTS ^
-  /DDLW_DISCORD_RPC_TEST_PIPE ^
+  /DDLUMA_DISCORD_PRESENCE_HELPER_EXPORTS ^
+  /DDLUMA_DISCORD_RPC_TEST_PIPE ^
   /Fo"%DLW_DISCORD_HELPER_FAKE%\dlw_discord_presence_helper.obj" ^
   /Fd"%DLW_DISCORD_HELPER_FAKE%\dlw_discord_presence_helper.pdb" ^
   src\dlw_discord_presence_helper.cpp || exit /b 1

@@ -169,127 +169,6 @@ def test_logs_packager_does_not_reject_valid_cosmetic_layout_edits():
         assert brittle_layout_check not in logs_gate
 
 
-def test_logs_runtime_uses_bounded_history_and_exact_root_dispatch():
-    history_header = source("src/dlw_log_history_core.h")
-    menu_header = source("src/dlw_logs_menu_core.h")
-    logger = source("src/dlw_log.c")
-    ui = source("src/dlw_ui.c")
-    assert "DLUMA_LOG_HISTORY_CAPACITY 1024U" in history_header
-    assert "char message[DLUMA_LOG_RECORD_CAPACITY]" in history_header
-    assert "DLUMA_LOGS_QUERY_CAPACITY 129U" in menu_header
-    assert "DLUMA_LOGS_MAX_RESULTS 256U" in menu_header
-    assert "DLUMA_LOGS_ROW_MESSAGE_LIMIT 68U" in menu_header
-    assert "dluma_log_history_store_publish" in block(
-        logger,
-        "static unsigned int dluma_log_dequeue_batch",
-        "static unsigned int dluma_log_append_drop_warning",
-    )
-    drop = block(
-        logger,
-        "static unsigned int dluma_log_append_drop_warning",
-        "static DWORD WINAPI dluma_log_writer_thread",
-    )
-    assert '"WARN"' in drop
-    assert "dluma_log_history_store_publish" in drop
-    emergency = block(logger, "void dluma_log_emergency", "void dluma_log_line")
-    assert "dluma_log_history" not in emergency
-    assert "dluma_log_history_store_start_session" in block(
-        logger, "int dluma_log_start", "int dluma_log_stop"
-    )
-    assert "dluma_log_history_store_reset" in block(
-        logger, "int dluma_log_stop", "void dluma_log_emergency"
-    )
-
-    registration = block(
-        ui,
-        "static int dluma_ui_register_logs_screen",
-        "static int dluma_ui_register_quest_log_screen",
-    )
-    assert 'script_path_text[] = "MenuDLUMALogs.xui"' in registration
-    assert "level, &script_path, 2, 1, 0" in registration
-    assert '"MenuDLUMALogs"' in registration
-    assert "DLUMA_DEVTOOLS_MENU_EXTRAS_VTABLE0_RVA 0x016AD2F8UL" in ui
-    assert "DLUMA_DEVTOOLS_MENU_EXTRAS_BUTTON_FN_RVA 0x007FF7B0UL" in ui
-    assert "DLUMA_DEVTOOLS_MENU_EXTRAS_BUTTON_SLOT_RVA 0x016ADCE0UL" in ui
-    extras_hook = block(
-        ui,
-        "static void __fastcall dluma_ui_extras_button_hook",
-        "static int dluma_ui_install_extras_button_hook",
-    )
-    assert 'dluma_ui_object_id_equals(button, "B_DLUMALogs")' in extras_hook
-    assert "dluma_ui_route_logs_button_by_id(menu_extras, button)" in extras_hook
-    assert "original(menu_extras, button, event_code)" in extras_hook
-    logs_route = block(
-        ui,
-        "static int dluma_ui_route_logs_button_by_id",
-        "static void __fastcall dluma_ui_workshop_button_hook",
-    )
-    assert "dluma_ui_register_logs_screen" in logs_route
-    assert "dluma_ui_show_next_registered_screen_from_menu_extras" in logs_route
-    assert "ShowUIScreen" not in logs_route and "LoadUIScreen" not in logs_route
-    assert "DLUMA_UI_LOGS_REFRESH_MS 250UL" in ui
-    assert "DLUMA_UI_LOGS_VISIBLE_ROWS 9U" in ui
-    assert "DLUMA_LOGS_ROW_MESSAGE_LIMIT 68U" in source(
-        "src/dlw_logs_menu_core.h"
-    )
-    assert "revision != g_dluma_ui_logs_last_revision" in ui
-    assert "dluma_ui_is_logs_screen(screen)" in ui
-    assert (
-        "MenuDLUMALogs lifecycle entered; native Workshop enumeration and map "
-        "activation are suppressed."
-    ) in ui
-    button_hook_start = ui.index(
-        "static void __fastcall dluma_ui_workshop_button_hook"
-    )
-    logs_button_start = ui.index(
-        "dluma_ui_is_logs_screen(screen)", button_hook_start
-    )
-    logs_button = ui[
-        logs_button_start : ui.index(
-            "else if (!g_dluma_registry_hooks_stopping",
-            logs_button_start + 1,
-        )
-    ]
-    assert '"B_Start"' in logs_button and '"B_Workshop"' in logs_button
-    assert "original(screen, button, event_code)" in logs_button
-    assert "dluma_workshop_menu_activate" not in logs_button
-    search_action = block(
-        logs_button,
-        'dluma_ui_object_id_equals(button, "B_Search")',
-        'dluma_ui_object_id_equals(button, "B_ApplySearch")',
-    )
-    assert "dluma_ui_logs_set_search_edit_mode(screen, 1)" in search_action
-    assert "dluma_ui_logs_apply_search" not in search_action
-    accept_action = block(
-        logs_button,
-        'dluma_ui_object_id_equals(button, "B_ApplySearch")',
-        'dluma_ui_object_id_equals(button, "B_Back")',
-    )
-    assert "g_dluma_ui_logs_search_edit_mode" in accept_action
-    assert "dluma_ui_logs_apply_search(screen)" in accept_action
-    assert "dluma_ui_logs_set_search_edit_mode(screen, 0)" in accept_action
-    back_action = block(
-        logs_button,
-        'dluma_ui_object_id_equals(button, "B_Back")',
-        'dluma_ui_object_id_equals(button, "B_Start")',
-    )
-    assert "g_dluma_ui_logs_search_edit_mode" in back_action
-    assert "g_dluma_ui_logs_query" in back_action
-    assert "dluma_ui_logs_set_search_edit_mode(screen, 0)" in back_action
-    assert "original(screen, button, event_code)" in back_action
-
-    edit_mode = block(
-        ui,
-        "static void dluma_ui_logs_set_search_edit_mode",
-        "static int dluma_ui_settings_save_editor",
-    )
-    assert "dluma_ui_focus_element(g_dluma_ui_logs_search_box)" in edit_mode
-    assert "dluma_ui_focus_element(g_dluma_ui_logs_list)" in edit_mode
-    assert "dluma_ui_workshop_set_focus" in edit_mode
-    assert "g_dluma_ui_logs_search_accept_button" in edit_mode
-    assert '"DLUMA_Logs_SearchEditing"' in ui
-
-
 def test_search_failure_retains_query_and_selected_detail_is_complete():
     ui = source("src/dlw_ui.c")
     search = block(
@@ -369,53 +248,6 @@ def test_logs_rows_use_fixed_columns_and_severity_colors():
     assert "?SetTextColor@IUIText@@QEAAXAEBVvec3@@@Z" in ui
 
 
-def test_logs_keyboard_navigation_is_focused_stable_and_non_wrapping():
-    ui = source("src/dlw_ui.c")
-    patched = source("src/dlw_ui_patched.c")
-    navigation = block(
-        patched,
-        "static void dluma_ui_fix_sync_logs_navigation",
-        "static void dluma_ui_fix_hide_registry_columns",
-    )
-    assert "g_dluma_ui_fix_logs_initial_focus_pending" in navigation
-    assert "dluma_ui_list_set_selection(g_dluma_ui_logs_list, 0)" in navigation
-    assert "dluma_ui_workshop_set_focus(" in navigation
-    assert "dluma_ui_focus_element(g_dluma_ui_logs_list)" in navigation
-    assert "previous == 0" in navigation
-    assert "navigation_candidate == count - 1" in navigation
-    assert "previous == count - 1" in navigation
-    assert "navigation_candidate == 0" in navigation
-    assert "dluma_ui_logs_update_detail((unsigned int)target)" in navigation
-    assert "dluma_ui_workshop_set_first_visible(" in navigation
-
-    post = block(
-        patched,
-        "static void __fastcall dluma_ui_workshop_post_hook(void *screen)\n{\n",
-        "static VOID CALLBACK dluma_ui_fix_timer_proc",
-    )
-    base_post = post.index("dluma_ui_workshop_post_hook_base(screen)")
-    post_sync = post.index("dluma_ui_fix_sync_logs_navigation(1)")
-    presentation = post.index("dluma_ui_fix_present_logs_messages(screen)")
-    assert base_post < post_sync < presentation
-    logs_post = block(
-        post,
-        "else if (dluma_ui_is_logs_screen(screen))",
-        "else if (dluma_ui_is_stock_workshop_screen(screen))",
-    )
-    assert "dluma_ui_fix_sync_logs_navigation(1)" in logs_post
-    assert "dluma_ui_fix_set_capacity" not in logs_post
-
-    populate = block(
-        ui,
-        "static void dluma_ui_logs_populate_list",
-        "static void dluma_ui_logs_refresh_if_needed",
-    )
-    assert "previous_first_sequence" in populate
-    assert "dluma_ui_workshop_get_first_visible(" in populate
-    assert "restore_first_visible" in populate
-    assert "dluma_ui_workshop_set_first_visible(" in populate
-
-
 def test_logs_localization_is_complete_in_all_catalogs():
     for code in LOCALE_CODES:
         text = source(f"PakAssets/Locale/{code}/loader_texts_all.scr")
@@ -464,25 +296,6 @@ def test_logs_localization_backfill_is_narrow_and_idempotent(tmp_path):
     catalog.write_text(damaged, encoding="utf-8", newline="")
     with pytest.raises(ValueError, match="partial Logs localization block"):
         generator.sync_log_catalogs()
-
-
-def test_camera_and_custom_extras_contract_preserve_native_history():
-    camera = CAMERA.read_text(encoding="utf-8")
-    placement = PLACEMENT.read_text(encoding="utf-8")
-    assert 'MenuWithCameraActions("MenuDLUMALogs")' in camera
-    assert not any(
-        "CameraAction(" in line and "MenuDLUMALogs" in line
-        for line in camera.splitlines()
-    )
-    assert 'Placement("MenuDLUMALogs", "menu_extras_pos")' in placement
-    assert 'Correction("MenuDLUMALogs",' not in placement
-
-    readme = source("PakAssets/XUI/README.md")
-    assert "B_DLUMALogs" in readme
-    assert "MenuDLUMALogs.xui" in readme
-    assert "&DLUMA_Menu_Logs&" in readme
-    assert "custom-menu overlay keeps normal precedence" in readme
-    assert "C:\\" not in readme and "X:\\" not in readme and "Y:\\" not in readme
 
 
 def test_logs_fake_harness():

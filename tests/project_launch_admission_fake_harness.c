@@ -15,7 +15,7 @@
     } while (0)
 
 static const char* const kRoot =
-    "X:\\steam\\workshop\\content\\239140\\3728869100";
+    "x:\\steam\\workshop\\content\\239140\\3728869100";
 
 static DWORD entry_rva(DlumaProjectLaunchOwner owner)
 {
@@ -736,7 +736,7 @@ static int test_project_root_canonical_contract_and_live_shape(void)
         "X:\\FixtureLibrary\\steamapps\\common\\Dying Light\\DevTools\\"
         "workshop\\DevToolsDefaultProject";
     static const char* const canonical_ledger =
-        "X:\\fixturelibrary\\steamapps\\common\\dying light\\devtools\\"
+        "x:\\fixturelibrary\\steamapps\\common\\dying light\\devtools\\"
         "workshop\\devtoolsdefaultproject";
     char ordinary[DLUMA_PROJECT_LAUNCH_ROOT_CAPACITY];
     char forward[DLUMA_PROJECT_LAUNCH_ROOT_CAPACITY];

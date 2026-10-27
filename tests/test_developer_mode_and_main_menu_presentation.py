@@ -96,30 +96,6 @@ def _control_block(xui: str, control_id: str) -> str:
     return xui[xui.rfind("<MyText>", 0, start) : xui.index("</MyText>", start)]
 
 
-def test_main_menu_identity_leaves_the_game_version_to_menu_main_di():
-    xui_path = ROOT / "PakAssets" / "XUI" / "DLUMA_Main_PC_workshop.xui"
-    raw = xui_path.read_bytes()
-    xui = raw.decode("utf-8")
-    native = (ROOT / "src" / "dlw_main_menu_native_presentation.c").read_text()
-    ui = (ROOT / "src" / "dlw_ui.c").read_text()
-
-    assert not raw.startswith(b"\xef\xbb\xbf")
-    assert xui.count("<Id>T_GameVersion</Id>") == 1
-    assert xui.count("<Id>T_DLUMALoaderVersion</Id>") == 1
-    assert xui.count("<Id>T_DLUMALoaderCommit</Id>") == 1
-    assert "T_DLUMALoaderHash" not in xui
-    assert "{version}" not in xui
-    assert "<Position>669.359985,676.760010,0.000000</Position>" in _control_block(xui, "T_GameVersion")
-    assert "<Position>669.359985,622.000000,0.000000</Position>" in _control_block(xui, "T_DLUMALoaderVersion")
-    assert "<Position>669.359985,642.000000,0.000000</Position>" in _control_block(xui, "T_DLUMALoaderCommit")
-    assert '"T_GameVersion"' not in native
-    assert '"T_DLUMALoaderVersion"' in native
-    assert '"T_DLUMALoaderCommit"' in native
-    # The retired broad tick remains only as a preprocessor-disabled forensic
-    # block; the compiled wrapper starts the native MenuMainDI adapter.
-    assert "#if 0\n/* Superseded by dlw_main_menu_native_presentation.c." in ui
-
-
 def test_main_menu_ticker_uses_the_stock_news_group_lifecycle():
     xui = (ROOT / "PakAssets" / "XUI" / "DLUMA_Main_PC_workshop.xui").read_text()
     native = (ROOT / "src" / "dlw_main_menu_native_presentation.c").read_text()

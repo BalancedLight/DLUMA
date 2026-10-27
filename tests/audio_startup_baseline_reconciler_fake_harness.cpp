@@ -295,7 +295,7 @@ bool TestCompleteObservationalReconciliation() noexcept
     CHECK(output.scripts[0].provider_identity.source == kDataSource);
     CHECK(output.scripts[0].provider_identity.source_record_index == 1U);
     CHECK(std::strcmp(output.scripts[0].provider,
-                      "X:\\game\\dw\\data") == 0);
+                      "x:\\game\\dw\\data") == 0);
     CHECK(std::strcmp(output.fmod_banks[0].name, "menu_main") == 0);
     CHECK(std::strcmp(output.fmod_banks[1].name, "ambient") == 0);
     CHECK(output.fmod_banks[0].dependency_order == 1U);

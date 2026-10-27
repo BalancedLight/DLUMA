@@ -14,7 +14,7 @@
     } while (0)
 
 static const char* const kRoot =
-    "X:\\devtools\\workshop\\devtoolsdefaultproject";
+    "x:\\devtools\\workshop\\devtoolsdefaultproject";
 
 static DlumaProjectLaunchIdentity identity(void)
 {
@@ -81,7 +81,7 @@ static DlumaProjectSourceBypassEvidence evidence(
         sizeof(value.requested_source_path), requested);
     strcpy_s(
         value.source_path, sizeof(value.source_path),
-        "X:\\devtools\\workshop\\devtoolsdefaultproject\\data");
+        "x:\\devtools\\workshop\\devtoolsdefaultproject\\data");
     strcpy_s(
         value.source_kind, sizeof(value.source_kind),
         "DataDirectory");

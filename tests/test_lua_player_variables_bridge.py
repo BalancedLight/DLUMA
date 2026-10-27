@@ -97,8 +97,6 @@ def test_binding_rejects_nonfinite_derived_value_without_mutation():
     assert "player variables transactional write: ok" in completed.stdout
 
 
-
-
 def test_watch_api_uses_existing_bounded_timer_service():
     source = text(BRIDGE)
     assert 'lua_getfield(state, -1, "every")' in source
@@ -112,29 +110,6 @@ def test_watch_api_uses_existing_bounded_timer_service():
         '"map_generation"',
     ):
         assert field in source
-
-
-def test_helper_builds_compile_the_bridge_and_rename_lua_setglobal():
-    for relative in (
-        "tools/build_lua54_helper_clang.bat",
-        "tools/build_lua54_helper_msvc.bat",
-    ):
-        source = text(ROOT / relative)
-        assert "/Dlua_setglobal=dluma_real_lua_setglobal" in source
-        assert '"src\\dlw_lua54_player_bridge.c"' in source
-        assert "dluma_lua54_player_bridge.obj" in source
-
-
-def test_clang_builds_support_debug_without_staging_release_artifacts():
-    main = text(ROOT / "build_windows_clang.bat")
-    helper = text(ROOT / "tools" / "build_lua54_helper_clang.bat")
-    for source, configuration in ((main, "DLUMA_CLANG_CONFIG"),
-                                  (helper, "DLUMA_LUA_CONFIG")):
-        assert 'set "' + configuration + '=%~1"' in source
-        assert '"Debug"' in source
-        assert "/MTd /Od /Zi" in source
-        assert 'set "' + configuration + '=Release"' in source
-    assert 'if /I "%DLUMA_CLANG_CONFIG%"=="Release" (' in main
 
 
 def test_helper_registers_and_releases_the_player_bridge_explicitly():

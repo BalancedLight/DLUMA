@@ -190,7 +190,7 @@ static int test_failure_and_fail_open_snapshot(void)
 static int test_fixed_milestone_order(void)
 {
     static const char *expected[DLUMA_PLAYER_STARTUP_MILESTONE_COUNT] = {
-        "Initializing Mod Workbench...",
+        "Initializing DLUMA...",
         "Discovering mods...",
         "Preparing content...",
         "Initializing game scripts...",

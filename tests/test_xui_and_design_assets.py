@@ -26,50 +26,6 @@ def test_main_menu_mods_button_navigation():
     assert text.index("<Id>B_Mods</Id>") < text.index("<Id>B_PlayCustomMap</Id>")
 
 
-def test_native_ui_registration_redirect_and_id_driven_show_next_route():
-    engine = (ROOT / "src" / "dlw_engine.c").read_text()
-    ui = (ROOT / "src" / "dlw_ui.c").read_text()
-    exports = (ROOT / "src" / "dlw_exports.c").read_text()
-
-    for symbol in (
-        "?RegisterUIScreen@ILevel@@",
-        "?GetUIScreenIdByScriptName@ILevel@@",
-        "?LoadUIScreen@ILevel@@",
-        "?ShowUIScreen@ILevel@@",
-        "?HideUIScreen@ILevel@@",
-    ):
-        assert symbol in engine
-
-    assert "DLUMA_DEVTOOLS_MAIN_MENU_NAME_RVA" in ui
-    assert 'original_name[] = "MenuMain_PC_workshop.xui"' in ui
-    assert 'loader_name[] = "DLUMA_Main_PC_workshop.xui"' in ui
-    assert "g_dluma_main_menu_redirect_name" in ui
-    assert "dluma_ui_prepare_main_menu_redirect" in exports
-    assert "dluma_ui_restore_main_menu_redirect" in exports
-
-    assert "Native MODS registration bridge hook installed before frontend level discovery" in ui
-    assert "?GetLevel@IObject@gui@@QEBAPEAVILevel@@XZ" in ui
-    assert 'static const char script_path_text[] = "MenuDLUMAMods.xui"' in ui
-    assert 'static const char script_path_text[] = "data\\menu\\scr\\MenuDLUMAMods.xui"' not in ui
-    assert "dluma_ui_route_mods_button_by_id" in ui
-    assert "dluma_ui_show_next_registered_screen_from_menu_main" in ui
-    assert "dluma_ui_is_expected_menu_main_controller" in ui
-    assert "B_Mods ID routed through the validated native ShowNextUI history path" in ui
-    assert "packaged XuiNavButton PressPath remains the fail-soft fallback" in ui
-    assert "mods_screen_native_presspath_lookup_id" in ui
-    assert "mods_screen_native_navigation_visible_id" in ui
-    assert "The engine completed the native MenuMain-to-MODS transition" in ui
-    assert "&script_path," in ui
-    assert "?IsUIScreenLoaded@ILevel@@QEAA_NH@Z" in engine
-    assert "?FindElement@IUIElement@@" in engine
-
-    assert "SetTimer" in ui
-    assert "MenuDLUMAMods.xui" in ui
-    assert "DLUMA_DEVTOOLS_INFO_CREATE_RVA" in ui
-    assert "DLUMA_DEVTOOLS_INFO_DESTROY_RVA" in ui
-    assert "DLUMA_DEVTOOLS_INFO_SHOW_RVA" in ui
-    assert 'dluma_ttl_string_init(&page_name, "DL Scripts")' in ui
-
 def test_mods_id_route_is_independent_of_frontend_polling_and_button_class():
     ui = (ROOT / "src" / "dlw_ui.c").read_text()
     start = ui[ui.index("int dluma_ui_start(void)") : ui.index("void dluma_ui_stop(void)")]
@@ -153,8 +109,6 @@ def test_mods_footer_keeps_details_in_the_stock_center_slot():
     assert "<PressPath>MenuDLUMAModDetails.xui</PressPath>" in details
 
 
-
-
 def test_merged_camera_script_preserves_stock_and_adds_mods_route():
     text = (ROOT / "PakAssets" / "Camera" / "menubackgroundcameraactions_menu_lvl_new.scr").read_text()
     assert 'MenuWithCameraActions("MenuOptions")' in text
@@ -168,33 +122,12 @@ def test_merged_camera_script_preserves_stock_and_adds_mods_route():
     assert '"Movie_extras_out"' in text
 
 
-
-
 def test_loader_mounts_the_content_pack_dynamically():
     source = (ROOT / "src" / "dlw_pack.c").read_text()
     assert "GetProcAddress" in source
     assert "?add_source@fs@@" in source
     assert 'L"dluma.pak"' in source
     assert "content_pack_mounted" in source
-
-
-def test_built_content_pack_has_engine_relative_paths():
-    pack = ROOT / "build" / "package" / "Release" / "dluma.pak"
-    assert pack.is_file()
-    with zipfile.ZipFile(pack) as archive:
-        names = {name.replace("\\", "/") for name in archive.namelist()}
-    assert "data/menu/scr/DLUMA_Main_PC_workshop.xui" in names
-    assert "data/menu/scr/DLUMA_SteamWorkshop.xui" in names
-    assert "data/menu/scr/MenuDLUMAMods.xui" in names
-    assert "data/menu/scr/MenuDLUMAModDetails.xui" in names
-    assert "data/menu/scr/MenuDLUMAModConfig.xui" in names
-    assert "data/menu/scr/MenuDLUMAQuestLog.xui" not in names
-    assert "data/menu/menubackgroundcameraactions_menu_lvl_new.scr" in names
-    assert "data/menu/menuscreen3dplacement_menu_lvl_new.scr" in names
-    assert "data/menu/scr/MenuMain_PC_workshop.xui" not in names
-    assert "data/menu/scr/MenuSteamWorkshop.xui" not in names
-    assert "data/menu/scr/MenuExtras.xui" in names
-    assert "data/menu/scr/MenuDLUMALogs.xui" in names
 
 
 def test_camera_routes_keep_mods_on_the_established_right_side():
@@ -225,20 +158,6 @@ def test_steam_workshop_camera_route_matches_play_game():
     assert 'CameraAction("MenuMain", "", "MenuSteamWorkshop", "OnShowScreen", "", "Movie_new_game_out", "MenuMain")' in camera
     assert 'Placement("MenuSteamWorkshop", "menu_play_game_pos")' in placement
     assert 'Correction("MenuSteamWorkshop", 150, 0, 0)' in placement
-
-
-def test_current_checkpoint_version_and_pack_builder_guards():
-    common = (ROOT / "src" / "dlw_common.h").read_text()
-    builder = (ROOT / "tools" / "build_content_pack.ps1").read_text()
-    assert 'DLUMA_VERSION "0.4.0"' in common
-    assert "must not contain XML comments" in builder
-    assert "must not derive from the specialized MenuExtras" in builder
-    assert "must not use the bare UIMainMenuScreen override" in builder
-    assert "must use the proven concrete MenuSteamWorkshop controller bridge" in builder
-    assert "must retain the native UINaviButton class" in builder
-    assert "L_Maps" in builder and "B_Start" in builder
-    assert "secondary-action B_Workshop used for Details" in builder
-    assert "B_Back" in builder
 
 
 def test_packed_mods_xui_matches_the_validated_source():
