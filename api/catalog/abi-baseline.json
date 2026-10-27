@@ -1,0 +1,89 @@
+{
+  "api_version": "1.0",
+  "services": {
+    "dluma.core.v1": [
+      "core.log",
+      "core.capability.query",
+      "core.clock.monotonic_ms",
+      "core.timer.after",
+      "core.timer.every",
+      "core.token.cancel"
+    ],
+    "dluma.world.v1": [
+      "world.find",
+      "world.position",
+      "world.forward_direction",
+      "world.local_enabled",
+      "world.set_enabled_many"
+    ],
+    "dluma.player.v1": [
+      "player.local",
+      "player.position",
+      "player.look_direction",
+      "player.body_direction",
+      "player.health",
+      "player.max_health",
+      "player.alive",
+      "player.variable_names",
+      "player.variable_get",
+      "player.variable_set",
+      "player.variable_reset",
+      "player.vehicle_state"
+    ],
+    "dluma.events.v1": [
+      "events.update.subscribe",
+      "events.sensor.is_inside",
+      "events.sensor.enter",
+      "events.sensor.leave",
+      "events.interaction.begin",
+      "events.enemy_killed"
+    ],
+    "dluma.ui.v1": [
+      "ui.subtitle.show",
+      "ui.subtitle.update",
+      "ui.quest_hud.snapshot",
+      "ui.quest_hud.override",
+      "ui.toast"
+    ],
+    "dluma.audio.v1": [
+      "audio.radio_dialog.play",
+      "audio.cue.play",
+      "audio.cue.stop",
+      "audio.bank.open",
+      "audio.cue.duration",
+      "audio.cue.state",
+      "audio.cue.seek",
+      "audio.cue.set_gain",
+      "audio.cue.set_filter",
+      "audio.music.acquire",
+      "audio.music.state",
+      "audio.music.set_filter",
+      "audio.music.release"
+    ],
+    "dluma.quests.v1": [
+      "quests.advance_to_phase",
+      "quests.start"
+    ],
+    "dluma.actions.v1": [
+      "actions.chain.run"
+    ],
+    "dluma.configuration.v1": [
+      "configuration.get",
+      "configuration.changed"
+    ],
+    "dluma.storage.v1": [
+      "storage.get",
+      "storage.set",
+      "storage.delete"
+    ],
+    "dluma.companion_content.v1": [
+      "companion_content.open",
+      "companion_content.entry.read"
+    ],
+    "dluma.quest_phases.v1": [
+      "quest_phases.provider.register",
+      "quest_phases.observer.register",
+      "quest_phases.unregister"
+    ]
+  }
+}

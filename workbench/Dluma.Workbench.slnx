@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="Dluma.QuestGraph.Core/Dluma.QuestGraph.Core.csproj" />
+  <Project Path="Dluma.QuestGraph/Dluma.QuestGraph.csproj" />
+  <Project Path="Dluma.QuestGraph.Core.Tests/Dluma.QuestGraph.Core.Tests.csproj" />
+  <Project Path="Dluma.QuestGraph.Tests/Dluma.QuestGraph.Tests.csproj" />
+  <Project Path="Dluma.Workbench.Core/Dluma.Workbench.Core.csproj" />
+  <Project Path="Dluma.Workbench/Dluma.Workbench.csproj" />
+  <Project Path="Dluma.Workbench.Tests/Dluma.Workbench.Tests.csproj" />
+</Solution>

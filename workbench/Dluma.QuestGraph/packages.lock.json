@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "Nodify": {
+        "type": "Direct",
+        "requested": "[7.3.0, )",
+        "resolved": "7.3.0",
+        "contentHash": "6ltaCQYqhNKk0Uf89IpV+5LV56zeEY5PfomQGwVdlfLZv9R/biiW0Vs6hlj4M8x80C8GXNhWYOMru4mCTXn+dA=="
+      },
+      "dluma.questgraph.core": {
+        "type": "Project"
+      }
+    }
+  }
+}

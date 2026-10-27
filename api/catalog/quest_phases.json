@@ -1,0 +1,109 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "quest_phases",
+  "service": {
+    "id": "dluma.quest_phases.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "quest_phases.provider.register",
+      "ordinal": 1,
+      "status": "gated",
+      "capability": "quests.phase_handlers",
+      "access": ["quest.phase.handle"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaQuestPhaseRegistrationRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "handler_id_bytes": 127,
+        "registrations_per_owner": 32
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Registers the primary callback for one handler declared by the calling mod manifest.",
+      "adapters": {
+        "core": "dluma_quest_phase_register_provider",
+        "lua": "mod:handle_quest_phase",
+        "csharp": "",
+        "c": "DlumaQuestPhasesV1.register_provider",
+        "cpp": "context.quest_phases().register_provider"
+      },
+      "tests": [
+        "quest_phase_provider_contract",
+        "quest_phase_provider_manifest_revalidation"
+      ]
+    },
+    {
+      "id": "quest_phases.observer.register",
+      "ordinal": 2,
+      "status": "gated",
+      "capability": "quests.phase_handlers",
+      "access": ["quest.phase.observe"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaQuestPhaseRegistrationRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "contract_id_bytes": 256,
+        "registrations_per_owner": 64
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Registers an observer callback for one provider and handler contract ID.",
+      "adapters": {
+        "core": "dluma_quest_phase_register_observer",
+        "lua": "mod:observe_quest_phase",
+        "csharp": "",
+        "c": "DlumaQuestPhasesV1.register_observer",
+        "cpp": "context.quest_phases().register_observer"
+      },
+      "tests": [
+        "quest_phase_observer_contract",
+        "quest_phase_callback_mutation"
+      ]
+    },
+    {
+      "id": "quest_phases.unregister",
+      "ordinal": 3,
+      "status": "gated",
+      "capability": "quests.phase_handlers",
+      "access": [],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaBoolResult",
+      "limits": {},
+      "errors": [
+        "invalid_argument",
+        "unsupported_capability",
+        "wrong_thread",
+        "owner_revoked"
+      ],
+      "documentation": "Idempotently unregisters one quest phase token owned by the calling mod.",
+      "adapters": {
+        "core": "dluma_quest_phase_unregister",
+        "lua": "mod:off",
+        "csharp": "",
+        "c": "DlumaQuestPhasesV1.unregister",
+        "cpp": "context.quest_phases().unregister"
+      },
+      "tests": [
+        "quest_phase_unregister_owner_contract"
+      ]
+    }
+  ]
+}

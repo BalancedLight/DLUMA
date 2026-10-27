@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Dluma.Managed.Sdk/Dluma.Managed.Sdk.csproj" />
+  <Project Path="Dluma.Managed.Bootstrap/Dluma.Managed.Bootstrap.csproj" />
+  <Project Path="Dluma.Managed.Analyzers/Dluma.Managed.Analyzers.csproj" />
+  <Project Path="Dluma.Managed.Sdk.ContractTests/Dluma.Managed.Sdk.ContractTests.csproj" />
+</Solution>

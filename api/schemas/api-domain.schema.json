@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api-domain.schema.json",
+  "title": "DLUMA API domain",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "domain",
+    "service",
+    "operations"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "domain": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "type": "string"
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "pattern": "^dluma\\.[a-z][a-z0-9_]*\\.v[1-9][0-9]*$",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      }
+    },
+    "operations": {
+      "items": {
+        "$ref": "#/$defs/operation"
+      },
+      "type": "array"
+    }
+  },
+  "$defs": {
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ordinal",
+        "status",
+        "capability",
+        "access",
+        "scopes",
+        "thread",
+        "request",
+        "result",
+        "limits",
+        "errors",
+        "documentation",
+        "adapters",
+        "tests"
+      ],
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+          "type": "string"
+        },
+        "ordinal": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "implemented",
+            "gated",
+            "planned",
+            "removed"
+          ]
+        },
+        "capability": {
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+          "type": "string"
+        },
+        "access": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "scopes": {
+          "items": {
+            "enum": [
+              "global",
+              "project",
+              "map"
+            ]
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "thread": {
+          "enum": [
+            "any",
+            "game"
+          ]
+        },
+        "request": {
+          "pattern": "^Dluma[A-Za-z0-9]+$",
+          "type": "string"
+        },
+        "result": {
+          "pattern": "^Dluma[A-Za-z0-9]+$",
+          "type": "string"
+        },
+        "limits": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "errors": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "documentation": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "adapters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "core",
+            "lua",
+            "csharp",
+            "c",
+            "cpp"
+          ],
+          "properties": {
+            "core": {
+              "type": "string"
+            },
+            "lua": {
+              "type": "string"
+            },
+            "csharp": {
+              "type": "string"
+            },
+            "c": {
+              "type": "string"
+            },
+            "cpp": {
+              "type": "string"
+            }
+          }
+        },
+        "tests": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      }
+    }
+  }
+}

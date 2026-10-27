@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api-capabilities.schema.json",
+  "title": "DLUMA API capability IDs",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "capabilities"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "capabilities": {
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "description"
+        ],
+        "properties": {
+          "id": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+            "type": "string"
+          },
+          "description": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  }
+}

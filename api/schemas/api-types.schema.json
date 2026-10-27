@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api-types.schema.json",
+  "title": "DLUMA API record types",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "types"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "types": {
+      "items": {
+        "$ref": "#/$defs/type"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "$defs": {
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "type": {
+          "pattern": "^(u32|u64|i32|f32|f64|bool|string_view|string_buffer|byte_buffer|object_handle|vec3|scalar|Dluma[A-Za-z0-9]+)$",
+          "type": "string"
+        },
+        "pointer": {
+          "type": "boolean"
+        },
+        "count_field": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "documentation": {
+          "type": "string"
+        }
+      }
+    },
+    "type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "fields",
+        "documentation"
+      ],
+      "properties": {
+        "name": {
+          "pattern": "^Dluma[A-Za-z0-9]+$",
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "type": "array"
+        },
+        "documentation": {
+          "minLength": 1,
+          "type": "string"
+        }
+      }
+    }
+  }
+}

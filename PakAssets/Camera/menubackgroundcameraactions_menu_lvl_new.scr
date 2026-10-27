@@ -1,0 +1,83 @@
+// Loader-owned merge of the stock menu_lvl_new camera-action table.
+// The original loose game asset is not modified. This complete copy preserves
+// every stock route while adding loader-owned screens to the mounted loader PAK.
+
+// Defines a single camera action.
+!CameraAction(s,            // Name of the menu screen where the action takes place.
+              s,            // Element that sent the action request (e.g. name of the button that was pressed)
+              s,            // Name of the last shown screen.
+              s,            // Request type: On3DBackgroundActivate, OnButtonPressed, OnBack, or OnShowScreen.
+              s,            // Request param. Additional stuff can be provided here.
+              s,            // Name of the movie that should be played in reaction.
+              s)            // Target menu name.
+!MenuWithCameraActions(s)
+
+MenuWithCameraActions("MenuMain")
+MenuWithCameraActions("MenuOptions")
+MenuWithCameraActions("MenuExtras")
+MenuWithCameraActions("MenuPlayGame")
+MenuWithCameraActions("MenuPlayGameOnInvite")
+MenuWithCameraActions("MenuCustomMap")
+MenuWithCameraActions("MenuSteamWorkshop")
+MenuWithCameraActions("MenuDLUMAMods")
+MenuWithCameraActions("MenuDLUMALogs")
+MenuWithCameraActions("MenuDLUMAModConfig")
+MenuWithCameraActions("MenuDLUMACustomMainMenu")
+MenuWithCameraActions("MenuDLUMAModDetails")
+
+// On scene activation.
+CameraAction("", "", "", "On3DBackgroundActivate", "", "Movie_exit_out", "MenuMain")
+
+// Main menu -> options. This action is triggered manually by MenuMainDI::PerformOptions().
+//CameraAction("MenuMain", "B_Options", "", "OnButtonPressed", "", "Movie_options_in", "MenuOptions")
+CameraAction("MenuMain", "Options", "", "OnShowScreen", "", "Movie_options_in", "MenuOptions")
+CameraAction("MenuOptions", "", "MenuMain", "OnShowScreen", "", "Movie_options_in", "MenuOptions")
+
+// Main menu -> extras.
+CameraAction("MenuMain", "B_Extras", "", "OnButtonPressed", "", "Movie_extras_in", "MenuExtras")
+CameraAction("MenuExtras", "", "MenuMain", "OnShowScreen", "", "Movie_extras_in", "MenuExtras")
+
+// Main menu -> custom map.
+CameraAction("MenuMain", "B_CustomGame", "", "OnButtonPressed", "", "Movie_new_game_in", "MenuCustomMap")
+CameraAction("MenuCustomMap", "", "MenuMain", "OnShowScreen", "", "Movie_new_game_in", "MenuCustomMap")
+CameraAction("MenuCustomMap", "", "", "OnBack", "", "Movie_new_game_out", "MenuMain")
+CameraAction("MenuMain", "", "MenuCustomMap", "OnShowScreen", "", "Movie_new_game_out", "MenuMain")
+
+// Steam Workshop custom-map list uses the same camera route as Play Game.
+CameraAction("MenuSteamWorkshop", "", "MenuMain", "OnShowScreen", "", "Movie_new_game_in", "MenuSteamWorkshop")
+CameraAction("MenuSteamWorkshop", "", "", "OnBack", "", "Movie_new_game_out", "MenuMain")
+CameraAction("MenuMain", "", "MenuSteamWorkshop", "OnShowScreen", "", "Movie_new_game_out", "MenuMain")
+
+// Main menu -> MODS. Preserve the established right-side Extras camera pose.
+CameraAction("MenuMain", "B_Mods", "", "OnButtonPressed", "", "Movie_extras_in", "MenuDLUMAMods")
+CameraAction("MenuDLUMAMods", "", "MenuMain", "OnShowScreen", "", "Movie_extras_in", "MenuDLUMAMods")
+CameraAction("MenuDLUMAMods", "", "", "OnBack", "", "Movie_extras_out", "MenuMain")
+CameraAction("MenuMain", "", "MenuDLUMAMods", "OnShowScreen", "", "Movie_extras_out", "MenuMain")
+
+// Logs is opened from Extras through its B_DLUMALogs ID route and intentionally
+// inherits the active Extras pose in both directions without a camera transition.
+
+// Config, Custom Main Menu, and Details share the MODS pose. Native PressPath/history transitions
+// swap these screens without moving the menu camera away from the right side.
+
+// Main menu -> campaign / Be The Zombie. These are triggered manually by MenuMainDI.
+//CameraAction("MenuMain", "B_PlayGame", "", "OnButtonPressed", "", "Movie_new_game_in", "MenuPlayGame")
+//CameraAction("MenuMain", "B_PlayAsZombie", "", "OnButtonPressed", "", "Movie_zombie_in", "MenuPlayGame")
+CameraAction("MenuMain", "PlayCampaign", "", "OnShowScreen", "", "Movie_new_game_in", "MenuPlayGame")
+CameraAction("MenuMain", "PlayAsZombie", "", "OnShowScreen", "", "Movie_zombie_in", "MenuPlayGame")
+
+// Temporary camera actions when switching to the invite screen.
+CameraAction("", "PlayGameOnInvite", "", "OnShowScreen", "", "Movie_invite_game_in", "MenuPlayGameOnInvite")
+CameraAction("", "PlayGameOnInvite", "", "OnShowScreenOnInvite", "", "Movie_invite_game_in", "MenuPlayGameOnInvite")
+CameraAction("", "PlayGameOnInvite", "MenuMain", "OnShowScreenOnInvite", "", "Movie_invite_game_in", "MenuPlayGameOnInvite")
+
+// Return routes.
+CameraAction("MenuOptions", "", "", "OnBack", "", "Movie_options_out", "MenuMain")
+CameraAction("MenuMain", "", "MenuOptions", "OnShowScreen", "", "Movie_options_out", "MenuMain")
+CameraAction("MenuExtras", "", "", "OnBack", "", "Movie_extras_out", "MenuMain")
+CameraAction("MenuMain", "", "MenuExtras", "OnShowScreen", "", "Movie_extras_out", "MenuMain")
+CameraAction("MenuPlayGame", "", "", "OnBack", "", "Movie_new_game_out", "MenuMain")
+CameraAction("MenuMain", "", "MenuPlayGame", "OnShowScreen", "", "Movie_new_game_out", "MenuMain")
+CameraAction("MenuPlayGame", "", "", "OnBack", "BTZ", "Movie_zombie_out", "MenuMain")
+CameraAction("MenuMain", "", "MenuPlayGame", "OnShowScreen", "BTZ", "Movie_zombie_out", "MenuMain")
+CameraAction("MenuPlayGameOnInvite", "", "", "OnBack", "", "Movie_invite_game_out", "MenuMain")

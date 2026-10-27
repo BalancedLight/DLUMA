@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api-catalog.schema.json",
+  "title": "DLUMA API catalog index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api",
+    "domains",
+    "status_values",
+    "thread_affinities",
+    "scopes",
+    "languages"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "short_name",
+        "version",
+        "abi_version",
+        "catalog_format"
+      ],
+      "properties": {
+        "name": {
+          "const": "DLUMA API"
+        },
+        "short_name": {
+          "const": "DLUMA API"
+        },
+        "version": {
+          "pattern": "^[0-9]+\\.[0-9]+$",
+          "type": "string"
+        },
+        "abi_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "catalog_format": {
+          "const": 1
+        }
+      }
+    },
+    "domains": {
+      "items": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "status_values": {
+      "const": [
+        "implemented",
+        "gated",
+        "planned",
+        "removed"
+      ]
+    },
+    "thread_affinities": {
+      "items": {
+        "enum": [
+          "any",
+          "game"
+        ]
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "scopes": {
+      "items": {
+        "enum": [
+          "global",
+          "project",
+          "map"
+        ]
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "languages": {
+      "items": {
+        "enum": [
+          "lua",
+          "csharp",
+          "c",
+          "cpp"
+        ]
+      },
+      "type": "array",
+      "uniqueItems": true
+    }
+  }
+}

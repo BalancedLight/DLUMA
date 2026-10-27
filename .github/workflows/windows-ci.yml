@@ -1,0 +1,300 @@
+name: Windows CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test VS2026 x64
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Reject tracked Visual Studio user state
+        shell: pwsh
+        run: |
+          $tracked = @(git ls-files -- ".vs")
+          if ($tracked.Count -ne 0) {
+              throw "Tracked .vs files are forbidden: $($tracked -join ', ')"
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          architecture: x64
+
+      - name: Install packaged .NET runtimes
+        shell: pwsh
+        run: |
+          $dotnetExe = (Get-Command dotnet -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+          $dotnetRoot = Split-Path -Parent $dotnetExe
+          $installer = Join-Path $env:RUNNER_TEMP "dotnet-install.ps1"
+          Invoke-WebRequest "https://dot.net/v1/dotnet-install.ps1" -OutFile $installer
+          & $installer -Runtime dotnet -Version 10.0.13 -Architecture x64 -InstallDir $dotnetRoot -NoPath
+          if (-not $?) { throw "Installing the pinned .NET runtime failed." }
+          & $installer -Runtime windowsdesktop -Version 10.0.13 -Architecture x64 -InstallDir $dotnetRoot -NoPath
+          if (-not $?) { throw "Installing the pinned Windows Desktop runtime failed." }
+
+      - name: Verify pinned .NET runtime
+        shell: pwsh
+        run: |
+          $dotnetExe = (Get-Command dotnet -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+          $dotnetRoot = Split-Path -Parent $dotnetExe
+          $sdkVersion = (& $dotnetExe --version).Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $expectedSdk = (Get-Content global.json -Raw | ConvertFrom-Json).sdk.version
+
+          $actualSdk = [version]$sdkVersion
+          $minimumSdk = [version]$expectedSdk
+          $sameFeatureBand = $actualSdk.Major -eq $minimumSdk.Major -and
+              $actualSdk.Minor -eq $minimumSdk.Minor -and
+              [math]::Floor($actualSdk.Build / 100) -eq [math]::Floor($minimumSdk.Build / 100)
+          if (-not $sameFeatureBand -or $actualSdk -lt $minimumSdk) {
+              throw "Expected .NET SDK $expectedSdk or a later patch in the same feature band, found $sdkVersion at $dotnetRoot."
+          }
+
+          $hostfxr = Join-Path $dotnetRoot "host\fxr\10.0.13\hostfxr.dll"
+          $runtimeDirectory = Join-Path $dotnetRoot "shared\Microsoft.NETCore.App\10.0.13"
+          $desktopRuntimeDirectory = Join-Path $dotnetRoot "shared\Microsoft.WindowsDesktop.App\10.0.13"
+
+          if (-not (Test-Path -LiteralPath $hostfxr -PathType Leaf)) {
+              throw "Pinned .NET hostfxr is missing: $hostfxr"
+          }
+
+          if (-not (Test-Path -LiteralPath $runtimeDirectory -PathType Container)) {
+              throw "Pinned Microsoft.NETCore.App runtime is missing: $runtimeDirectory"
+          }
+
+          if (-not (Test-Path -LiteralPath $desktopRuntimeDirectory -PathType Container)) {
+              throw "Pinned Microsoft.WindowsDesktop.App runtime is missing: $desktopRuntimeDirectory"
+          }
+
+          $runtimeList = (& $dotnetExe --list-runtimes | Out-String)
+          if ($runtimeList -notmatch "Microsoft\.NETCore\.App 10\.0\.13(?:\s|$)") {
+              throw "Microsoft.NETCore.App 10.0.13 is not registered with $dotnetExe."
+          }
+          if ($runtimeList -notmatch "Microsoft\.WindowsDesktop\.App 10\.0\.13(?:\s|$)") {
+              throw "Microsoft.WindowsDesktop.App 10.0.13 is not registered with $dotnetExe."
+          }
+
+          "DOTNET_ROOT_X64=$dotnetRoot" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "DOTNET_ROOT=$dotnetRoot" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Write-Host "dotnet root: $dotnetRoot"
+          & $dotnetExe --info
+          & $dotnetExe --list-runtimes
+
+      - name: Restore visual quest editor from lock files
+        shell: pwsh
+        run: |
+          dotnet restore workbench\Dluma.QuestGraph\Dluma.QuestGraph.csproj --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          dotnet restore workbench\Dluma.QuestGraph.Core.Tests\Dluma.QuestGraph.Core.Tests.csproj --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          dotnet restore workbench\Dluma.QuestGraph.Tests\Dluma.QuestGraph.Tests.csproj --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install pytest==9.1.1
+
+      - name: Locate Visual Studio
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+          if (-not (Test-Path $vswhere)) {
+              throw "vswhere.exe was not found."
+          }
+
+          $installationPath = & $vswhere `
+              -latest `
+              -products * `
+              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+              -property installationPath
+
+          if (-not $installationPath) {
+              throw "A Visual Studio installation with the C++ x64 tools was not found."
+          }
+
+          "VS_INSTALL=$installationPath" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Write-Host "Visual Studio: $installationPath"
+
+      - name: Build Release and Debug
+        shell: pwsh
+        run: |
+          $devCmd = Join-Path $env:VS_INSTALL "Common7\Tools\VsDevCmd.bat"
+          $buildScript = Join-Path $env:RUNNER_TEMP "build-loader.cmd"
+
+          @"
+          @echo off
+          call "$devCmd" -arch=x64 -host_arch=x64
+          if errorlevel 1 exit /b %errorlevel%
+
+          call build_windows_msvc.bat Release Offline > build-release.log 2>&1
+          if errorlevel 1 exit /b %errorlevel%
+
+          call build_windows_msvc.bat Debug Offline > build-debug.log 2>&1
+          if errorlevel 1 exit /b %errorlevel%
+
+          exit /b 0
+          "@ | Set-Content -Path $buildScript -Encoding ascii
+
+          & cmd.exe /d /c $buildScript
+          $buildExitCode = $LASTEXITCODE
+          Get-ChildItem build-*.log | ForEach-Object {
+              Write-Host "Build log: $($_.Name)"
+              Get-Content $_.FullName -Tail 100
+          }
+          exit $buildExitCode
+
+      - name: Test visual quest editor and packaged application
+        shell: pwsh
+        run: |
+          dotnet test workbench\Dluma.QuestGraph.Core.Tests\Dluma.QuestGraph.Core.Tests.csproj --no-restore --configuration Debug --logger "trx;LogFileName=quest-graph-core.trx" --results-directory quest-graph-test-results
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          dotnet test workbench\Dluma.QuestGraph.Tests\Dluma.QuestGraph.Tests.csproj --no-restore --configuration Debug --logger "trx;LogFileName=quest-graph-windows.trx" --results-directory quest-graph-test-results
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          & tools\smoke_quest_graph_package.ps1 -PackageDir build\package\Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run offline tests in Visual Studio environment
+        shell: pwsh
+        run: |
+          $devCmd = Join-Path $env:VS_INSTALL "Common7\Tools\VsDevCmd.bat"
+          $testScript = Join-Path $env:RUNNER_TEMP "test-loader.cmd"
+
+          @"
+          @echo off
+          call "$devCmd" -arch=x64 -host_arch=x64
+          if errorlevel 1 exit /b %errorlevel%
+
+          python -m pytest -q tests --junitxml=pytest-results.xml
+          exit /b %errorlevel%
+          "@ | Set-Content -Path $testScript -Encoding ascii
+
+          & cmd.exe /d /c $testScript
+
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+      - name: Verify compiled PE files
+        shell: pwsh
+        run: |
+          $releaseMods = @(Get-ChildItem "bin\x64\Release\*.mod")
+          $debugMods = @(Get-ChildItem "bin\x64\Debug\*.mod")
+
+          if ($releaseMods.Count -ne 1) {
+              throw "Expected exactly one Release .mod, found $($releaseMods.Count)."
+          }
+
+          if ($debugMods.Count -ne 1) {
+              throw "Expected exactly one Debug .mod, found $($debugMods.Count)."
+          }
+
+          python tools\verify_pe.py --json "$($releaseMods[0].FullName)"
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+          python tools\verify_pe.py --json "$($debugMods[0].FullName)"
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+      - name: Rebuild content pack through Python validator
+        shell: pwsh
+        run: |
+          python tools\build_content_pack.py
+
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+      - name: Show artifact hashes
+        shell: pwsh
+        run: |
+          Get-ChildItem `
+              "bin\x64\Release\*.mod", `
+              "bin\x64\Debug\*.mod", `
+              "build\package\Release\*.dll", `
+              "build\package\Release\*.pak", `
+              "build\package\Debug\*.dll", `
+              "build\package\Debug\*.pak" `
+              -ErrorAction Stop |
+              Get-FileHash -Algorithm SHA256 |
+              Format-Table Path, Hash -AutoSize
+
+      - name: Upload test reports and build logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-ci-reports-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            build-*.log
+            quest-graph-test-results/**
+            pytest-results.xml
+
+      - name: Prepare release archive
+        shell: pwsh
+        run: |
+          python tools/prepare_release.py --package-dir build/package/Release --output-dir release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v7
+        with:
+          name: dluma-release-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            release/DLUMA-*.zip
+            release/SHA256SUMS
+
+      - name: Upload compiled development artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dluma-build-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            bin/x64/Release/*.mod
+            bin/x64/Release/*.dll
+            bin/x64/Release/*.pdb
+            bin/x64/Debug/*.mod
+            bin/x64/Debug/*.dll
+            bin/x64/Debug/*.pdb
+            build/package/Release/**
+            build/package/Debug/**

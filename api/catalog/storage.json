@@ -1,0 +1,126 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "storage",
+  "service": {
+    "id": "dluma.storage.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "storage.get",
+      "ordinal": 1,
+      "status": "implemented",
+      "capability": "storage.mod",
+      "access": [
+        "storage.mod"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "request": "DlumaStorageGetRequest",
+      "result": "DlumaScalarResult",
+      "limits": {
+        "key_bytes": 128,
+        "value_bytes": 4096
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "storage_read_failed",
+        "insufficient_buffer",
+        "owner_revoked"
+      ],
+      "documentation": "Reads one owner-isolated persistent scalar value.",
+      "adapters": {
+        "core": "dluma_storage_get",
+        "lua": "dluma.storage.get",
+        "csharp": "IModContext.Storage.Get",
+        "c": "DlumaStorageV1.get",
+        "cpp": "context.storage().get"
+      },
+      "tests": [
+        "storage_get_contract",
+        "storage_identity_collision"
+      ]
+    },
+    {
+      "id": "storage.set",
+      "ordinal": 2,
+      "status": "implemented",
+      "capability": "storage.mod",
+      "access": [
+        "storage.mod"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "request": "DlumaStorageSetRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "key_bytes": 128,
+        "value_bytes": 4096
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "storage_write_failed",
+        "owner_revoked"
+      ],
+      "documentation": "Persists one owner-isolated boolean, number, integer, or UTF-8 string.",
+      "adapters": {
+        "core": "dluma_storage_set",
+        "lua": "dluma.storage.set",
+        "csharp": "IModContext.Storage.Set",
+        "c": "DlumaStorageV1.set",
+        "cpp": "context.storage().set"
+      },
+      "tests": [
+        "storage_set_contract",
+        "storage_embedded_nul_rejected"
+      ]
+    },
+    {
+      "id": "storage.delete",
+      "ordinal": 3,
+      "status": "implemented",
+      "capability": "storage.mod",
+      "access": [
+        "storage.mod"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "request": "DlumaConfigGetRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "key_bytes": 128
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "storage_write_failed",
+        "owner_revoked"
+      ],
+      "documentation": "Deletes one owner-isolated persistent scalar value.",
+      "adapters": {
+        "core": "dluma_storage_delete",
+        "lua": "dluma.storage.delete",
+        "csharp": "IModContext.Storage.Delete",
+        "c": "DlumaStorageV1.delete_value",
+        "cpp": "context.storage().erase"
+      },
+      "tests": [
+        "storage_delete_contract"
+      ]
+    }
+  ]
+}

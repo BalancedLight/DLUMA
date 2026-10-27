@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Dluma.Workbench</AssemblyName>
+    <RootNamespace>Dluma.Workbench</RootNamespace>
+    <Version>0.5.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Dluma.Workbench.Core\Dluma.Workbench.Core.csproj" />
+    <Content Include="Assets\dluma_api_catalog.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

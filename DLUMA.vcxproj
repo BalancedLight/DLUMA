@@ -1,0 +1,1242 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{3A91B881-9C2A-45B0-9AE7-30AB8E7D3F17}</ProjectGuid>
+    <RootNamespace>DLUMA</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
+  </ImportGroup>
+  <PropertyGroup>
+    <DlumaVersionSource>$([System.IO.File]::ReadAllText('$(ProjectDir)src\dlw_common.h'))</DlumaVersionSource>
+    <DlumaVersion>$([System.Text.RegularExpressions.Regex]::Match('$(DlumaVersionSource)', '#define DLUMA_VERSION &quot;(\d+(?:\.\d+)+)&quot;').Groups[1].Value)</DlumaVersion>
+    <TargetName>DLUMA ($(DlumaVersion))</TargetName>
+    <TargetExt>.mod</TargetExt>
+    <OutDir>$(ProjectDir)bin\x64\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)build\obj\msvc\$(Configuration)\</IntDir>
+    <DlumaPackageDir>$(ProjectDir)build\package\$(Configuration)\</DlumaPackageDir>
+    <DlumaContentPackPath>$(DlumaPackageDir)dluma.pak</DlumaContentPackPath>
+    <DlumaLoaderAddressManifestPath>$(OutDir)loader_address_ranges.json</DlumaLoaderAddressManifestPath>
+    <DlumaLoaderMapPath>$(OutDir)$(TargetName).map</DlumaLoaderMapPath>
+    <DlumaManagedOutputDir>$(ProjectDir)sdk\dotnet\Dluma.Managed.Bootstrap\bin\$(Configuration)\net10.0\</DlumaManagedOutputDir>
+    <DlumaQuestGraphOutputDir>$(ProjectDir)build\quest-graph\$(Configuration)\</DlumaQuestGraphOutputDir>
+    <DlumaLocalPropsPath>$(ProjectDir)DLUMA.local.props</DlumaLocalPropsPath>
+    <DlumaAutoDeployLocal Condition="'$(DlumaAutoDeployLocal)' == ''">false</DlumaAutoDeployLocal>
+    <DlumaPlayerDiOnDestroyObserverDiagnosticOptIn
+        Condition="'$(DlumaPlayerDiOnDestroyObserverDiagnosticOptIn)' == ''">false</DlumaPlayerDiOnDestroyObserverDiagnosticOptIn>
+    <DlumaRuntime15InventoryDiagnostic
+        Condition="'$(DlumaRuntime15InventoryDiagnostic)' == '' and '$(Configuration)|$(Platform)' == 'Release|x64'">true</DlumaRuntime15InventoryDiagnostic>
+    <DlumaRuntime15InventoryDiagnostic
+        Condition="'$(DlumaRuntime15InventoryDiagnostic)' == ''">false</DlumaRuntime15InventoryDiagnostic>
+  </PropertyGroup>
+  <Import Project="$(DlumaLocalPropsPath)"
+          Condition="Exists('$(DlumaLocalPropsPath)')" />
+  <ItemDefinitionGroup>
+    <BuildLog>
+      <Path>$(ProjectDir)build\logs\$(Configuration)\$(MSBuildProjectName).log</Path>
+    </BuildLog>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <SDLCheck>false</SDLCheck>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <CompileAs>CompileAsC</CompileAs>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <TreatWChar_tAsBuiltInType>false</TreatWChar_tAsBuiltInType>
+      <AdditionalOptions>/Oi- /Zl /Zc:threadSafeInit- %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(ProjectDir)build\generated;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_WIN64;WIN32_LEAN_AND_MEAN;_HAS_EXCEPTIONS=0;_ITERATOR_DEBUG_LEVEL=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions
+          Condition="'$(DlumaPlayerDiOnDestroyObserverDiagnosticOptIn)' == 'true'">DLUMA_ENABLE_PLAYERDI_ONDESTROY_DIAGNOSTIC_OBSERVER=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions
+          Condition="'$(DlumaRuntime15InventoryDiagnostic)' == 'true'">DLUMA_ENABLE_RUNTIME15_INVENTORY_DIAGNOSTIC=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EntryPointSymbol>DllMain</EntryPointSymbol>
+      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
+      <ModuleDefinitionFile>$(ProjectDir)build\exports.def</ModuleDefinitionFile>
+      <AdditionalDependencies>kernel32.lib;user32.lib;BufferOverflowU.lib;libvcruntime.lib;libcmt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapFileName>$(DlumaLoaderMapPath)</MapFileName>
+      <DataExecutionPrevention>true</DataExecutionPrevention>
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <AdditionalOptions>/HIGHENTROPYVA /GUARD:CF %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <!-- /RTC1 requires the CRT runtime, which this loader intentionally
+           excludes with /NODEFAULTLIB. Keep Debug unoptimized and symbol-rich
+           without adding CRT-backed runtime instrumentation. -->
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\dlw_analysis_bridge.c" />
+    <ClCompile Include="src\dlw_animation_refresh_runtime.c" />
+    <ClCompile Include="src\dlw_animation_pack_runtime.c" />
+    <ClCompile Include="src\dlw_build_identity.c" />
+    <ClCompile Include="src\dlw_build_identity_core.c" />
+    <ClCompile Include="src\dlw_chrome_log.c" />
+    <ClCompile Include="src\dlw_chrome_log_core.c" />
+    <ClCompile Include="src\dlw_custom_map_loading_core.c" />
+    <ClCompile Include="src\dlw_custom_main_menu_core.c" />
+    <ClCompile Include="src\dlw_asset_mods.c" />
+    <ClCompile Include="src\dlw_asset_mod_runtime.c" />
+    <ClCompile Include="src\dlw_asset_mod_native.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\dlw_custom_main_menu.c" />
+    <ClCompile Include="src\dlw_custom_main_menu_music.c" />
+    <ClCompile Include="src\dlw_custom_main_menu_runtime_core.c" />
+    <ClCompile Include="src\dlw_custom_main_menu_runtime.c" />
+    <ClCompile Include="src\dlw_developer_mode.c" />
+    <ClCompile Include="src\dlw_discord_presence.c" />
+    <ClCompile Include="src\dlw_discord_presence_core.c" />
+    <ClCompile Include="src\dlw_presence_core.c" />
+    <ClCompile Include="src\dlw_steam_presence.c" />
+    <ClCompile Include="src\dlw_steam_presence_core.c" />
+    <ClCompile Include="src\dlw_developer_mode_core.c" />
+    <ClCompile Include="src\dlw_discovery_watch.c" />
+    <ClCompile Include="src\dlw_dual_host_runtime.c" />
+    <ClCompile Include="src\dlw_editor_launch.c" />
+    <ClCompile Include="src\dlw_editor_missing_asset_probe_fix.c" />
+    <ClCompile Include="src\dlw_editor_presence.c" />
+    <ClCompile Include="src\dlw_editor_presence_core.c" />
+    <ClCompile Include="src\dlw_editor_host.c" />
+    <ClCompile Include="src\dlw_editor_quest_graph_bridge.c" />
+    <ClCompile Include="src\dlw_editor_exit_observer.c" />
+    <ClCompile Include="src\dlw_editor_animation_bridge.c" />
+    <ClCompile Include="src\dlw_editor_model_animation_fix.c" />
+    <ClCompile Include="src\dlw_main_menu_presentation_core.c" />
+    <ClCompile Include="src\dlw_main_menu_native_presentation.c" />
+    <ClCompile Include="src\dlw_mouse_lock.c" />
+    <ClCompile Include="src\dlw_mouse_lock_core.c" />
+    <ClCompile Include="src\dlw_player_startup.c" />
+    <ClCompile Include="src\dlw_player_startup_core.c" />
+    <ClCompile Include="src\dlw_new_mod_ticker.c" />
+    <ClCompile Include="src\dlw_mod_row_format_core.c" />
+    <ClCompile Include="src\dlw_crash.c" />
+    <ClCompile Include="src\dlw_loader_symbols.c" />
+    <ClCompile Include="src\dlw_playerdi_teardown.c" />
+    <ClCompile Include="src\dlw_player_inventory_recorder.c" />
+    <ClCompile Include="src\dlw_engine.c" />
+    <ClCompile Include="src\dlw_frontend_level.c" />
+    <ClCompile Include="src\dlw_game_frame_authority.c" />
+    <ClCompile Include="src\dlw_project_launch_admission.c" />
+    <ClCompile Include="src\dlw_project_launch_routes.c" />
+    <ClCompile Include="src\dlw_process_lifetime_sources.c" />
+    <ClCompile Include="src\dlw_native_companion_source_owner.c" />
+    <ClCompile Include="src\dlw_entry.c">
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+    </ClCompile>
+    <ClCompile Include="src\dlw_exports.c">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\dlw_global_consent.c" />
+    <ClCompile Include="src\dlw_host.c" />
+    <ClCompile Include="src\dlw_internal_hook_attestation.c" />
+    <ClCompile Include="src\dlw_localization.c" />
+    <ClCompile Include="src\dlw_log.c" />
+    <ClCompile Include="src\dlw_log_history_core.c" />
+    <ClCompile Include="src\dlw_logs_menu_core.c" />
+    <ClCompile Include="src\dlw_lua_discovery.c" />
+    <ClCompile Include="src\dlw_lua_config.c" />
+    <ClCompile Include="src\core\dlw_animation_refresh.c" />
+    <ClCompile Include="src\core\dlw_api_runtime.c" />
+    <ClCompile Include="src\core\dlw_capability_registry.c" />
+    <ClCompile Include="src\core\dlw_dual_host.c" />
+    <ClCompile Include="src\core\dlw_editor_exit_intent.c" />
+    <ClCompile Include="src\core\dlw_editor_missing_asset_probe_guard.c" />
+    <ClCompile Include="src\core\dlw_editor_model_animation_guard.c" />
+    <ClCompile Include="src\core\dlw_json_reader.c" />
+    <ClCompile Include="src\core\dlw_quest_context_core.c" />
+    <ClCompile Include="src\core\dlw_quest_graph_edits.c" />
+    <ClCompile Include="src\core\dlw_mod_manifest.c" />
+    <ClCompile Include="src\core\dlw_mod_package_runtime.c" />
+    <ClCompile Include="src\core\dlw_quest_phase.c" />
+    <ClCompile Include="src\dlw_quest_phase_runtime.c" />
+    <ClCompile Include="src\dlw_quest_phase_player.c" />
+    <ClCompile Include="src\dlw_quest_editor.c" />
+    <ClCompile Include="src\dlw_quest_authoring.c" />
+    <ClCompile Include="src\core\dlw_mod_owner.c" />
+    <ClCompile Include="src\core\dlw_runtime_tree.c" />
+    <ClCompile Include="src\bindings\dlw_player_variables_binding.c" />
+    <ClCompile Include="src\game\dlw_game_backend.c" />
+    <ClCompile Include="src\game\dlw_game_host_context.c" />
+    <ClCompile Include="src\game\dlw_player_service.c" />
+    <ClCompile Include="src\hosts\dlw_managed_host.c" />
+    <ClCompile Include="src\dlw_native_mod_config.c" />
+    <ClCompile Include="src\dlw_lua_runtime.c" />
+    <ClCompile Include="src\dlw_player_media_adapter.c" />
+    <ClCompile Include="src\dlw_companion_archive.c" />
+    <ClCompile Include="src\game\dlw_media_service.c" />
+    <ClCompile Include="src\game\dlw_quest_phase_service.c" />
+    <ClCompile Include="src\dlw_native_gameplay.c" />
+    <ClCompile Include="src\dlw_native_mods.c" />
+    <ClCompile Include="src\dlw_no_crt_seh.c" />
+    <ClCompile Include="src\dlw_pack.c" />
+    <ClCompile Include="src\dlw_path_security.c" />
+    <ClCompile Include="src\dlw_project_owner_identity.c" />
+    <ClCompile Include="src\dlw_quest_hud.c" />
+    <ClCompile Include="src\dlw_script.c" />
+    <ClCompile Include="src\dlw_security.c">
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+    </ClCompile>
+    <ClCompile Include="src\dlw_sha256.c" />
+    <ClCompile Include="src\dlw_startup_recovery.c" />
+    <ClCompile Include="src\dlw_first_launch.c" />
+    <ClCompile Include="src\dlw_shutdown.c" />
+    <ClCompile Include="src\dlw_frontend_error.c" />
+    <ClCompile Include="src\dlw_frontend_error_core.c" />
+    <ClCompile Include="src\dlw_orderly_close_core.c" />
+    <ClCompile Include="src\dlw_ui.c" />
+    <ClCompile Include="src\dlw_util.c" />
+    <ClCompile Include="src\dlw_workshop.c" />
+    <ClCompile Include="src\dlw_workshop_menu.c" />
+    <ClCompile Include="src\dlw_workshop_preview.c" />
+    <ClCompile Include="src\fixes\FixRegistry.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\MemoryPatch.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_campaign_credits_exit\CustomMapCampaignCreditsExitFix.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\main_menu_credits_music\MainMenuCreditsMusicFix.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CustomMapAssetIsolationFix.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\ContentDomainRestartRegistry.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\DetachedSourceRetirement.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioWorkerReset.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioWorkerResetWindows.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioBaselineReplay.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioBaselineContent.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioScriptInputDigest.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioContentCapture.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\LocalizedTextObservationGate.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeFileLifetimeLedger.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeFileLifetimeWindows.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\SpeechContentLease.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CurveBaselineSnapshot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeFileHookBridge.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\ItemCurveBindings.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CurveBorrowBoundary.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CurveLoadOrigin.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioSpeechConsumersNative.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioDspNative.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioBusNative.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioSettingsNative.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioSoundPropertySnapshot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CurveNativeGateway.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CurveAppendOnlyOwner.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerStoredProgressSnapshot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\StoredBlueprintOwner.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CurveProcessCaches.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\StoredItemDescriptorGraph.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\BlueprintBaselineRebuild.cpp">
+      <CompileAs>CompileAsCpp</CompileAs><ExceptionHandling>false</ExceptionHandling><RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard><AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\ItemAggregateRebuild.cpp">
+      <CompileAs>CompileAsCpp</CompileAs><ExceptionHandling>false</ExceptionHandling><RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard><AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CraftingManagerSnapshot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs><ExceptionHandling>false</ExceptionHandling><RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard><AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CraftingPreservedManager.cpp">
+      <CompileAs>CompileAsCpp</CompileAs><ExceptionHandling>false</ExceptionHandling><RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard><AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CraftingNativeGateway.cpp">
+      <CompileAs>CompileAsCpp</CompileAs><ExceptionHandling>false</ExceptionHandling><RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard><AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerPrimitiveDefaults.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerProcessOwnerRebuild.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerIntrinsicProgressSnapshot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerXmlInputDigest.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioSoundPropertyNative.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeXuiRegistrySnapshot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeXuiCompiledSnapshot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeXuiInstanceOwner.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeXuiContentOwner.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeArchiveContent.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PackedAssetOwner.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PackedAssetWindows.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeResourceGateway.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\ResourceProviderScope.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeResourceInputLease.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeResourceInputCapture.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\MaterialBaselineOwner.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeResourceProduction.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\RendererStreamingOwner.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeRetainedResourceOwner.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\NativeRetainedResourceWindows.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\LocalizedTextBaselineOwner.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CandidateRetainingConsumerProvenance.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\FrontendBaseline.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\StartupBaselineCaptureState.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\StartupFilesystemSourceClassifier.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\FilesystemSourceInventory.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CancelledPresentationCleanupVerifier.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\FilesystemSourceWindowsView.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\FrontendContentColdReboot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\StateFiveDestroyOwner.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\FrontendColdRebootWindowsProfile.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerGameplayParamsRestartAdapter.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerGameplayParamsWindowsSnapshot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerPresetTargetedRebuild.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerStateInventoryBootstrapProof.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\FrontendSourceRollbackLifecycle.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CustomContentLedger.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PersistentConsumerLedger.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerStateObservationLedger.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CompileAsCpp</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AnimationEventDefinitionsObservation.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CompileAsCpp</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CustomContentResetRegistry.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CustomAudioBankLedger.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioBankProviderCorrelation.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioBaselineWindowsSnapshot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerPresetRowPublicationTimeline.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerNaturalPresetResetAdapter.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CompileAsCpp</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PlayerAbsentBaselineReset.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CompileAsCpp</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\PostDestroyPreflightReport.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CompileAsCpp</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioSemanticWindowsSnapshot.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioSemanticDelta.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioMinimumSemanticPlan.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CompileAsCpp</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioScriptReloadAdapter.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CompileAsCpp</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioStartupBaselineReconciler.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\AudioStartupObservationLedger.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\SpeechRegistryObservationGate.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CustomAudioResetAdapter.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_asset_isolation\CustomMapAssetTrace.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\fixes\custom_map_quest_level_name\CustomMapQuestLevelNameFix.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\dlw_analysis_bridge.h" />
+    <ClInclude Include="src\dlw_animation_refresh_runtime.h" />
+    <ClInclude Include="src\dlw_animation_pack_runtime.h" />
+    <ClInclude Include="src\dlw_build_identity.h" />
+    <ClInclude Include="src\dlw_chrome_log_core.h" />
+    <ClInclude Include="src\dlw_custom_map_loading_core.h" />
+    <ClInclude Include="src\dlw_custom_main_menu_core.h" />
+    <ClInclude Include="src\dlw_asset_mods.h" />
+    <ClInclude Include="src\dlw_asset_mod_runtime.h" />
+    <ClInclude Include="src\dlw_asset_mod_native.h" />
+    <ClInclude Include="src\dlw_custom_main_menu.h" />
+    <ClInclude Include="src\dlw_custom_main_menu_music.h" />
+    <ClInclude Include="src\dlw_custom_main_menu_runtime_core.h" />
+    <ClInclude Include="src\dlw_custom_main_menu_runtime.h" />
+    <ClInclude Include="src\dlw_pack.h" />
+    <ClInclude Include="src\dlw_orderly_close_core.h" />
+    <ClInclude Include="src\dlw_developer_mode_core.h" />
+    <ClInclude Include="src\dlw_discovery_watch.h" />
+    <ClInclude Include="src\dlw_discord_presence.h" />
+    <ClInclude Include="src\dlw_discord_presence_api.h" />
+    <ClInclude Include="src\dlw_discord_presence_core.h" />
+    <ClInclude Include="src\dlw_presence_core.h" />
+    <ClInclude Include="src\dlw_steam_presence.h" />
+    <ClInclude Include="src\dlw_steam_presence_core.h" />
+    <ClInclude Include="src\dlw_dual_host_runtime.h" />
+    <ClInclude Include="src\dlw_editor_launch.h" />
+    <ClInclude Include="src\dlw_editor_missing_asset_probe_fix.h" />
+    <ClInclude Include="src\dlw_editor_presence.h" />
+    <ClInclude Include="src\dlw_editor_presence_core.h" />
+    <ClInclude Include="src\dlw_editor_host.h" />
+    <ClInclude Include="src\dlw_editor_quest_graph_bridge.h" />
+    <ClInclude Include="src\dlw_editor_exit_observer.h" />
+    <ClInclude Include="src\dlw_editor_animation_bridge.h" />
+    <ClInclude Include="src\dlw_editor_model_animation_fix.h" />
+    <ClInclude Include="sdk\c\dluma_editor_api.h" />
+    <ClInclude Include="src\dlw_main_menu_presentation_core.h" />
+    <ClInclude Include="src\dlw_main_menu_native_presentation.h" />
+    <ClInclude Include="src\dlw_new_mod_ticker.h" />
+    <ClInclude Include="src\dlw_mod_row_format_core.h" />
+    <ClInclude Include="src\dlw_common.h" />
+    <ClInclude Include="src\dlw_frontend_level.h" />
+    <ClInclude Include="src\dlw_loader_symbols.h" />
+    <ClInclude Include="src\dlw_playerdi_teardown.h" />
+    <ClInclude Include="src\dlw_player_inventory_recorder.h" />
+    <ClInclude Include="src\dlw_player_startup.h" />
+    <ClInclude Include="src\dlw_player_startup_core.h" />
+    <ClInclude Include="src\dlw_internal_hook_attestation.h" />
+    <ClInclude Include="src\dlw_log.h" />
+    <ClInclude Include="src\dlw_log_history_core.h" />
+    <ClInclude Include="src\dlw_logs_menu_core.h" />
+    <ClInclude Include="src\dlw_lua_discovery_internal.h" />
+    <ClInclude Include="src\dlw_lua_config.h" />
+    <ClInclude Include="src\dlw_mouse_lock_core.h" />
+    <ClInclude Include="src\core\dlw_animation_refresh.h" />
+    <ClInclude Include="src\core\dlw_api_runtime.h" />
+    <ClInclude Include="src\core\dlw_dual_host.h" />
+    <ClInclude Include="src\core\dlw_editor_exit_intent.h" />
+    <ClInclude Include="src\core\dlw_editor_missing_asset_probe_guard.h" />
+    <ClInclude Include="src\core\dlw_editor_model_animation_guard.h" />
+    <ClInclude Include="src\core\dlw_capability_registry.h" />
+    <ClInclude Include="src\core\dlw_mod_owner.h" />
+    <ClInclude Include="src\core\dlw_quest_phase.h" />
+    <ClInclude Include="src\dlw_quest_phase_runtime.h" />
+    <ClInclude Include="src\dlw_quest_phase_player.h" />
+    <ClInclude Include="src\dlw_quest_editor.h" />
+    <ClInclude Include="src\dlw_quest_authoring.h" />
+    <ClInclude Include="src\core\dlw_runtime_tree.h" />
+    <ClInclude Include="src\bindings\dlw_player_variables_binding.h" />
+    <ClInclude Include="src\bindings\dlw_player_actor_binding.h" />
+    <ClInclude Include="src\game\dlw_game_backend.h" />
+    <ClInclude Include="src\game\dlw_game_host_context.h" />
+    <ClInclude Include="src\game\dlw_player_service.h" />
+    <ClInclude Include="src\game\dlw_game_types.h" />
+    <ClInclude Include="src\hosts\dlw_managed_host.h" />
+    <ClInclude Include="src\generated\dluma_api_catalog.generated.h" />
+    <ClInclude Include="src\generated\dluma_api_operations.generated.h" />
+    <ClInclude Include="src\dlw_native_mod_config.h" />
+    <ClInclude Include="src\dlw_path_security.h" />
+    <ClInclude Include="src\dlw_project_owner_identity.h" />
+    <ClInclude Include="src\dlw_project_launch_admission.h" />
+    <ClInclude Include="src\dlw_project_root_identity.h" />
+    <ClInclude Include="src\dlw_project_launch_routes.h" />
+    <ClInclude Include="src\dlw_process_lifetime_sources.h" />
+    <ClInclude Include="src\dlw_native_companion_source_owner.h" />
+    <ClInclude Include="src\dlw_sha256_internal.h" />
+    <ClInclude Include="src\dlw_ui_redirect_core.h" />
+    <ClInclude Include="src\dlw_lua54_api.h" />
+    <ClInclude Include="src\dlw_vehicle_gate_core.h" />
+    <ClInclude Include="src\dlw_player_media_adapter.h" />
+    <ClInclude Include="src\dlw_companion_archive.h" />
+    <ClInclude Include="src\game\dlw_media_service.h" />
+    <ClInclude Include="src\dlw_native_gameplay.h" />
+    <ClInclude Include="src\dlw_native_mods.h" />
+    <ClInclude Include="src\dlw_quest_hud.h" />
+    <ClInclude Include="src\dlw_win32.h" />
+    <ClInclude Include="src\fixes\FixRegistry.h" />
+    <ClInclude Include="src\fixes\MemoryPatch.h" />
+    <ClInclude Include="src\fixes\custom_map_campaign_credits_exit\CustomMapCampaignCreditsExitFix.h" />
+    <ClInclude Include="src\fixes\main_menu_credits_music\MainMenuCreditsMusicFix.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CustomMapAssetIsolationFix.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\ContentDomainRestartRegistry.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\DetachedSourceRetirement.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioWorkerReset.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioWorkerResetWindows.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioBaselineReplay.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioBaselineContent.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioScriptInputDigest.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioContentCapture.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\LocalizedTextObservationGate.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeFileLifetimeLedger.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeFileLifetimeWindows.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\SpeechContentLease.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CurveBaselineSnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeFileHookBridge.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\ItemCurveBindings.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CurveBorrowBoundary.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CurveLoadOrigin.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioSettingsNative.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioSpeechConsumersNative.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioDspNative.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioBusNative.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioSoundPropertySnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CurveNativeGateway.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CurveAppendOnlyOwner.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CurveProcessCaches.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerStoredProgressSnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\StoredBlueprintOwner.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\StoredItemDescriptorGraph.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\BlueprintBaselineRebuild.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\ItemAggregateRebuild.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CraftingManagerSnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CraftingPreservedManager.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CraftingNativeGateway.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerPrimitiveDefaults.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerProcessOwnerRebuild.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerIntrinsicProgressSnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerXmlInputDigest.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioSoundPropertyNative.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiRegistrySnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiContentOwner.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiCompiledSnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiInstanceOwner.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeArchiveContent.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PackedAssetOwner.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PackedAssetWindows.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeResourceGateway.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\ResourceProviderScope.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeResourceInputLease.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeResourceInputCapture.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\MaterialBaselineOwner.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeResourceProduction.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\RendererStreamingOwner.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeResourceProductionIntegration.inl" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeRetainedResourceOwner.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeRetainedResourceWindows.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\LocalizedTextBaselineOwner.h" />
+    <ClInclude Include="src\dlw_isolation_startup.h" />
+    <ClInclude Include="src\dlw_frontend_error.h" />
+    <ClInclude Include="src\dlw_frontend_error_core.h" />
+    <ClInclude Include="src\dlw_lua_project_exit.h" />
+    <ClInclude Include="src\dlw_project_host_exit.h" />
+    <ClInclude Include="src\dlw_project_exit_authority.h" />
+    <ClInclude Include="src\dlw_project_map_exit.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CandidateRetainingConsumerProvenance.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\FrontendBaseline.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\StartupBaselineCaptureState.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\StartupFilesystemSourceClassifier.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\FilesystemSourceInventory.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CancelledPresentationCleanupVerifier.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\FilesystemSourceWindowsView.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\FrontendContentColdReboot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\StateFiveDestroyOwner.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\FrontendColdRebootWindowsProfile.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerGameplayParamsRestartAdapter.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerPresetRowPublicationTimeline.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerNaturalPresetResetAdapter.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerAbsentBaselineReset.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PostDestroyPreflightReport.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerGameplayParamsWindowsSnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerPresetTargetedRebuild.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerStateInventoryBootstrapProof.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\FrontendSourceRollbackLifecycle.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CustomMapAssetTrace.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CustomContentLedger.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PersistentConsumerLedger.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerStateObservationLedger.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AnimationEventDefinitionsObservation.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CustomContentResetRegistry.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CustomAudioBankLedger.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioBankProviderCorrelation.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioBaselineWindowsSnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioSemanticWindowsSnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioSemanticDelta.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioMinimumSemanticPlan.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioScriptReloadAdapter.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioStartupBaselineReconciler.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioStartupObservationLedger.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\SpeechRegistryObservationGate.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\CustomAudioResetAdapter.h" />
+    <ClInclude Include="src\fixes\custom_map_quest_level_name\CustomMapQuestLevelNameFix.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="src\player_xml_input_probe_masm.asm" />
+    <MASM Include="src\audio_settings_mix_probe_masm.asm" />
+    <MASM Include="src\native_file_completion_probe_masm.asm" />
+    <MASM Include="src\chkstk_masm.asm" />
+    <MASM Include="src\custom_map_campaign_credits_exit_guard_masm.asm" />
+    <MASM Include="src\audio_full_path_provider_probe_masm.asm" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="build\exports.def" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
+  </ImportGroup>
+  <PropertyGroup>
+    <DlumaBuildProvenanceArchiveArgument Condition="'$(DLUMAAllowSourceArchiveProvenance)' == 'true' or !Exists('$(ProjectDir).git')">--allow-source-archive</DlumaBuildProvenanceArchiveArgument>
+  </PropertyGroup>
+  <Target Name="GenerateDlumaBuildProvenance">
+    <MakeDir Directories="$(ProjectDir)build\generated" />
+    <Exec Command="python &quot;$(ProjectDir)tools\generate_build_provenance.py&quot; --repo &quot;$(ProjectDir).&quot; --output &quot;$(ProjectDir)build\generated\dlw_build_provenance.h&quot; $(DlumaBuildProvenanceArchiveArgument)" />
+  </Target>
+  <Target Name="PrepareDlumaBuildDirectories"
+          BeforeTargets="PrepareForBuild"
+          DependsOnTargets="GenerateDlumaBuildProvenance"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <RemoveDir Directories="$(IntDir);$(OutDir);$(DlumaPackageDir)" />
+    <MakeDir Directories="$(IntDir);$(OutDir);$(DlumaPackageDir)" />
+  </Target>
+  <Target Name="VerifyDlumaObjectManifest"
+          BeforeTargets="Link"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="python &quot;$(ProjectDir)tools\verify_msvc_object_manifest.py&quot; --project &quot;$(ProjectPath)&quot; --object-dir &quot;$(IntDir).&quot;" />
+  </Target>
+  <Target Name="VerifyPlayerDiOnDestroyRelay"
+          BeforeTargets="ClCompile"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="python &quot;$(ProjectDir)tools\verify_playerdi_ondestroy_relay.py&quot; --self-test" />
+  </Target>
+  <Target Name="GenerateLoaderSymbolManifest"
+          AfterTargets="Link"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="python &quot;$(ProjectDir)tools\generate_loader_symbol_manifest.py&quot; --image &quot;$(TargetPath)&quot; --pdb &quot;$(OutDir)$(TargetName).pdb&quot; --map &quot;$(DlumaLoaderMapPath)&quot; --output &quot;$(DlumaLoaderAddressManifestPath)&quot; --source-root &quot;$(ProjectDir).&quot;" />
+  </Target>
+  <Target Name="PackageWorkshop"
+           AfterTargets="Build"
+           Condition="'$(DesignTimeBuild)' != 'true' and '$(DlumaSkipPackage)' != 'true'">
+    <RemoveDir Directories="$(DlumaPackageDir)" />
+    <MakeDir Directories="$(DlumaPackageDir)" />
+    <Exec Command="call &quot;$(ProjectDir)tools\build_lua54_helper_msvc.bat&quot; $(Configuration) &quot;$(OutDir).&quot;" />
+    <Exec Command="call &quot;$(ProjectDir)tools\build_discord_presence_helper_msvc.bat&quot; $(Configuration) &quot;$(OutDir).&quot;" />
+    <Exec Command="dotnet build &quot;$(ProjectDir)sdk\dotnet\Dluma.Managed.slnx&quot; -c $(Configuration) --nologo -p:Platform=&quot;Any CPU&quot;" />
+    <RemoveDir Directories="$(DlumaQuestGraphOutputDir)" />
+    <Exec Command="dotnet restore &quot;$(ProjectDir)workbench\Dluma.QuestGraph\Dluma.QuestGraph.csproj&quot; --locked-mode --nologo" />
+    <Exec Command="dotnet publish &quot;$(ProjectDir)workbench\Dluma.QuestGraph\Dluma.QuestGraph.csproj&quot; -c $(Configuration) --no-restore --nologo -o &quot;$(DlumaQuestGraphOutputDir).&quot;" />
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFiles="$(DlumaPackageDir)$(TargetFileName)" />
+    <Copy SourceFiles="$(ProjectDir)LICENSE;$(ProjectDir)THIRD_PARTY_NOTICES.md" DestinationFolder="$(DlumaPackageDir)" />
+    <Copy
+          SourceFiles="$(OutDir)dluma_lua54.dll;$(OutDir)LICENSE_LUA_5.4.8.txt;$(OutDir)dluma_discord_presence.dll"
+          DestinationFolder="$(DlumaPackageDir)" />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\build_content_pack.ps1&quot; -OutputPath &quot;$(DlumaContentPackPath)&quot;" />
+    <Exec Command="python &quot;$(ProjectDir)tools\build_managed_runtime.py&quot; --output-dir &quot;$(DlumaPackageDir).&quot; --managed-output &quot;$(DlumaManagedOutputDir).&quot; --quest-graph-output &quot;$(DlumaQuestGraphOutputDir).&quot; --catalog-hash &quot;$(ProjectDir)api\generated\dluma_api_catalog.sha256&quot; --loader-symbol-manifest &quot;$(DlumaLoaderAddressManifestPath)&quot;" />
+    <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot;" />
+    <Message Importance="high"
+             Text="Built clean $(Configuration) package at $(DlumaPackageDir). Any enabled local deployment runs only after package and PE verification." />
+  </Target>
+  <Target Name="ValidateDlumaLocalDeployment"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(DlumaLocalPropsPath)')"
+           Text="DeployLocal requires ignored DLUMA.local.props. Copy DLUMA.local.props.example and set both destinations." />
+    <Error Condition="'$(DlumaSubscribedWorkshopModsDir)' == ''"
+           Text="DlumaSubscribedWorkshopModsDir is required for DeployLocal." />
+    <Error Condition="'$(DlumaDevToolsWorkshopModsDir)' == ''"
+           Text="DlumaDevToolsWorkshopModsDir is required for DeployLocal." />
+    <Error Condition="!$([System.IO.Path]::IsPathRooted('$(DlumaSubscribedWorkshopModsDir)'))"
+           Text="DlumaSubscribedWorkshopModsDir must be an absolute path." />
+    <Error Condition="!$([System.IO.Path]::IsPathRooted('$(DlumaDevToolsWorkshopModsDir)'))"
+           Text="DlumaDevToolsWorkshopModsDir must be an absolute path." />
+    <Error Condition="!Exists('$(DlumaSubscribedWorkshopModsDir)')"
+           Text="DlumaSubscribedWorkshopModsDir does not exist." />
+    <Error Condition="!Exists('$(DlumaDevToolsWorkshopModsDir)')"
+           Text="DlumaDevToolsWorkshopModsDir does not exist." />
+  </Target>
+  <Target Name="DeployLocalPackage"
+          DependsOnTargets="ValidateDlumaLocalDeployment"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(Platform)' != 'x64' or ('$(Configuration)' != 'Debug' and '$(Configuration)' != 'Release')"
+           Text="Local deployment requires Configuration=Debug or Release and Platform=x64." />
+    <Error Condition="'$(DlumaSkipPackage)' == 'true'"
+           Text="Local deployment cannot run when DlumaSkipPackage=true." />
+    <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot;" />
+    <Exec Command="python &quot;$(ProjectDir)tools\verify_pe.py&quot; &quot;$(DlumaPackageDir)$(TargetFileName)&quot;" />
+    <Exec Command="python &quot;$(ProjectDir)tools\deploy_local_package.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --subscribed-dir &quot;$(DlumaSubscribedWorkshopModsDir).&quot; --devtools-dir &quot;$(DlumaDevToolsWorkshopModsDir).&quot; --built-mod &quot;$(TargetPath)&quot; --built-pak &quot;$(DlumaContentPackPath)&quot; --mod-name &quot;$(TargetFileName)&quot;"
+          StandardOutputImportance="High" />
+  </Target>
+  <Target Name="DeployLocal"
+          DependsOnTargets="Build;DeployLocalPackage"
+          Condition="'$(DesignTimeBuild)' != 'true'" />
+  <Target Name="AutoDeployLocalAfterBuild"
+          AfterTargets="PackageWorkshop"
+          DependsOnTargets="DeployLocalPackage"
+          Condition="'$(DesignTimeBuild)' != 'true'
+            and '$(Platform)' == 'x64'
+            and ('$(Configuration)' == 'Debug' or '$(Configuration)' == 'Release')
+            and '$(DlumaAutoDeployLocal)' == 'true'
+            and '$(DlumaSkipPackage)' != 'true'
+            and Exists('$(DlumaLocalPropsPath)')" />
+</Project>

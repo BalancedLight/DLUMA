@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "categories": [
+    {
+      "id": "controls",
+      "name": "Controls",
+      "settings": [
+        {
+          "key": "toggle_key",
+          "name": "Toggle view",
+          "description": "Switch between first person and third person.",
+          "type": "keybind",
+          "default": 84
+        },
+        {
+          "key": "orbit_key",
+          "name": "Orbit and adjustment modifier",
+          "description": "Hold this key to orbit with the mouse or adjust the camera with the direction keys.",
+          "type": "keybind",
+          "default": 164
+        },
+        {
+          "key": "left_key",
+          "name": "Shift left",
+          "description": "Move the camera left while holding the orbit and adjustment modifier.",
+          "type": "keybind",
+          "default": 37
+        },
+        {
+          "key": "right_key",
+          "name": "Shift right",
+          "description": "Move the camera right while holding the orbit and adjustment modifier.",
+          "type": "keybind",
+          "default": 39
+        },
+        {
+          "key": "up_key",
+          "name": "Raise camera",
+          "description": "Raise the camera while holding the orbit and adjustment modifier.",
+          "type": "keybind",
+          "default": 38
+        },
+        {
+          "key": "down_key",
+          "name": "Lower camera",
+          "description": "Lower the camera while holding the orbit and adjustment modifier.",
+          "type": "keybind",
+          "default": 40
+        },
+        {
+          "key": "closer_key",
+          "name": "Move closer",
+          "description": "Move the camera closer while holding the orbit and adjustment modifier.",
+          "type": "keybind",
+          "default": 33
+        },
+        {
+          "key": "farther_key",
+          "name": "Move farther",
+          "description": "Move the camera farther away while holding the orbit and adjustment modifier.",
+          "type": "keybind",
+          "default": 34
+        },
+        {
+          "key": "reset_key",
+          "name": "Reset camera offsets",
+          "description": "Restore the default camera offsets while holding the orbit and adjustment modifier.",
+          "type": "keybind",
+          "default": 36
+        }
+      ]
+    },
+    {
+      "id": "camera",
+      "name": "Camera",
+      "settings": [
+        {
+          "key": "smooth_camera",
+          "name": "Smooth camera movement",
+          "description": "Smooth position follow and vertical movement. Mouse look, orbit, and aim stay responsive. Collision adjusts automatically whether smoothing is on or off.",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "key": "smoothing_time_ms",
+          "name": "Smoothing time (ms)",
+          "description": "How gradually position follow and vertical movement settle when smooth camera movement is enabled. Higher values feel softer. Mouse look, orbit, and aim stay responsive.",
+          "type": "integer",
+          "default": 120,
+          "min": 20,
+          "max": 300,
+          "step": 10
+        },
+        {
+          "key": "horizontal_angle_deg",
+          "name": "Horizontal camera angle (degrees)",
+          "description": "Rotate the camera around your character, in degrees. Zero keeps the normal shoulder view.",
+          "type": "integer",
+          "default": 0,
+          "min": -180,
+          "max": 180,
+          "step": 5
+        },
+        {
+          "key": "vertical_angle_deg",
+          "name": "Camera elevation (degrees)",
+          "description": "Raise or lower the camera around your character, in degrees. Positive values raise it; negative values lower it.",
+          "type": "integer",
+          "default": 0,
+          "min": -85,
+          "max": 85,
+          "step": 5
+        },
+        {
+          "key": "speed_percent",
+          "name": "Adjustment speed (%)",
+          "description": "How quickly the camera moves while an adjustment key is held. 100% is the normal speed.",
+          "type": "integer",
+          "default": 100,
+          "min": 10,
+          "max": 500,
+          "step": 10
+        },
+        {
+          "key": "return_time_ms",
+          "name": "Orbit return time (ms)",
+          "description": "Time in milliseconds to return to the shoulder view after releasing orbit. 250 ms is a quarter of a second.",
+          "type": "integer",
+          "default": 250,
+          "min": 10,
+          "max": 2000,
+          "step": 10
+        }
+      ]
+    }
+  ]
+}

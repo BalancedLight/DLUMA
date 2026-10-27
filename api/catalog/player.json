@@ -1,0 +1,460 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "player",
+  "service": {
+    "id": "dluma.player.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "player.local",
+      "ordinal": 1,
+      "status": "gated",
+      "capability": "player.read",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaNoRequest",
+      "result": "DlumaObjectResult",
+      "limits": {
+        "handles_per_owner": 8
+      },
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_ready",
+        "owner_revoked"
+      ],
+      "documentation": "Returns the opaque generation-bound local-player handle.",
+      "adapters": {
+        "core": "dluma_game_player_local",
+        "lua": "dluma.player.local_player",
+        "csharp": "IModContext.Player.Local",
+        "c": "DlumaPlayerV1.local_player",
+        "cpp": "context.player().local"
+      },
+      "tests": [
+        "player_local_contract",
+        "player_local_map_transition"
+      ]
+    },
+    {
+      "id": "player.position",
+      "ordinal": 2,
+      "status": "gated",
+      "capability": "player.transform",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaVec3Result",
+      "limits": {},
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle",
+        "owner_revoked"
+      ],
+      "documentation": "Returns a copied local-player position.",
+      "adapters": {
+        "core": "dluma_game_player_position",
+        "lua": "player:position",
+        "csharp": "IPlayer.Position",
+        "c": "DlumaPlayerV1.position",
+        "cpp": "player.position"
+      },
+      "tests": [
+        "player_position_contract"
+      ]
+    },
+    {
+      "id": "player.look_direction",
+      "ordinal": 3,
+      "status": "gated",
+      "capability": "player.transform",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaVec3Result",
+      "limits": {},
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle"
+      ],
+      "documentation": "Returns a copied normalized local-player look direction.",
+      "adapters": {
+        "core": "dluma_game_player_look_direction",
+        "lua": "player:look_direction",
+        "csharp": "IPlayer.LookDirection",
+        "c": "DlumaPlayerV1.look_direction",
+        "cpp": "player.look_direction"
+      },
+      "tests": [
+        "player_look_direction_contract"
+      ]
+    },
+    {
+      "id": "player.body_direction",
+      "ordinal": 4,
+      "status": "gated",
+      "capability": "player.transform",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaVec3Result",
+      "limits": {},
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle"
+      ],
+      "documentation": "Returns a copied normalized local-player body direction.",
+      "adapters": {
+        "core": "dluma_game_player_body_direction",
+        "lua": "player:body_direction",
+        "csharp": "IPlayer.BodyDirection",
+        "c": "DlumaPlayerV1.body_direction",
+        "cpp": "player.body_direction"
+      },
+      "tests": [
+        "player_body_direction_contract"
+      ]
+    },
+    {
+      "id": "player.health",
+      "ordinal": 5,
+      "status": "gated",
+      "capability": "player.vitals",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaFloatResult",
+      "limits": {},
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle"
+      ],
+      "documentation": "Returns copied current local-player health.",
+      "adapters": {
+        "core": "dluma_game_player_health",
+        "lua": "player:health",
+        "csharp": "IPlayer.Health",
+        "c": "DlumaPlayerV1.health",
+        "cpp": "player.health"
+      },
+      "tests": [
+        "player_health_contract"
+      ]
+    },
+    {
+      "id": "player.max_health",
+      "ordinal": 6,
+      "status": "gated",
+      "capability": "player.vitals",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaFloatResult",
+      "limits": {},
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle"
+      ],
+      "documentation": "Returns computed maximum local-player health when an independently validated PlayerDI vitals binding is ready; this is never substituted with a raw PlayerVariable.",
+      "adapters": {
+        "core": "dluma_game_player_max_health",
+        "lua": "player:max_health",
+        "csharp": "IPlayer.MaxHealth",
+        "c": "DlumaPlayerV1.max_health",
+        "cpp": "player.max_health"
+      },
+      "tests": [
+        "player_max_health_contract"
+      ]
+    },
+    {
+      "id": "player.alive",
+      "ordinal": 7,
+      "status": "gated",
+      "capability": "player.vitals",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaBoolResult",
+      "limits": {},
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle"
+      ],
+      "documentation": "Returns the validated local-player alive state.",
+      "adapters": {
+        "core": "dluma_game_player_alive",
+        "lua": "player:is_alive",
+        "csharp": "IPlayer.IsAlive",
+        "c": "DlumaPlayerV1.alive",
+        "cpp": "player.alive"
+      },
+      "tests": [
+        "player_alive_contract"
+      ]
+    },
+    {
+      "id": "player.variable_names",
+      "ordinal": 8,
+      "status": "gated",
+      "capability": "player.read",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaNoRequest",
+      "result": "DlumaStringListResult",
+      "limits": {
+        "names": 64,
+        "name_bytes": 64
+      },
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "insufficient_buffer"
+      ],
+      "documentation": "Lists the generated allowlist of named PlayerVariables.",
+      "adapters": {
+        "core": "dluma_game_player_variable_names",
+        "lua": "dluma.player.variable_names",
+        "csharp": "IModContext.Player.VariableNames",
+        "c": "DlumaPlayerV1.variable_names",
+        "cpp": "context.player().variable_names"
+      },
+      "tests": [
+        "player_variable_names_contract"
+      ]
+    },
+    {
+      "id": "player.variable_get",
+      "ordinal": 9,
+      "status": "gated",
+      "capability": "player.read",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaPlayerVariableRequest",
+      "result": "DlumaPlayerVariableResult",
+      "limits": {
+        "name_bytes": 64
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "not_found"
+      ],
+      "documentation": "Reads one copied allowlisted raw PlayerVariables tuning snapshot. Names such as max_health and base_max_health are not current health or the computed PlayerDI maximum-health result.",
+      "adapters": {
+        "core": "dluma_game_player_variable_get",
+        "lua": "player:variable",
+        "csharp": "IPlayer.Variable",
+        "c": "DlumaPlayerV1.variable_get",
+        "cpp": "player.variable"
+      },
+      "tests": [
+        "player_variable_get_contract",
+        "player_variable_allowlist"
+      ]
+    },
+    {
+      "id": "player.variable_set",
+      "ordinal": 10,
+      "status": "gated",
+      "capability": "player.read",
+      "access": [
+        "world.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaPlayerVariableSetRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "name_bytes": 64,
+        "overrides_per_owner": 64
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "scope_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle"
+      ],
+      "documentation": "Transactionally applies one bounded transient allowlisted raw PlayerVariables tuning override; invalid or non-finite derived values leave game memory unchanged.",
+      "adapters": {
+        "core": "dluma_game_player_variable_set",
+        "lua": "player:set_variable",
+        "csharp": "IPlayer.SetVariable",
+        "c": "DlumaPlayerV1.variable_set",
+        "cpp": "player.set_variable"
+      },
+      "tests": [
+        "player_variable_set_contract",
+        "player_variable_owner_restore"
+      ]
+    },
+    {
+      "id": "player.variable_reset",
+      "ordinal": 11,
+      "status": "gated",
+      "capability": "player.read",
+      "access": [
+        "world.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaPlayerVariableRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "name_bytes": 64
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "scope_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle"
+      ],
+      "documentation": "Restores one transient PlayerVariables override owned by the mod.",
+      "adapters": {
+        "core": "dluma_game_player_variable_reset",
+        "lua": "player:reset_variable",
+        "csharp": "IPlayer.ResetVariable",
+        "c": "DlumaPlayerV1.variable_reset",
+        "cpp": "player.reset_variable"
+      },
+      "tests": [
+        "player_variable_reset_contract"
+      ]
+    },
+    {
+      "id": "player.vehicle_state",
+      "ordinal": 12,
+      "status": "gated",
+      "capability": "player.vehicle",
+      "access": [
+        "game.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaNoRequest",
+      "result": "DlumaVehicleStateResult",
+      "limits": {
+        "vehicle_type_bytes": 32,
+        "class_name_bytes": 96
+      },
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_ready",
+        "owner_revoked",
+        "insufficient_buffer"
+      ],
+      "documentation": "Returns copied local-player vehicle state without exposing an engine pointer.",
+      "adapters": {
+        "core": "dluma_game_player_vehicle_state",
+        "lua": "dluma.player.vehicle_state",
+        "csharp": "IModContext.Player.VehicleState",
+        "c": "DlumaPlayerV1.vehicle_state",
+        "cpp": "context.player().vehicle_state"
+      },
+      "tests": [
+        "player_vehicle_state_contract",
+        "player_vehicle_exact_build_gate"
+      ]
+    }
+  ]
+}

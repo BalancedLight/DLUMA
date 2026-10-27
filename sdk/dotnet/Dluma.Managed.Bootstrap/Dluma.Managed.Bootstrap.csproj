@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeFrameworkVersion>10.0.13</RuntimeFrameworkVersion>
+    <RollForward>Disable</RollForward>
+    <PlatformTarget>x64</PlatformTarget>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Dluma.Managed.Bootstrap</AssemblyName>
+    <RootNamespace>Dluma.Managed.Bootstrap</RootNamespace>
+    <Version>1.0.0</Version>
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+  </PropertyGroup>
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.Server" Value="false" />
+    <RuntimeHostConfigurationOption Include="System.Globalization.Invariant" Value="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Dluma.Managed.Sdk\Dluma.Managed.Sdk.csproj" />
+  </ItemGroup>
+</Project>

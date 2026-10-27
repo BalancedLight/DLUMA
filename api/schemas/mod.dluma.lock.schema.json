@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mod.dluma.lock.schema.json",
+  "title": "DLUMA immutable mod lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "api_version",
+    "mod_id",
+    "manifest_sha256",
+    "catalog_sha256",
+    "artifacts"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "const": "dluma.mod.lock.v1"
+    },
+    "api_version": {
+      "const": "1.0"
+    },
+    "mod_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 127
+    },
+    "manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "catalog_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "kind",
+          "size",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 511,
+            "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.?[/\\\\])(?!.+[ .]$)[^\\u0000]+$"
+          },
+          "kind": {
+            "enum": [
+              "manifest",
+              "entry",
+              "script_module",
+              "assembly",
+              "dependency",
+              "configuration",
+              "companion",
+              "license"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1073741824
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-F0-9]{64}$"
+    }
+  }
+}

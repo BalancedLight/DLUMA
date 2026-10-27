@@ -1,0 +1,206 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "world",
+  "service": {
+    "id": "dluma.world.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "world.find",
+      "ordinal": 1,
+      "status": "gated",
+      "capability": "world.find",
+      "access": [
+        "world.query"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaWorldFindRequest",
+      "result": "DlumaObjectResult",
+      "limits": {
+        "name_bytes": 96,
+        "class_bytes": 96,
+        "handles_per_owner": 256
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Finds an exact runtime object name and returns an opaque owner- and generation-bound handle.",
+      "adapters": {
+        "core": "dluma_game_world_find",
+        "lua": "dluma.world.find",
+        "csharp": "IModContext.World.Find",
+        "c": "DlumaWorldV1.find",
+        "cpp": "context.world().find"
+      },
+      "tests": [
+        "world_find_contract",
+        "world_find_stale_generation"
+      ]
+    },
+    {
+      "id": "world.position",
+      "ordinal": 2,
+      "status": "gated",
+      "capability": "world.position",
+      "access": [
+        "world.query"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaVec3Result",
+      "limits": {},
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle",
+        "owner_revoked"
+      ],
+      "documentation": "Returns a copied object position after ownership, identity, and generation revalidation.",
+      "adapters": {
+        "core": "dluma_game_world_position",
+        "lua": "object:position",
+        "csharp": "IWorldObject.Position",
+        "c": "DlumaWorldV1.position",
+        "cpp": "object.position"
+      },
+      "tests": [
+        "world_position_contract",
+        "world_position_foreign_handle"
+      ]
+    },
+    {
+      "id": "world.forward_direction",
+      "ordinal": 3,
+      "status": "gated",
+      "capability": "world.position",
+      "access": [
+        "world.query"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaVec3Result",
+      "limits": {},
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle",
+        "owner_revoked"
+      ],
+      "documentation": "Returns a copied normalized object forward direction.",
+      "adapters": {
+        "core": "dluma_game_world_forward_direction",
+        "lua": "object:forward_direction",
+        "csharp": "IWorldObject.ForwardDirection",
+        "c": "DlumaWorldV1.forward_direction",
+        "cpp": "object.forward_direction"
+      },
+      "tests": [
+        "world_forward_direction_contract"
+      ]
+    },
+    {
+      "id": "world.local_enabled",
+      "ordinal": 4,
+      "status": "gated",
+      "capability": "world.local_enable",
+      "access": [
+        "world.query"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaBoolResult",
+      "limits": {},
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle",
+        "owner_revoked"
+      ],
+      "documentation": "Returns the copied local-enable state for an opaque object handle.",
+      "adapters": {
+        "core": "dluma_game_world_local_enabled",
+        "lua": "object:is_enabled",
+        "csharp": "IWorldObject.LocalEnabled",
+        "c": "DlumaWorldV1.local_enabled",
+        "cpp": "object.local_enabled"
+      },
+      "tests": [
+        "world_local_enabled_contract"
+      ]
+    },
+    {
+      "id": "world.set_enabled_many",
+      "ordinal": 5,
+      "status": "gated",
+      "capability": "world.local_enable",
+      "access": [
+        "world.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaSetEnabledManyRequest",
+      "result": "DlumaSetEnabledManyResult",
+      "limits": {
+        "names": 32,
+        "name_bytes": 96
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "scope_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "owner_revoked"
+      ],
+      "documentation": "Applies a bounded local-enable change to exact object names.",
+      "adapters": {
+        "core": "dluma_game_world_set_enabled_many",
+        "lua": "dluma.world.set_enabled_many",
+        "csharp": "IModContext.World.SetEnabled",
+        "c": "DlumaWorldV1.set_enabled_many",
+        "cpp": "context.world().set_enabled"
+      },
+      "tests": [
+        "world_set_enabled_many_contract",
+        "world_set_enabled_scope_gate"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Dluma.QuestGraph</AssemblyName>
+    <RootNamespace>Dluma.QuestGraph</RootNamespace>
+    <Version>0.1.0</Version>
+    <RuntimeFrameworkVersion>10.0.13</RuntimeFrameworkVersion>
+    <RollForward>Disable</RollForward>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Nodify" Version="7.3.0" />
+    <ProjectReference Include="..\Dluma.QuestGraph.Core\Dluma.QuestGraph.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Licenses\Nodify-MIT.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

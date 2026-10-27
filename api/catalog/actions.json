@@ -1,0 +1,49 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "actions",
+  "service": {
+    "id": "dluma.actions.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "actions.chain.run",
+      "ordinal": 1,
+      "status": "gated",
+      "capability": "actions.chain",
+      "access": [
+        "world.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaNamedRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "name_bytes": 96
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "scope_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found"
+      ],
+      "documentation": "Runs one exact active-map ActionChain after its native authored condition succeeds.",
+      "adapters": {
+        "core": "dluma_game_actions_chain_run",
+        "lua": "dluma.actions.run_chain",
+        "csharp": "IModContext.Actions.RunChain",
+        "c": "DlumaActionsV1.chain_run",
+        "cpp": "context.actions().run_chain"
+      },
+      "tests": [
+        "action_chain_contract",
+        "action_chain_scope_gate"
+      ]
+    }
+  ]
+}

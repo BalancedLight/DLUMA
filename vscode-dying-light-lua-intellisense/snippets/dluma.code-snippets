@@ -1,0 +1,60 @@
+{
+  "DLUMA API mod entry": {
+    "prefix": "dlumamod",
+    "description": "Create the Lua entry object for a package described by mod.dluma.json.",
+    "body": [
+      "local mod = dluma.mod()",
+      "",
+      "$0",
+      "",
+      "return mod"
+    ]
+  },
+  "DLUMA sensor enter": {
+    "prefix": "dlumasensorenter",
+    "description": "Register an owner-bound SensorArea enter callback.",
+    "body": [
+      "local ${1:token}, ${2:err} = mod:on_sensor_enter(\"${3:DLUMA_Sensor}\", function(ctx, sensor)",
+      "    $0",
+      "end)",
+      "if not ${1} then dluma.log(\"warn\", ${2}.code .. \": \" .. ${2}.message) end"
+    ]
+  },
+  "DLUMA exact object lookup": {
+    "prefix": "dlumafind",
+    "description": "Look up an exact named Dying Light runtime object.",
+    "body": [
+      "local ${1:object}, ${2:err} = dluma.world.find(\"${3:ExactRuntimeName}\")",
+      "if not ${1} then",
+      "    dluma.log(\"warn\", ${2}.code .. \": \" .. ${2}.message)",
+      "    return",
+      "end",
+      "$0"
+    ]
+  },
+  "DLUMA native quest phase": {
+    "prefix": "dlumaquest",
+    "description": "Request a synchronized transition to an authored custom-map quest phase.",
+    "body": [
+      "local ${1:ok}, ${2:quest_err} = dluma.quests.advance_to_phase(\"${3:DLUMA_Quest}\", \"${4:DLUMA_Phase}\")",
+      "if not ${1} then",
+      "    dluma.log(\"warn\", ${2}.code .. \": \" .. ${2}.message)",
+      "end",
+      "$0"
+    ]
+  },
+  "DLUMA sensor to ActionChain": {
+    "prefix": "dlumaactionflow",
+    "description": "Run an exact editor-authored ActionChain when the local player enters a SensorArea.",
+    "body": [
+      "local ${1:token}, ${2:err} = mod:on_sensor_enter(\"${3:DLUMA_Sensor}\", function(ctx, sensor)",
+      "    local ${4:ok}, ${5:chain_err} = dluma.actions.run_chain(\"${6:DLUMA_ActionChain}\")",
+      "    if not ${4} then",
+      "        dluma.log(\"warn\", ${5}.code .. \": \" .. ${5}.message)",
+      "    end",
+      "end)",
+      "if not ${1} then dluma.log(\"warn\", ${2}.code .. \": \" .. ${2}.message) end",
+      "$0"
+    ]
+  }
+}

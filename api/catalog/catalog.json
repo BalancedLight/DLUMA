@@ -1,0 +1,45 @@
+{
+  "$schema": "../schemas/api-catalog.schema.json",
+  "api": {
+    "name": "DLUMA API",
+    "short_name": "DLUMA API",
+    "version": "1.0",
+    "abi_version": 65536,
+    "catalog_format": 1
+  },
+  "domains": [
+    "core",
+    "world",
+    "player",
+    "events",
+    "ui",
+    "audio",
+    "quests",
+    "actions",
+    "configuration",
+    "storage",
+    "companion_content",
+    "quest_phases"
+  ],
+  "status_values": [
+    "implemented",
+    "gated",
+    "planned",
+    "removed"
+  ],
+  "thread_affinities": [
+    "any",
+    "game"
+  ],
+  "scopes": [
+    "global",
+    "project",
+    "map"
+  ],
+  "languages": [
+    "lua",
+    "csharp",
+    "c",
+    "cpp"
+  ]
+}

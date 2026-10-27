@@ -1,0 +1,240 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "events",
+  "service": {
+    "id": "dluma.events.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "events.update.subscribe",
+      "ordinal": 1,
+      "status": "implemented",
+      "capability": "core.runtime",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "subscriptions_per_owner": 128
+      },
+      "errors": [
+        "invalid_argument",
+        "wrong_thread",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Subscribes a callback to the bounded game-thread frame dispatcher.",
+      "adapters": {
+        "core": "dluma_events_subscribe_update",
+        "lua": "mod:on_update",
+        "csharp": "IModContext.Events.Updated",
+        "c": "DlumaEventsV1.subscribe_update",
+        "cpp": "context.events().on_update"
+      },
+      "tests": [
+        "event_update_contract",
+        "event_callback_mutation"
+      ]
+    },
+    {
+      "id": "events.sensor.is_inside",
+      "ordinal": 2,
+      "status": "gated",
+      "capability": "events.sensor",
+      "access": [
+        "events.sensor"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaNamedRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "name_bytes": 96
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "owner_revoked"
+      ],
+      "documentation": "Returns whether the local player is inside an exact named SensorArea.",
+      "adapters": {
+        "core": "dluma_game_sensor_is_inside",
+        "lua": "dluma.events.sensor.is_inside",
+        "csharp": "IModContext.Events.Sensors.IsInside",
+        "c": "DlumaEventsV1.sensor_is_inside",
+        "cpp": "context.events().sensor_is_inside"
+      },
+      "tests": [
+        "sensor_is_inside_contract"
+      ]
+    },
+    {
+      "id": "events.sensor.enter",
+      "ordinal": 3,
+      "status": "gated",
+      "capability": "events.sensor",
+      "access": [
+        "events.sensor"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "name_bytes": 96,
+        "subscriptions_per_owner": 128
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Subscribes to deduplicated enter edges for one exact named SensorArea.",
+      "adapters": {
+        "core": "dluma_events_subscribe_sensor_enter",
+        "lua": "mod:on_sensor_enter",
+        "csharp": "IModContext.Events.SensorEntered",
+        "c": "DlumaEventsV1.subscribe_sensor_enter",
+        "cpp": "context.events().on_sensor_enter"
+      },
+      "tests": [
+        "sensor_enter_contract",
+        "sensor_initial_occupied_deduplication"
+      ]
+    },
+    {
+      "id": "events.sensor.leave",
+      "ordinal": 4,
+      "status": "gated",
+      "capability": "events.sensor",
+      "access": [
+        "events.sensor"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "name_bytes": 96,
+        "subscriptions_per_owner": 128
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Subscribes to deduplicated leave edges for one exact named SensorArea.",
+      "adapters": {
+        "core": "dluma_events_subscribe_sensor_leave",
+        "lua": "mod:on_sensor_leave",
+        "csharp": "IModContext.Events.SensorLeft",
+        "c": "DlumaEventsV1.subscribe_sensor_leave",
+        "cpp": "context.events().on_sensor_leave"
+      },
+      "tests": [
+        "sensor_leave_contract"
+      ]
+    },
+    {
+      "id": "events.interaction.begin",
+      "ordinal": 5,
+      "status": "gated",
+      "capability": "events.interact",
+      "access": [
+        "events.interact"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "name_bytes": 96,
+        "subscriptions_per_owner": 128
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "quota_exceeded"
+      ],
+      "documentation": "Subscribes to successful base InteractiveItem trigger observations.",
+      "adapters": {
+        "core": "dluma_events_subscribe_interaction_begin",
+        "lua": "mod:on_interact_begin",
+        "csharp": "IModContext.Events.InteractionBegan",
+        "c": "DlumaEventsV1.subscribe_interaction_begin",
+        "cpp": "context.events().on_interaction_begin"
+      },
+      "tests": [
+        "interaction_begin_contract"
+      ]
+    },
+    {
+      "id": "events.enemy_killed",
+      "ordinal": 6,
+      "status": "planned",
+      "capability": "events.enemy_killed",
+      "access": [
+        "events.enemy_killed"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "subscriptions_per_owner": 128
+      },
+      "errors": [
+        "access_denied",
+        "unsupported_capability"
+      ],
+      "documentation": "Reserved copied post-death event; unavailable until its exact observer is validated.",
+      "adapters": {
+        "core": "",
+        "lua": "mod:on_enemy_killed",
+        "csharp": "IModContext.Events.EnemyKilled",
+        "c": "DlumaEventsV1.subscribe_enemy_killed",
+        "cpp": "context.events().on_enemy_killed"
+      },
+      "tests": [
+        "enemy_killed_unavailable_contract"
+      ]
+    }
+  ]
+}

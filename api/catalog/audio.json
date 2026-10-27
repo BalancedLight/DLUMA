@@ -1,0 +1,293 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "audio",
+  "service": {
+    "id": "dluma.audio.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "audio.radio_dialog.play",
+      "ordinal": 1,
+      "status": "gated",
+      "capability": "audio.radio_dialog",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaRadioDialogRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "speaker_bytes": 96,
+        "group_bytes": 96
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found"
+      ],
+      "documentation": "Starts one exact named dialog speaker group.",
+      "adapters": {
+        "core": "dluma_game_audio_radio_dialog",
+        "lua": "dluma.audio.play_radio_dialog",
+        "csharp": "IModContext.Audio.PlayRadioDialog",
+        "c": "DlumaAudioV1.radio_dialog_play",
+        "cpp": "context.audio().play_radio_dialog"
+      },
+      "tests": [
+        "radio_dialog_contract"
+      ]
+    },
+    {
+      "id": "audio.cue.play",
+      "ordinal": 2,
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaAudioCuePlayRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "cue_bytes": 128,
+        "sounds_per_owner": 16,
+        "gain_maximum": 4,
+        "fade_ms_maximum": 60000
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "foreign_handle",
+        "stale_handle",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Starts one owner-bound allowlisted cue from an opened companion bank.",
+      "adapters": {
+        "core": "dluma_game_audio_cue_play",
+        "lua": "dluma.audio.cue.play",
+        "csharp": "IModContext.Audio.CuePlay",
+        "c": "DlumaAudioV1.cue_play",
+        "cpp": "context.audio().cue_play"
+      },
+      "tests": [
+        "audio_cue_play_contract",
+        "audio_cue_owner_quota"
+      ]
+    },
+    {
+      "id": "audio.cue.stop",
+      "ordinal": 3,
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaAudioCueStopRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "fade_ms_maximum": 60000
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "foreign_handle",
+        "stale_handle"
+      ],
+      "documentation": "Stops one owner-bound companion cue with an optional bounded fade.",
+      "adapters": {
+        "core": "dluma_game_audio_cue_stop",
+        "lua": "dluma.audio.cue.stop",
+        "csharp": "IModContext.Audio.CueStop",
+        "c": "DlumaAudioV1.cue_stop",
+        "cpp": "context.audio().cue_stop"
+      },
+      "tests": [
+        "audio_cue_stop_contract"
+      ]
+    },
+    {
+      "id": "audio.bank.open",
+      "ordinal": 4,
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": ["audio.play"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaAudioBankOpenRequest",
+      "result": "DlumaTokenResult",
+      "limits": {"bank_id_bytes": 63, "banks_process": 16},
+      "errors": ["invalid_argument", "access_denied", "unsupported_capability", "wrong_thread", "foreign_handle", "stale_handle", "not_found", "limit_exceeded", "changed_since_approval"],
+      "documentation": "Opens one manifest-allowlisted CSB bank from an approved companion archive.",
+      "adapters": {"core": "dluma_game_audio_bank_open", "lua": "dluma.audio.bank.open", "csharp": "IModContext.Audio.BankOpen", "c": "DlumaAudioV1.bank_open", "cpp": "context.audio().bank_open"},
+      "tests": ["audio_bank_open_contract", "audio_bank_manifest_allowlist"]
+    },
+    {
+      "id": "audio.cue.duration",
+      "ordinal": 5,
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": ["audio.play"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaAudioCueRequest",
+      "result": "DlumaU64Result",
+      "limits": {"cue_bytes": 128},
+      "errors": ["invalid_argument", "access_denied", "unsupported_capability", "wrong_thread", "foreign_handle", "stale_handle", "not_found"],
+      "documentation": "Returns the probed millisecond duration of one allowlisted cue.",
+      "adapters": {"core": "dluma_game_audio_cue_duration", "lua": "dluma.audio.cue.duration", "csharp": "IModContext.Audio.CueDuration", "c": "DlumaAudioV1.cue_duration", "cpp": "context.audio().cue_duration"},
+      "tests": ["audio_cue_duration_contract"]
+    },
+    {
+      "id": "audio.cue.state",
+      "ordinal": 6,
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": ["audio.play"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaAudioCueStateResult",
+      "limits": {},
+      "errors": ["invalid_argument", "access_denied", "unsupported_capability", "wrong_thread", "foreign_handle", "stale_handle"],
+      "documentation": "Returns copied playback state for one owner-bound cue.",
+      "adapters": {"core": "dluma_game_audio_cue_state", "lua": "dluma.audio.cue.state", "csharp": "IModContext.Audio.CueState", "c": "DlumaAudioV1.cue_state", "cpp": "context.audio().cue_state"},
+      "tests": ["audio_cue_state_contract"]
+    },
+    {
+      "id": "audio.cue.seek",
+      "ordinal": 7,
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": ["audio.play"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaAudioCueSeekRequest",
+      "result": "DlumaBoolResult",
+      "limits": {},
+      "errors": ["invalid_argument", "access_denied", "unsupported_capability", "wrong_thread", "foreign_handle", "stale_handle"],
+      "documentation": "Seeks one owner-bound cue to a bounded millisecond position.",
+      "adapters": {"core": "dluma_game_audio_cue_seek", "lua": "dluma.audio.cue.seek", "csharp": "IModContext.Audio.CueSeek", "c": "DlumaAudioV1.cue_seek", "cpp": "context.audio().cue_seek"},
+      "tests": ["audio_cue_seek_contract"]
+    },
+    {
+      "id": "audio.cue.set_gain",
+      "ordinal": 8,
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": ["audio.play"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaAudioCueGainRequest",
+      "result": "DlumaBoolResult",
+      "limits": {"gain_minimum": 0, "gain_maximum": 4},
+      "errors": ["invalid_argument", "access_denied", "unsupported_capability", "wrong_thread", "foreign_handle", "stale_handle"],
+      "documentation": "Sets bounded gain for one owner-bound cue.",
+      "adapters": {"core": "dluma_game_audio_cue_set_gain", "lua": "dluma.audio.cue.set_gain", "csharp": "IModContext.Audio.CueSetGain", "c": "DlumaAudioV1.cue_set_gain", "cpp": "context.audio().cue_set_gain"},
+      "tests": ["audio_cue_gain_contract"]
+    },
+    {
+      "id": "audio.cue.set_filter",
+      "ordinal": 9,
+      "status": "gated",
+      "capability": "audio.wave_filter",
+      "access": ["audio.play"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaAudioFilterRequest",
+      "result": "DlumaBoolResult",
+      "limits": {"wet_mix_minimum": 0, "wet_mix_maximum": 1, "cutoff_hz_minimum": 20, "cutoff_hz_maximum": 18000},
+      "errors": ["invalid_argument", "access_denied", "unsupported_capability", "wrong_thread", "foreign_handle", "stale_handle"],
+      "documentation": "Sets exact-build filter values for one owner-bound cue.",
+      "adapters": {"core": "dluma_game_audio_cue_set_filter", "lua": "dluma.audio.cue.set_filter", "csharp": "IModContext.Audio.CueSetFilter", "c": "DlumaAudioV1.cue_set_filter", "cpp": "context.audio().cue_set_filter"},
+      "tests": ["audio_cue_filter_gated_contract"]
+    },
+    {
+      "id": "audio.music.acquire",
+      "ordinal": 10,
+      "status": "gated",
+      "capability": "audio.music_exclusive",
+      "access": ["audio.play"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaAudioMusicAcquireRequest",
+      "result": "DlumaTokenResult",
+      "limits": {"fade_ms_maximum": 60000, "leases_process": 1},
+      "errors": ["invalid_argument", "access_denied", "unsupported_capability", "wrong_thread", "limit_exceeded"],
+      "documentation": "Acquires process-exclusive stock-music ownership transactionally.",
+      "adapters": {"core": "dluma_game_audio_music_acquire", "lua": "dluma.audio.music.acquire", "csharp": "IModContext.Audio.MusicAcquire", "c": "DlumaAudioV1.music_acquire", "cpp": "context.audio().music_acquire"},
+      "tests": ["audio_music_acquire_contract", "audio_music_lease_contention"]
+    },
+    {
+      "id": "audio.music.state",
+      "ordinal": 11,
+      "status": "gated",
+      "capability": "audio.music_exclusive",
+      "access": ["audio.play"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaAudioMusicStateResult",
+      "limits": {},
+      "errors": ["invalid_argument", "access_denied", "unsupported_capability", "wrong_thread", "foreign_handle", "stale_handle"],
+      "documentation": "Returns the current phase of an owner-bound exclusive music lease.",
+      "adapters": {"core": "dluma_game_audio_music_state", "lua": "dluma.audio.music.state", "csharp": "IModContext.Audio.MusicState", "c": "DlumaAudioV1.music_state", "cpp": "context.audio().music_state"},
+      "tests": ["audio_music_state_contract"]
+    },
+    {
+      "id": "audio.music.set_filter",
+      "ordinal": 12,
+      "status": "gated",
+      "capability": "audio.music_filter",
+      "access": ["audio.play"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaAudioFilterRequest",
+      "result": "DlumaBoolResult",
+      "limits": {"wet_mix_minimum": 0, "wet_mix_maximum": 1, "cutoff_hz_minimum": 20, "cutoff_hz_maximum": 18000},
+      "errors": ["invalid_argument", "access_denied", "unsupported_capability", "wrong_thread", "foreign_handle", "stale_handle"],
+      "documentation": "Sets restorable exact-build filter values for an exclusive stock-music lease.",
+      "adapters": {"core": "dluma_game_audio_music_set_filter", "lua": "dluma.audio.music.set_filter", "csharp": "IModContext.Audio.MusicSetFilter", "c": "DlumaAudioV1.music_set_filter", "cpp": "context.audio().music_set_filter"},
+      "tests": ["audio_music_filter_gated_contract"]
+    },
+    {
+      "id": "audio.music.release",
+      "ordinal": 13,
+      "status": "gated",
+      "capability": "audio.music_exclusive",
+      "access": ["audio.play"],
+      "scopes": ["global", "project", "map"],
+      "thread": "game",
+      "request": "DlumaAudioMusicReleaseRequest",
+      "result": "DlumaBoolResult",
+      "limits": {"resume_delay_ms_maximum": 60000},
+      "errors": ["invalid_argument", "access_denied", "unsupported_capability", "wrong_thread", "foreign_handle", "stale_handle", "not_ready"],
+      "documentation": "Restores and releases an exclusive stock-music lease with bounded delayed resume.",
+      "adapters": {"core": "dluma_game_audio_music_release", "lua": "dluma.audio.music.release", "csharp": "IModContext.Audio.MusicRelease", "c": "DlumaAudioV1.music_release", "cpp": "context.audio().music_release"},
+      "tests": ["audio_music_release_contract", "audio_music_restore_failure"]
+    }
+  ]
+}

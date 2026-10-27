@@ -1,0 +1,657 @@
+{
+  "$schema": "../schemas/api-types.schema.json",
+  "types": [
+    {
+      "name": "DlumaNoRequest",
+      "documentation": "A size-prefixed request with no payload.",
+      "fields": []
+    },
+    {
+      "name": "DlumaCallResult",
+      "documentation": "The common size-prefixed operation result.",
+      "fields": []
+    },
+    {
+      "name": "DlumaBoolResult",
+      "documentation": "A common result containing one boolean value.",
+      "fields": [
+        {
+          "name": "value",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "DlumaU64Result",
+      "documentation": "A common result containing one unsigned 64-bit value.",
+      "fields": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "DlumaFloatResult",
+      "documentation": "A common result containing one floating-point value.",
+      "fields": [
+        {
+          "name": "value",
+          "type": "f64"
+        }
+      ]
+    },
+    {
+      "name": "DlumaVec3Result",
+      "documentation": "A copied three-dimensional vector result.",
+      "fields": [
+        {
+          "name": "value",
+          "type": "vec3"
+        }
+      ]
+    },
+    {
+      "name": "DlumaLogRequest",
+      "documentation": "A bounded UTF-8 log request.",
+      "fields": [
+        {
+          "name": "level",
+          "type": "string_view"
+        },
+        {
+          "name": "message",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaCapabilityQueryRequest",
+      "documentation": "Queries one stable generated capability ID.",
+      "fields": [
+        {
+          "name": "capability_id",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "DlumaCapabilityQueryResult",
+      "documentation": "The configured and currently ready state of one capability.",
+      "fields": [
+        {
+          "name": "configured",
+          "type": "bool"
+        },
+        {
+          "name": "ready",
+          "type": "bool"
+        },
+        {
+          "name": "status",
+          "type": "string_buffer"
+        }
+      ]
+    },
+    {
+      "name": "DlumaTimerRequest",
+      "documentation": "Requests one owner-bound timer.",
+      "fields": [
+        {
+          "name": "seconds",
+          "type": "f64"
+        },
+        {
+          "name": "callback_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "DlumaTokenRequest",
+      "documentation": "Addresses one owner-bound callback, subscription, timer, or resource token.",
+      "fields": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "DlumaTokenResult",
+      "documentation": "Returns one owner-bound token.",
+      "fields": [
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "DlumaWorldFindRequest",
+      "documentation": "Finds an exact runtime object name with an optional class constraint.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string_view"
+        },
+        {
+          "name": "expected_class",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaObjectResult",
+      "documentation": "Returns a generation- and owner-bound opaque object handle.",
+      "fields": [
+        {
+          "name": "handle",
+          "type": "object_handle"
+        },
+        {
+          "name": "name",
+          "type": "string_buffer"
+        },
+        {
+          "name": "class_name",
+          "type": "string_buffer"
+        }
+      ]
+    },
+    {
+      "name": "DlumaObjectRequest",
+      "documentation": "Addresses an opaque object handle.",
+      "fields": [
+        {
+          "name": "handle",
+          "type": "object_handle"
+        }
+      ]
+    },
+    {
+      "name": "DlumaSetEnabledManyRequest",
+      "documentation": "Requests a bounded local-enable operation for exact object names.",
+      "fields": [
+        {
+          "name": "names",
+          "type": "string_view",
+          "pointer": true,
+          "count_field": "name_count"
+        },
+        {
+          "name": "name_count",
+          "type": "u32"
+        },
+        {
+          "name": "enabled",
+          "type": "bool"
+        },
+        {
+          "name": "atomic",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "DlumaSetEnabledManyResult",
+      "documentation": "Summarizes a bounded local-enable operation.",
+      "fields": [
+        {
+          "name": "requested_count",
+          "type": "u32"
+        },
+        {
+          "name": "changed_count",
+          "type": "u32"
+        },
+        {
+          "name": "unchanged_count",
+          "type": "u32"
+        },
+        {
+          "name": "partial",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "DlumaPlayerVariableRequest",
+      "documentation": "Addresses one allowlisted PlayerVariables value.",
+      "fields": [
+        {
+          "name": "player",
+          "type": "object_handle"
+        },
+        {
+          "name": "name",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaPlayerVariableSetRequest",
+      "documentation": "Sets one bounded transient PlayerVariables override.",
+      "fields": [
+        {
+          "name": "player",
+          "type": "object_handle"
+        },
+        {
+          "name": "name",
+          "type": "string_view"
+        },
+        {
+          "name": "value",
+          "type": "f64"
+        }
+      ]
+    },
+    {
+      "name": "DlumaPlayerVariableResult",
+      "documentation": "A copied allowlisted PlayerVariables snapshot.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string_buffer"
+        },
+        {
+          "name": "value",
+          "type": "f64"
+        },
+        {
+          "name": "minimum",
+          "type": "f64"
+        },
+        {
+          "name": "maximum",
+          "type": "f64"
+        },
+        {
+          "name": "overridden",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "DlumaStringListResult",
+      "documentation": "Writes a bounded list of UTF-8 strings into caller-provided views.",
+      "fields": [
+        {
+          "name": "items",
+          "type": "string_buffer",
+          "pointer": true,
+          "count_field": "capacity"
+        },
+        {
+          "name": "capacity",
+          "type": "u32"
+        },
+        {
+          "name": "count",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "DlumaNamedRequest",
+      "documentation": "Addresses one exact UTF-8 game or authored name.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaEventSubscribeRequest",
+      "documentation": "Subscribes an owner callback, optionally filtered by exact name.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string_view"
+        },
+        {
+          "name": "callback_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "DlumaSubtitleRequest",
+      "documentation": "Shows a bounded loader-owned subtitle.",
+      "fields": [
+        {
+          "name": "text",
+          "type": "string_view"
+        },
+        {
+          "name": "duration_seconds",
+          "type": "f64"
+        },
+        {
+          "name": "force",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "DlumaSubtitleUpdateRequest",
+      "documentation": "Updates the active loader-owned subtitle.",
+      "fields": [
+        {
+          "name": "text",
+          "type": "string_view"
+        },
+        {
+          "name": "fade",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "DlumaQuestHudRequest",
+      "documentation": "Requests a copied quest HUD snapshot.",
+      "fields": [
+        {
+          "name": "json",
+          "type": "string_buffer"
+        }
+      ]
+    },
+    {
+      "name": "DlumaQuestHudResult",
+      "documentation": "Returns a canonical JSON copy of the bounded quest HUD snapshot.",
+      "fields": [
+        {
+          "name": "json",
+          "type": "string_buffer"
+        },
+        {
+          "name": "revision",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "DlumaQuestHudOverrideRequest",
+      "documentation": "Sets or updates one presentation-only quest HUD override.",
+      "fields": [
+        {
+          "name": "target_id",
+          "type": "string_view"
+        },
+        {
+          "name": "text",
+          "type": "string_view"
+        },
+        {
+          "name": "token",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "DlumaRadioDialogRequest",
+      "documentation": "Starts one exact named speaker group.",
+      "fields": [
+        {
+          "name": "speaker",
+          "type": "string_view"
+        },
+        {
+          "name": "group",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaAudioPlayRequest",
+      "documentation": "Plays an approved cue with copied position and gain.",
+      "fields": [
+        {
+          "name": "cue",
+          "type": "string_view"
+        },
+        {
+          "name": "position",
+          "type": "vec3"
+        },
+        {
+          "name": "positional",
+          "type": "bool"
+        },
+        {
+          "name": "gain",
+          "type": "f32"
+        }
+      ]
+    },
+    {
+      "name": "DlumaQuestTransitionRequest",
+      "documentation": "Requests a transition in a pre-authored native quest.",
+      "fields": [
+        {
+          "name": "quest_id",
+          "type": "string_view"
+        },
+        {
+          "name": "phase_id",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaConfigGetRequest",
+      "documentation": "Reads one manifest-declared configuration key.",
+      "fields": [
+        {
+          "name": "key",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaScalarResult",
+      "documentation": "Returns one copied typed scalar.",
+      "fields": [
+        {
+          "name": "value",
+          "type": "scalar"
+        }
+      ]
+    },
+    {
+      "name": "DlumaStorageGetRequest",
+      "documentation": "Reads one owner-isolated storage key.",
+      "fields": [
+        {
+          "name": "key",
+          "type": "string_view"
+        },
+        {
+          "name": "fallback",
+          "type": "scalar"
+        },
+        {
+          "name": "has_fallback",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "DlumaStorageSetRequest",
+      "documentation": "Writes one owner-isolated scalar storage value.",
+      "fields": [
+        {
+          "name": "key",
+          "type": "string_view"
+        },
+        {
+          "name": "value",
+          "type": "scalar"
+        }
+      ]
+    },
+    {
+      "name": "DlumaCompanionOpenRequest",
+      "documentation": "Opens an approval-bound immutable companion artifact.",
+      "fields": [
+        {
+          "name": "relative_path",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaCompanionOpenResult",
+      "documentation": "Returns an owner-bound immutable companion artifact token and metadata.",
+      "fields": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "size",
+          "type": "u64"
+        },
+        {
+          "name": "sha256",
+          "type": "string_buffer"
+        }
+      ]
+    },
+    {
+      "name": "DlumaVehicleStateResult",
+      "documentation": "Returns copied local-player and vehicle state without exposing an engine pointer.",
+      "fields": [
+        { "name": "player_present", "type": "bool" },
+        { "name": "vehicle_present", "type": "bool" },
+        { "name": "is_local_driver", "type": "bool" },
+        { "name": "vehicle_type", "type": "string_buffer" },
+        { "name": "class_name", "type": "string_buffer" },
+        { "name": "linear_velocity", "type": "vec3" },
+        { "name": "speed_mps", "type": "f64" },
+        { "name": "speed_mph", "type": "f64" },
+        { "name": "level_epoch", "type": "u64" }
+      ]
+    },
+    {
+      "name": "DlumaCompanionEntryReadRequest",
+      "documentation": "Reads one canonical entry from an opened approval-bound companion archive.",
+      "fields": [
+        { "name": "token", "type": "u64" },
+        { "name": "entry_path", "type": "string_view" }
+      ]
+    },
+    {
+      "name": "DlumaCompanionEntryReadResult",
+      "documentation": "Copies one bounded binary companion entry into caller-owned storage.",
+      "fields": [
+        { "name": "bytes", "type": "byte_buffer" },
+        { "name": "sha256", "type": "string_buffer" }
+      ]
+    },
+    {
+      "name": "DlumaAudioBankOpenRequest",
+      "documentation": "Opens one manifest-allowlisted bank from an approved companion archive.",
+      "fields": [
+        { "name": "companion_token", "type": "u64" },
+        { "name": "bank_id", "type": "string_view" }
+      ]
+    },
+    {
+      "name": "DlumaAudioCueRequest",
+      "documentation": "Addresses one allowlisted cue in an opened companion bank.",
+      "fields": [
+        { "name": "bank_token", "type": "u64" },
+        { "name": "cue", "type": "string_view" }
+      ]
+    },
+    {
+      "name": "DlumaAudioCuePlayRequest",
+      "documentation": "Starts one owner-bound allowlisted companion cue.",
+      "fields": [
+        { "name": "bank_token", "type": "u64" },
+        { "name": "cue", "type": "string_view" },
+        { "name": "start_ms", "type": "u64" },
+        { "name": "initial_gain", "type": "f32" },
+        { "name": "loop", "type": "bool" },
+        { "name": "fade_in_ms", "type": "u32" },
+        { "name": "fade_out_ms", "type": "u32" }
+      ]
+    },
+    {
+      "name": "DlumaAudioCueStateResult",
+      "documentation": "Returns copied playback state for one owner-bound cue.",
+      "fields": [
+        { "name": "playing", "type": "bool" },
+        { "name": "position_ms", "type": "u64" },
+        { "name": "duration_ms", "type": "u64" }
+      ]
+    },
+    {
+      "name": "DlumaAudioCueSeekRequest",
+      "documentation": "Seeks one owner-bound cue to a bounded millisecond position.",
+      "fields": [
+        { "name": "cue_token", "type": "u64" },
+        { "name": "position_ms", "type": "u64" }
+      ]
+    },
+    {
+      "name": "DlumaAudioCueGainRequest",
+      "documentation": "Sets bounded gain for one owner-bound cue.",
+      "fields": [
+        { "name": "cue_token", "type": "u64" },
+        { "name": "gain", "type": "f32" }
+      ]
+    },
+    {
+      "name": "DlumaAudioFilterRequest",
+      "documentation": "Sets bounded wet-mix and cutoff values for an owner-bound audio token.",
+      "fields": [
+        { "name": "token", "type": "u64" },
+        { "name": "wet_mix", "type": "f32" },
+        { "name": "cutoff_hz", "type": "f32" }
+      ]
+    },
+    {
+      "name": "DlumaAudioCueStopRequest",
+      "documentation": "Stops one owner-bound cue with an optional bounded fade.",
+      "fields": [
+        { "name": "cue_token", "type": "u64" },
+        { "name": "fade_out_ms", "type": "u32" }
+      ]
+    },
+    {
+      "name": "DlumaAudioMusicAcquireRequest",
+      "documentation": "Requests process-exclusive stock-music ownership with a bounded fade.",
+      "fields": [
+        { "name": "fade_out_ms", "type": "u32" }
+      ]
+    },
+    {
+      "name": "DlumaAudioMusicStateResult",
+      "documentation": "Returns the phase of one owner-bound exclusive music lease.",
+      "fields": [
+        { "name": "phase", "type": "u32" }
+      ]
+    },
+    {
+      "name": "DlumaAudioMusicReleaseRequest",
+      "documentation": "Releases exclusive music ownership and schedules bounded stock-music resume.",
+      "fields": [
+        { "name": "token", "type": "u64" },
+        { "name": "resume_delay_ms", "type": "u32" }
+      ]
+    },
+    {
+      "name": "DlumaQuestPhaseRegistrationRequest",
+      "documentation": "Registers one owner-bound custom quest phase callback ID for a declared handler or contract.",
+      "fields": [
+        { "name": "key", "type": "string_view" },
+        { "name": "callback_id", "type": "u64" }
+      ]
+    }
+  ]
+}

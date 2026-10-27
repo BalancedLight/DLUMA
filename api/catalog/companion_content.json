@@ -1,0 +1,98 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "companion_content",
+  "service": {
+    "id": "dluma.companion_content.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "companion_content.open",
+      "ordinal": 1,
+      "status": "implemented",
+      "capability": "companion.content",
+      "access": [
+        "companion.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "request": "DlumaCompanionOpenRequest",
+      "result": "DlumaCompanionOpenResult",
+      "limits": {
+        "path_bytes": 512,
+        "artifacts_per_owner": 64,
+        "artifact_bytes": 536870912
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "not_found",
+        "changed_since_approval",
+        "path_escape",
+        "reparse_rejected",
+        "quota_exceeded",
+        "insufficient_buffer"
+      ],
+      "documentation": "Opens one declared approval-bound companion artifact by canonical package-relative path.",
+      "adapters": {
+        "core": "dluma_companion_content_open",
+        "lua": "dluma.companion_content.open",
+        "csharp": "IModContext.CompanionContent.Open",
+        "c": "DlumaCompanionContentV1.open",
+        "cpp": "context.companion().open"
+      },
+      "tests": [
+        "companion_content_open_contract",
+        "companion_content_changed_bytes",
+        "companion_content_reparse_escape"
+      ]
+    },
+    {
+      "id": "companion_content.entry.read",
+      "ordinal": 2,
+      "status": "implemented",
+      "capability": "companion.content",
+      "access": [
+        "companion.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "request": "DlumaCompanionEntryReadRequest",
+      "result": "DlumaCompanionEntryReadResult",
+      "limits": {
+        "path_bytes": 260,
+        "entry_bytes": 1048576
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "foreign_handle",
+        "stale_handle",
+        "not_found",
+        "changed_since_approval",
+        "limit_exceeded",
+        "insufficient_buffer"
+      ],
+      "documentation": "Copies one canonical stored entry from an opened approval-bound companion archive.",
+      "adapters": {
+        "core": "dluma_companion_content_entry_read",
+        "lua": "dluma.companion_content.read_entry",
+        "csharp": "IModContext.CompanionContent.EntryRead",
+        "c": "DlumaCompanionContentV1.entry_read",
+        "cpp": "context.companion_content().entry_read"
+      },
+      "tests": [
+        "companion_content_entry_read_contract",
+        "companion_content_entry_path_security"
+      ]
+    }
+  ]
+}

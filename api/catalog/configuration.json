@@ -1,0 +1,89 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "configuration",
+  "service": {
+    "id": "dluma.configuration.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "configuration.get",
+      "ordinal": 1,
+      "status": "implemented",
+      "capability": "configuration.mod",
+      "access": [
+        "configuration.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "request": "DlumaConfigGetRequest",
+      "result": "DlumaScalarResult",
+      "limits": {
+        "key_bytes": 64,
+        "value_bytes": 512
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "not_found",
+        "invalid_value",
+        "insufficient_buffer",
+        "owner_revoked"
+      ],
+      "documentation": "Reads one typed player preference declared by the shared manifest.",
+      "adapters": {
+        "core": "dluma_configuration_get",
+        "lua": "dluma.configuration.get",
+        "csharp": "IModContext.Configuration.Get",
+        "c": "DlumaConfigurationV1.get",
+        "cpp": "context.configuration().get"
+      },
+      "tests": [
+        "configuration_get_contract",
+        "configuration_exact_boundary"
+      ]
+    },
+    {
+      "id": "configuration.changed",
+      "ordinal": 2,
+      "status": "implemented",
+      "capability": "configuration.mod",
+      "access": [
+        "configuration.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "subscriptions_per_owner": 32
+      },
+      "errors": [
+        "access_denied",
+        "wrong_thread",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Subscribes to copied changes for manifest-declared configuration.",
+      "adapters": {
+        "core": "dluma_configuration_subscribe_changed",
+        "lua": "mod:on_config_changed",
+        "csharp": "IModContext.Configuration.Changed",
+        "c": "DlumaConfigurationV1.subscribe_changed",
+        "cpp": "context.configuration().on_changed"
+      },
+      "tests": [
+        "configuration_changed_contract",
+        "configuration_callback_mutation"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1184 @@
+{
+  "api_name": "DLUMA API",
+  "api_version": "1.0",
+  "catalog_sha256": "D24FB8E99DCC15D803DC6C3C275F80C71218AA254E8ECF6431633A2E90EEC65A",
+  "operations": [
+    {
+      "id": "core.log",
+      "numeric_id": 1001,
+      "domain": "core",
+      "name": "dluma.log",
+      "request": "DlumaLogRequest",
+      "result": "DlumaCallResult",
+      "status": "implemented",
+      "capability": "core.runtime",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "documentation": "Writes a bounded owner-attributed message to the loader log."
+    },
+    {
+      "id": "core.capability.query",
+      "numeric_id": 1002,
+      "domain": "core",
+      "name": "dluma.capability",
+      "request": "DlumaCapabilityQueryRequest",
+      "result": "DlumaCapabilityQueryResult",
+      "status": "implemented",
+      "capability": "core.runtime",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "documentation": "Queries configured support and current readiness for one stable capability ID."
+    },
+    {
+      "id": "core.clock.monotonic_ms",
+      "numeric_id": 1003,
+      "domain": "core",
+      "name": "dluma.clock.monotonic_ms",
+      "request": "DlumaNoRequest",
+      "result": "DlumaU64Result",
+      "status": "implemented",
+      "capability": "core.runtime",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "documentation": "Returns the loader monotonic clock in milliseconds."
+    },
+    {
+      "id": "core.timer.after",
+      "numeric_id": 1004,
+      "domain": "core",
+      "name": "dluma.timer.after",
+      "request": "DlumaTimerRequest",
+      "result": "DlumaTokenResult",
+      "status": "implemented",
+      "capability": "core.timers",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Schedules one owner-bound callback after a positive delay."
+    },
+    {
+      "id": "core.timer.every",
+      "numeric_id": 1005,
+      "domain": "core",
+      "name": "dluma.timer.every",
+      "request": "DlumaTimerRequest",
+      "result": "DlumaTokenResult",
+      "status": "implemented",
+      "capability": "core.timers",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Schedules one repeating owner-bound callback."
+    },
+    {
+      "id": "core.token.cancel",
+      "numeric_id": 1006,
+      "domain": "core",
+      "name": "mod:off",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaBoolResult",
+      "status": "implemented",
+      "capability": "core.runtime",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Idempotently cancels an owner-bound timer, subscription, callback, or resource token."
+    },
+    {
+      "id": "world.find",
+      "numeric_id": 2001,
+      "domain": "world",
+      "name": "dluma.world.find",
+      "request": "DlumaWorldFindRequest",
+      "result": "DlumaObjectResult",
+      "status": "gated",
+      "capability": "world.find",
+      "access": [
+        "world.query"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Finds an exact runtime object name and returns an opaque owner- and generation-bound handle."
+    },
+    {
+      "id": "world.position",
+      "numeric_id": 2002,
+      "domain": "world",
+      "name": "object:position",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaVec3Result",
+      "status": "gated",
+      "capability": "world.position",
+      "access": [
+        "world.query"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns a copied object position after ownership, identity, and generation revalidation."
+    },
+    {
+      "id": "world.forward_direction",
+      "numeric_id": 2003,
+      "domain": "world",
+      "name": "object:forward_direction",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaVec3Result",
+      "status": "gated",
+      "capability": "world.position",
+      "access": [
+        "world.query"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns a copied normalized object forward direction."
+    },
+    {
+      "id": "world.local_enabled",
+      "numeric_id": 2004,
+      "domain": "world",
+      "name": "object:is_enabled",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "world.local_enable",
+      "access": [
+        "world.query"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns the copied local-enable state for an opaque object handle."
+    },
+    {
+      "id": "world.set_enabled_many",
+      "numeric_id": 2005,
+      "domain": "world",
+      "name": "dluma.world.set_enabled_many",
+      "request": "DlumaSetEnabledManyRequest",
+      "result": "DlumaSetEnabledManyResult",
+      "status": "gated",
+      "capability": "world.local_enable",
+      "access": [
+        "world.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Applies a bounded local-enable change to exact object names."
+    },
+    {
+      "id": "player.local",
+      "numeric_id": 3001,
+      "domain": "player",
+      "name": "dluma.player.local_player",
+      "request": "DlumaNoRequest",
+      "result": "DlumaObjectResult",
+      "status": "gated",
+      "capability": "player.read",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns the opaque generation-bound local-player handle."
+    },
+    {
+      "id": "player.position",
+      "numeric_id": 3002,
+      "domain": "player",
+      "name": "player:position",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaVec3Result",
+      "status": "gated",
+      "capability": "player.transform",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns a copied local-player position."
+    },
+    {
+      "id": "player.look_direction",
+      "numeric_id": 3003,
+      "domain": "player",
+      "name": "player:look_direction",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaVec3Result",
+      "status": "gated",
+      "capability": "player.transform",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns a copied normalized local-player look direction."
+    },
+    {
+      "id": "player.body_direction",
+      "numeric_id": 3004,
+      "domain": "player",
+      "name": "player:body_direction",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaVec3Result",
+      "status": "gated",
+      "capability": "player.transform",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns a copied normalized local-player body direction."
+    },
+    {
+      "id": "player.health",
+      "numeric_id": 3005,
+      "domain": "player",
+      "name": "player:health",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaFloatResult",
+      "status": "gated",
+      "capability": "player.vitals",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns copied current local-player health."
+    },
+    {
+      "id": "player.max_health",
+      "numeric_id": 3006,
+      "domain": "player",
+      "name": "player:max_health",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaFloatResult",
+      "status": "gated",
+      "capability": "player.vitals",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns computed maximum local-player health when an independently validated PlayerDI vitals binding is ready; this is never substituted with a raw PlayerVariable."
+    },
+    {
+      "id": "player.alive",
+      "numeric_id": 3007,
+      "domain": "player",
+      "name": "player:is_alive",
+      "request": "DlumaObjectRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "player.vitals",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns the validated local-player alive state."
+    },
+    {
+      "id": "player.variable_names",
+      "numeric_id": 3008,
+      "domain": "player",
+      "name": "dluma.player.variable_names",
+      "request": "DlumaNoRequest",
+      "result": "DlumaStringListResult",
+      "status": "gated",
+      "capability": "player.read",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Lists the generated allowlist of named PlayerVariables."
+    },
+    {
+      "id": "player.variable_get",
+      "numeric_id": 3009,
+      "domain": "player",
+      "name": "player:variable",
+      "request": "DlumaPlayerVariableRequest",
+      "result": "DlumaPlayerVariableResult",
+      "status": "gated",
+      "capability": "player.read",
+      "access": [
+        "player.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Reads one copied allowlisted raw PlayerVariables tuning snapshot. Names such as max_health and base_max_health are not current health or the computed PlayerDI maximum-health result."
+    },
+    {
+      "id": "player.variable_set",
+      "numeric_id": 3010,
+      "domain": "player",
+      "name": "player:set_variable",
+      "request": "DlumaPlayerVariableSetRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "player.read",
+      "access": [
+        "world.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Transactionally applies one bounded transient allowlisted raw PlayerVariables tuning override; invalid or non-finite derived values leave game memory unchanged."
+    },
+    {
+      "id": "player.variable_reset",
+      "numeric_id": 3011,
+      "domain": "player",
+      "name": "player:reset_variable",
+      "request": "DlumaPlayerVariableRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "player.read",
+      "access": [
+        "world.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Restores one transient PlayerVariables override owned by the mod."
+    },
+    {
+      "id": "player.vehicle_state",
+      "numeric_id": 3012,
+      "domain": "player",
+      "name": "dluma.player.vehicle_state",
+      "request": "DlumaNoRequest",
+      "result": "DlumaVehicleStateResult",
+      "status": "gated",
+      "capability": "player.vehicle",
+      "access": [
+        "game.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns copied local-player vehicle state without exposing an engine pointer."
+    },
+    {
+      "id": "events.update.subscribe",
+      "numeric_id": 4001,
+      "domain": "events",
+      "name": "mod:on_update",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "status": "implemented",
+      "capability": "core.runtime",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Subscribes a callback to the bounded game-thread frame dispatcher."
+    },
+    {
+      "id": "events.sensor.is_inside",
+      "numeric_id": 4002,
+      "domain": "events",
+      "name": "dluma.events.sensor.is_inside",
+      "request": "DlumaNamedRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "events.sensor",
+      "access": [
+        "events.sensor"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns whether the local player is inside an exact named SensorArea."
+    },
+    {
+      "id": "events.sensor.enter",
+      "numeric_id": 4003,
+      "domain": "events",
+      "name": "mod:on_sensor_enter",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "status": "gated",
+      "capability": "events.sensor",
+      "access": [
+        "events.sensor"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Subscribes to deduplicated enter edges for one exact named SensorArea."
+    },
+    {
+      "id": "events.sensor.leave",
+      "numeric_id": 4004,
+      "domain": "events",
+      "name": "mod:on_sensor_leave",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "status": "gated",
+      "capability": "events.sensor",
+      "access": [
+        "events.sensor"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Subscribes to deduplicated leave edges for one exact named SensorArea."
+    },
+    {
+      "id": "events.interaction.begin",
+      "numeric_id": 4005,
+      "domain": "events",
+      "name": "mod:on_interact_begin",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "status": "gated",
+      "capability": "events.interact",
+      "access": [
+        "events.interact"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Subscribes to successful base InteractiveItem trigger observations."
+    },
+    {
+      "id": "events.enemy_killed",
+      "numeric_id": 4006,
+      "domain": "events",
+      "name": "mod:on_enemy_killed",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "status": "planned",
+      "capability": "events.enemy_killed",
+      "access": [
+        "events.enemy_killed"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Reserved copied post-death event; unavailable until its exact observer is validated."
+    },
+    {
+      "id": "ui.subtitle.show",
+      "numeric_id": 5001,
+      "domain": "ui",
+      "name": "dluma.ui.send_subtitle",
+      "request": "DlumaSubtitleRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "ui.subtitles",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Shows a bounded loader-owned subtitle."
+    },
+    {
+      "id": "ui.subtitle.update",
+      "numeric_id": 5002,
+      "domain": "ui",
+      "name": "dluma.ui.update_subtitle",
+      "request": "DlumaSubtitleUpdateRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "ui.subtitles",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Updates the active loader-owned subtitle."
+    },
+    {
+      "id": "ui.quest_hud.snapshot",
+      "numeric_id": 5003,
+      "domain": "ui",
+      "name": "dluma.ui.quest_hud",
+      "request": "DlumaQuestHudRequest",
+      "result": "DlumaQuestHudResult",
+      "status": "gated",
+      "capability": "ui.quest_hud",
+      "access": [
+        "game.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns a bounded copied view of the current quest HUD."
+    },
+    {
+      "id": "ui.quest_hud.override",
+      "numeric_id": 5004,
+      "domain": "ui",
+      "name": "dluma.ui.override_quest_hud",
+      "request": "DlumaQuestHudOverrideRequest",
+      "result": "DlumaTokenResult",
+      "status": "gated",
+      "capability": "ui.quest_hud",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Creates or updates one presentation-only quest HUD override."
+    },
+    {
+      "id": "ui.toast",
+      "numeric_id": 5005,
+      "domain": "ui",
+      "name": "dluma.ui.toast",
+      "request": "DlumaSubtitleUpdateRequest",
+      "result": "DlumaTokenResult",
+      "status": "planned",
+      "capability": "ui.overlay",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Reserved loader-overlay toast operation."
+    },
+    {
+      "id": "audio.radio_dialog.play",
+      "numeric_id": 6001,
+      "domain": "audio",
+      "name": "dluma.audio.play_radio_dialog",
+      "request": "DlumaRadioDialogRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "audio.radio_dialog",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Starts one exact named dialog speaker group."
+    },
+    {
+      "id": "audio.cue.play",
+      "numeric_id": 6002,
+      "domain": "audio",
+      "name": "dluma.audio.cue.play",
+      "request": "DlumaAudioCuePlayRequest",
+      "result": "DlumaTokenResult",
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Starts one owner-bound allowlisted cue from an opened companion bank."
+    },
+    {
+      "id": "audio.cue.stop",
+      "numeric_id": 6003,
+      "domain": "audio",
+      "name": "dluma.audio.cue.stop",
+      "request": "DlumaAudioCueStopRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Stops one owner-bound companion cue with an optional bounded fade."
+    },
+    {
+      "id": "audio.bank.open",
+      "numeric_id": 6004,
+      "domain": "audio",
+      "name": "dluma.audio.bank.open",
+      "request": "DlumaAudioBankOpenRequest",
+      "result": "DlumaTokenResult",
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Opens one manifest-allowlisted CSB bank from an approved companion archive."
+    },
+    {
+      "id": "audio.cue.duration",
+      "numeric_id": 6005,
+      "domain": "audio",
+      "name": "dluma.audio.cue.duration",
+      "request": "DlumaAudioCueRequest",
+      "result": "DlumaU64Result",
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns the probed millisecond duration of one allowlisted cue."
+    },
+    {
+      "id": "audio.cue.state",
+      "numeric_id": 6006,
+      "domain": "audio",
+      "name": "dluma.audio.cue.state",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaAudioCueStateResult",
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns copied playback state for one owner-bound cue."
+    },
+    {
+      "id": "audio.cue.seek",
+      "numeric_id": 6007,
+      "domain": "audio",
+      "name": "dluma.audio.cue.seek",
+      "request": "DlumaAudioCueSeekRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Seeks one owner-bound cue to a bounded millisecond position."
+    },
+    {
+      "id": "audio.cue.set_gain",
+      "numeric_id": 6008,
+      "domain": "audio",
+      "name": "dluma.audio.cue.set_gain",
+      "request": "DlumaAudioCueGainRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "audio.stem",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Sets bounded gain for one owner-bound cue."
+    },
+    {
+      "id": "audio.cue.set_filter",
+      "numeric_id": 6009,
+      "domain": "audio",
+      "name": "dluma.audio.cue.set_filter",
+      "request": "DlumaAudioFilterRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "audio.wave_filter",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Sets exact-build filter values for one owner-bound cue."
+    },
+    {
+      "id": "audio.music.acquire",
+      "numeric_id": 6010,
+      "domain": "audio",
+      "name": "dluma.audio.music.acquire",
+      "request": "DlumaAudioMusicAcquireRequest",
+      "result": "DlumaTokenResult",
+      "status": "gated",
+      "capability": "audio.music_exclusive",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Acquires process-exclusive stock-music ownership transactionally."
+    },
+    {
+      "id": "audio.music.state",
+      "numeric_id": 6011,
+      "domain": "audio",
+      "name": "dluma.audio.music.state",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaAudioMusicStateResult",
+      "status": "gated",
+      "capability": "audio.music_exclusive",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Returns the current phase of an owner-bound exclusive music lease."
+    },
+    {
+      "id": "audio.music.set_filter",
+      "numeric_id": 6012,
+      "domain": "audio",
+      "name": "dluma.audio.music.set_filter",
+      "request": "DlumaAudioFilterRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "audio.music_filter",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Sets restorable exact-build filter values for an exclusive stock-music lease."
+    },
+    {
+      "id": "audio.music.release",
+      "numeric_id": 6013,
+      "domain": "audio",
+      "name": "dluma.audio.music.release",
+      "request": "DlumaAudioMusicReleaseRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "audio.music_exclusive",
+      "access": [
+        "audio.play"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Restores and releases an exclusive stock-music lease with bounded delayed resume."
+    },
+    {
+      "id": "quests.advance_to_phase",
+      "numeric_id": 7001,
+      "domain": "quests",
+      "name": "dluma.quests.advance_to_phase",
+      "request": "DlumaQuestTransitionRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "quests.native",
+      "access": [
+        "quest.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Queues an exact engine-synchronized transition to a pre-authored phase."
+    },
+    {
+      "id": "quests.start",
+      "numeric_id": 7002,
+      "domain": "quests",
+      "name": "dluma.quests.start",
+      "request": "DlumaQuestTransitionRequest",
+      "result": "DlumaBoolResult",
+      "status": "removed",
+      "capability": "quests.native",
+      "access": [
+        "quest.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Removed until a separately validated native start route exists."
+    },
+    {
+      "id": "actions.chain.run",
+      "numeric_id": 8001,
+      "domain": "actions",
+      "name": "dluma.actions.run_chain",
+      "request": "DlumaNamedRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "actions.chain",
+      "access": [
+        "world.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Runs one exact active-map ActionChain after its native authored condition succeeds."
+    },
+    {
+      "id": "configuration.get",
+      "numeric_id": 9001,
+      "domain": "configuration",
+      "name": "dluma.configuration.get",
+      "request": "DlumaConfigGetRequest",
+      "result": "DlumaScalarResult",
+      "status": "implemented",
+      "capability": "configuration.mod",
+      "access": [
+        "configuration.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "documentation": "Reads one typed player preference declared by the shared manifest."
+    },
+    {
+      "id": "configuration.changed",
+      "numeric_id": 9002,
+      "domain": "configuration",
+      "name": "mod:on_config_changed",
+      "request": "DlumaEventSubscribeRequest",
+      "result": "DlumaTokenResult",
+      "status": "implemented",
+      "capability": "configuration.mod",
+      "access": [
+        "configuration.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Subscribes to copied changes for manifest-declared configuration."
+    },
+    {
+      "id": "storage.get",
+      "numeric_id": 10001,
+      "domain": "storage",
+      "name": "dluma.storage.get",
+      "request": "DlumaStorageGetRequest",
+      "result": "DlumaScalarResult",
+      "status": "implemented",
+      "capability": "storage.mod",
+      "access": [
+        "storage.mod"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "documentation": "Reads one owner-isolated persistent scalar value."
+    },
+    {
+      "id": "storage.set",
+      "numeric_id": 10002,
+      "domain": "storage",
+      "name": "dluma.storage.set",
+      "request": "DlumaStorageSetRequest",
+      "result": "DlumaBoolResult",
+      "status": "implemented",
+      "capability": "storage.mod",
+      "access": [
+        "storage.mod"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "documentation": "Persists one owner-isolated boolean, number, integer, or UTF-8 string."
+    },
+    {
+      "id": "storage.delete",
+      "numeric_id": 10003,
+      "domain": "storage",
+      "name": "dluma.storage.delete",
+      "request": "DlumaConfigGetRequest",
+      "result": "DlumaBoolResult",
+      "status": "implemented",
+      "capability": "storage.mod",
+      "access": [
+        "storage.mod"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "documentation": "Deletes one owner-isolated persistent scalar value."
+    },
+    {
+      "id": "companion_content.open",
+      "numeric_id": 11001,
+      "domain": "companion_content",
+      "name": "dluma.companion_content.open",
+      "request": "DlumaCompanionOpenRequest",
+      "result": "DlumaCompanionOpenResult",
+      "status": "implemented",
+      "capability": "companion.content",
+      "access": [
+        "companion.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "documentation": "Opens one declared approval-bound companion artifact by canonical package-relative path."
+    },
+    {
+      "id": "companion_content.entry.read",
+      "numeric_id": 11002,
+      "domain": "companion_content",
+      "name": "dluma.companion_content.read_entry",
+      "request": "DlumaCompanionEntryReadRequest",
+      "result": "DlumaCompanionEntryReadResult",
+      "status": "implemented",
+      "capability": "companion.content",
+      "access": [
+        "companion.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "documentation": "Copies one canonical stored entry from an opened approval-bound companion archive."
+    },
+    {
+      "id": "quest_phases.provider.register",
+      "numeric_id": 12001,
+      "domain": "quest_phases",
+      "name": "mod:handle_quest_phase",
+      "request": "DlumaQuestPhaseRegistrationRequest",
+      "result": "DlumaTokenResult",
+      "status": "gated",
+      "capability": "quests.phase_handlers",
+      "access": [
+        "quest.phase.handle"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Registers the primary callback for one handler declared by the calling mod manifest."
+    },
+    {
+      "id": "quest_phases.observer.register",
+      "numeric_id": 12002,
+      "domain": "quest_phases",
+      "name": "mod:observe_quest_phase",
+      "request": "DlumaQuestPhaseRegistrationRequest",
+      "result": "DlumaTokenResult",
+      "status": "gated",
+      "capability": "quests.phase_handlers",
+      "access": [
+        "quest.phase.observe"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Registers an observer callback for one provider and handler contract ID."
+    },
+    {
+      "id": "quest_phases.unregister",
+      "numeric_id": 12003,
+      "domain": "quest_phases",
+      "name": "mod:off",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "quests.phase_handlers",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Idempotently unregisters one quest phase token owned by the calling mod."
+    }
+  ]
+}

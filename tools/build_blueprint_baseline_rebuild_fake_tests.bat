@@ -1,0 +1,17 @@
+@echo off
+setlocal EnableExtensions
+cd /d "%~dp0\.."
+where cl.exe >nul 2>nul || (
+  call tools\setup_msvc.bat || exit /b 1
+)
+if not exist build\blueprint-baseline-rebuild-fake mkdir build\blueprint-baseline-rebuild-fake
+cl.exe /nologo /TP /MT /O2 /Oi- /W4 /WX /EHs-c- /GR- /std:c++17 ^
+  /D_HAS_EXCEPTIONS=0 /D_CRT_SECURE_NO_WARNINGS /I src ^
+  /Fo"build\blueprint-baseline-rebuild-fake/" ^
+  /Fe"build\blueprint-baseline-rebuild-fake\blueprint_baseline_rebuild_fake_harness.exe" ^
+  tests\blueprint_baseline_rebuild_fake_harness.cpp ^
+  src\fixes\custom_map_asset_isolation\BlueprintBaselineRebuild.cpp ^
+  src\fixes\custom_map_asset_isolation\StoredBlueprintOwner.cpp ^
+  src\fixes\custom_map_asset_isolation\CurveBorrowBoundary.cpp ^
+  /link kernel32.lib || exit /b 1
+exit /b 0

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api-access.schema.json",
+  "title": "DLUMA API access declarations",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "access"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "access": {
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "risk",
+          "description"
+        ],
+        "properties": {
+          "id": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+            "type": "string"
+          },
+          "risk": {
+            "enum": [
+              "safe",
+              "elevated",
+              "dangerous"
+            ]
+          },
+          "description": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  }
+}

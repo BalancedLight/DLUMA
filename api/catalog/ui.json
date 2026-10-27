@@ -1,0 +1,201 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "ui",
+  "service": {
+    "id": "dluma.ui.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "ui.subtitle.show",
+      "ordinal": 1,
+      "status": "gated",
+      "capability": "ui.subtitles",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaSubtitleRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "text_bytes": 1024,
+        "maximum_seconds": 600
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "owner_revoked"
+      ],
+      "documentation": "Shows a bounded loader-owned subtitle.",
+      "adapters": {
+        "core": "dluma_game_ui_subtitle_show",
+        "lua": "dluma.ui.send_subtitle",
+        "csharp": "IModContext.Ui.ShowSubtitle",
+        "c": "DlumaUiV1.subtitle_show",
+        "cpp": "context.ui().show_subtitle"
+      },
+      "tests": [
+        "subtitle_show_contract"
+      ]
+    },
+    {
+      "id": "ui.subtitle.update",
+      "ordinal": 2,
+      "status": "gated",
+      "capability": "ui.subtitles",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaSubtitleUpdateRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "text_bytes": 1024
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found"
+      ],
+      "documentation": "Updates the active loader-owned subtitle.",
+      "adapters": {
+        "core": "dluma_game_ui_subtitle_update",
+        "lua": "dluma.ui.update_subtitle",
+        "csharp": "IModContext.Ui.UpdateSubtitle",
+        "c": "DlumaUiV1.subtitle_update",
+        "cpp": "context.ui().update_subtitle"
+      },
+      "tests": [
+        "subtitle_update_contract"
+      ]
+    },
+    {
+      "id": "ui.quest_hud.snapshot",
+      "ordinal": 3,
+      "status": "gated",
+      "capability": "ui.quest_hud",
+      "access": [
+        "game.read"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaQuestHudRequest",
+      "result": "DlumaQuestHudResult",
+      "limits": {
+        "objectives": 4,
+        "json_bytes": 8192
+      },
+      "errors": [
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "insufficient_buffer"
+      ],
+      "documentation": "Returns a bounded copied view of the current quest HUD.",
+      "adapters": {
+        "core": "dluma_game_ui_quest_hud_snapshot",
+        "lua": "dluma.ui.quest_hud",
+        "csharp": "IModContext.Ui.QuestHud",
+        "c": "DlumaUiV1.quest_hud_snapshot",
+        "cpp": "context.ui().quest_hud"
+      },
+      "tests": [
+        "quest_hud_snapshot_contract"
+      ]
+    },
+    {
+      "id": "ui.quest_hud.override",
+      "ordinal": 4,
+      "status": "gated",
+      "capability": "ui.quest_hud",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaQuestHudOverrideRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "target_id_bytes": 96,
+        "text_bytes": 512,
+        "overrides_per_owner": 8
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "scope_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "quota_exceeded"
+      ],
+      "documentation": "Creates or updates one presentation-only quest HUD override.",
+      "adapters": {
+        "core": "dluma_game_ui_quest_hud_override",
+        "lua": "dluma.ui.override_quest_hud",
+        "csharp": "IModContext.Ui.OverrideQuestHud",
+        "c": "DlumaUiV1.quest_hud_override",
+        "cpp": "context.ui().override_quest_hud"
+      },
+      "tests": [
+        "quest_hud_override_contract",
+        "quest_hud_override_owner_cleanup"
+      ]
+    },
+    {
+      "id": "ui.toast",
+      "ordinal": 5,
+      "status": "planned",
+      "capability": "ui.overlay",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaSubtitleUpdateRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "text_bytes": 512
+      },
+      "errors": [
+        "unsupported_capability"
+      ],
+      "documentation": "Reserved loader-overlay toast operation.",
+      "adapters": {
+        "core": "",
+        "lua": "dluma.ui.toast",
+        "csharp": "IModContext.Ui.Toast",
+        "c": "DlumaUiV1.toast",
+        "cpp": "context.ui().toast"
+      },
+      "tests": [
+        "ui_toast_unavailable_contract"
+      ]
+    }
+  ]
+}

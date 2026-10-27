@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Compile the UI lifecycle wrapper once; it includes dlw_ui.c. -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'DLUMA'">
+    <ClCompile Remove="src\dlw_ui.c" />
+    <ClCompile Include="src\dlw_ui_patched.c" />
+  </ItemGroup>
+</Project>

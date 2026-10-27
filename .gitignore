@@ -1,0 +1,60 @@
+# Visual Studio user state and native build output
+.vs/
+*.user
+*.obj
+*.pdb
+build/
+bin/x64/Debug/
+bin/**/*.ilk
+bin/
+obj/
+
+# Python caches and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-*/
+.coverage
+htmlcov/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+DLUMA.local.props
+tests/local_paths.json
+
+# Ignore VS Code AI rules
+**/.github/instructions/codacy.instructions.md
+.codex-notes/
+AGENTS.md
+codex/
+_codex_checkpoints/
+runtime_test/
+
+Dying Light Mod Workbench.zip
+
+# Local tooling and release artifacts
+.codex/
+.agents/
+.codex-*/
+.mcp.json
+node_modules/
+release/
+*.zip
+
+# Native example outputs
+examples/native-mods/**/build/
+examples/native-mods/**/dist/
+examples/native-mods/**/mods/**/*.mod
+
+# Private Workshop publication metadata
+config/workshop.local.json
+
+# Linker export definition is source; other build contents are generated.
+!/build/
+/build/*
+!/build/exports.def
+
+# Example locks are generated alongside their compiled modules.
+examples/native-mods/**/mods/**/mod.dluma.lock.json

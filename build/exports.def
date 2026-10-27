@@ -1,0 +1,4 @@
+EXPORTS
+InitializeGameScriptDLL
+ShutdownGameScriptDLL
+DLUMA_GetVersion

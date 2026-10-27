@@ -1,0 +1,220 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "core",
+  "service": {
+    "id": "dluma.core.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "core.log",
+      "ordinal": 1,
+      "status": "implemented",
+      "capability": "core.runtime",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "request": "DlumaLogRequest",
+      "result": "DlumaCallResult",
+      "limits": {
+        "level_bytes": 16,
+        "message_bytes": 1024,
+        "messages_per_second": 32
+      },
+      "errors": [
+        "invalid_argument",
+        "limit_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Writes a bounded owner-attributed message to the loader log.",
+      "adapters": {
+        "core": "dluma_core_log",
+        "lua": "dluma.log",
+        "csharp": "IModContext.Log",
+        "c": "DlumaCoreV1.log",
+        "cpp": "context.log"
+      },
+      "tests": [
+        "core_log_contract",
+        "core_log_rate_limit"
+      ]
+    },
+    {
+      "id": "core.capability.query",
+      "ordinal": 2,
+      "status": "implemented",
+      "capability": "core.runtime",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "request": "DlumaCapabilityQueryRequest",
+      "result": "DlumaCapabilityQueryResult",
+      "limits": {
+        "status_bytes": 256
+      },
+      "errors": [
+        "invalid_argument",
+        "unknown_capability",
+        "insufficient_buffer"
+      ],
+      "documentation": "Queries configured support and current readiness for one stable capability ID.",
+      "adapters": {
+        "core": "dluma_core_capability_query",
+        "lua": "dluma.capability",
+        "csharp": "IModContext.Capabilities.Query",
+        "c": "DlumaCoreV1.capability_query",
+        "cpp": "context.capabilities().query"
+      },
+      "tests": [
+        "capability_query_contract",
+        "capability_query_unknown_id"
+      ]
+    },
+    {
+      "id": "core.clock.monotonic_ms",
+      "ordinal": 3,
+      "status": "implemented",
+      "capability": "core.runtime",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "any",
+      "request": "DlumaNoRequest",
+      "result": "DlumaU64Result",
+      "limits": {},
+      "errors": [
+        "owner_revoked"
+      ],
+      "documentation": "Returns the loader monotonic clock in milliseconds.",
+      "adapters": {
+        "core": "dluma_core_monotonic_ms",
+        "lua": "dluma.clock.monotonic_ms",
+        "csharp": "IModContext.Clock.MonotonicMilliseconds",
+        "c": "DlumaCoreV1.monotonic_ms",
+        "cpp": "context.clock().monotonic_ms"
+      },
+      "tests": [
+        "monotonic_clock_contract"
+      ]
+    },
+    {
+      "id": "core.timer.after",
+      "ordinal": 4,
+      "status": "implemented",
+      "capability": "core.timers",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaTimerRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "timers_per_owner": 128,
+        "maximum_seconds": 86400
+      },
+      "errors": [
+        "invalid_argument",
+        "wrong_thread",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Schedules one owner-bound callback after a positive delay.",
+      "adapters": {
+        "core": "dluma_core_timer_after",
+        "lua": "dluma.timer.after",
+        "csharp": "IModContext.Timers.After",
+        "c": "DlumaCoreV1.timer_after",
+        "cpp": "context.timers().after"
+      },
+      "tests": [
+        "timer_after_contract",
+        "timer_owner_cleanup"
+      ]
+    },
+    {
+      "id": "core.timer.every",
+      "ordinal": 5,
+      "status": "implemented",
+      "capability": "core.timers",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaTimerRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "timers_per_owner": 128,
+        "maximum_seconds": 86400
+      },
+      "errors": [
+        "invalid_argument",
+        "wrong_thread",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Schedules one repeating owner-bound callback.",
+      "adapters": {
+        "core": "dluma_core_timer_every",
+        "lua": "dluma.timer.every",
+        "csharp": "IModContext.Timers.Every",
+        "c": "DlumaCoreV1.timer_every",
+        "cpp": "context.timers().every"
+      },
+      "tests": [
+        "timer_every_mutation_contract",
+        "timer_aggregate_budget"
+      ]
+    },
+    {
+      "id": "core.token.cancel",
+      "ordinal": 6,
+      "status": "implemented",
+      "capability": "core.runtime",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaBoolResult",
+      "limits": {},
+      "errors": [
+        "invalid_argument",
+        "wrong_thread",
+        "foreign_handle",
+        "owner_revoked"
+      ],
+      "documentation": "Idempotently cancels an owner-bound timer, subscription, callback, or resource token.",
+      "adapters": {
+        "core": "dluma_core_token_cancel",
+        "lua": "mod:off",
+        "csharp": "IModContext.Cancel",
+        "c": "DlumaCoreV1.token_cancel",
+        "cpp": "context.cancel"
+      },
+      "tests": [
+        "token_cancel_idempotent",
+        "token_cancel_foreign_owner"
+      ]
+    }
+  ]
+}

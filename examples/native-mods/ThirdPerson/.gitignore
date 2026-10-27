@@ -1,0 +1,5 @@
+/build/
+/dist/
+*.pdb
+*.ilk
+__pycache__/

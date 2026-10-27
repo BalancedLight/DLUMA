@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Dluma.Managed.Sdk</AssemblyName>
+    <RootNamespace>Dluma.Managed.Sdk</RootNamespace>
+    <Version>1.0.0</Version>
+    <PackageId>Dluma.Managed.Sdk</PackageId>
+    <Description>DLUMA API 1.0 managed contracts.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+</Project>

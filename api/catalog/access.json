@@ -1,0 +1,101 @@
+{
+  "$schema": "../schemas/api-access.schema.json",
+  "access": [
+    {
+      "id": 1,
+      "name": "game.read",
+      "risk": "safe",
+      "description": "Read copied game state through validated DLUMA services."
+    },
+    {
+      "id": 2,
+      "name": "player.read",
+      "risk": "safe",
+      "description": "Read copied local-player state."
+    },
+    {
+      "id": 3,
+      "name": "world.query",
+      "risk": "safe",
+      "description": "Resolve and inspect exact named world objects."
+    },
+    {
+      "id": 4,
+      "name": "world.write",
+      "risk": "elevated",
+      "description": "Change allowlisted local world state."
+    },
+    {
+      "id": 5,
+      "name": "events.sensor",
+      "risk": "safe",
+      "description": "Observe exact named sensors."
+    },
+    {
+      "id": 6,
+      "name": "events.interact",
+      "risk": "safe",
+      "description": "Observe exact named interactions."
+    },
+    {
+      "id": 7,
+      "name": "events.enemy_killed",
+      "risk": "safe",
+      "description": "Observe copied enemy-death events."
+    },
+    {
+      "id": 8,
+      "name": "ui.overlay",
+      "risk": "safe",
+      "description": "Present loader-owned UI without changing game state."
+    },
+    {
+      "id": 9,
+      "name": "audio.play",
+      "risk": "safe",
+      "description": "Play approved audio through bounded DLUMA services."
+    },
+    {
+      "id": 10,
+      "name": "quest.write",
+      "risk": "elevated",
+      "description": "Request validated transitions in pre-authored native quests."
+    },
+    {
+      "id": 11,
+      "name": "configuration.read",
+      "risk": "safe",
+      "description": "Read manifest-declared player configuration."
+    },
+    {
+      "id": 12,
+      "name": "storage.mod",
+      "risk": "safe",
+      "description": "Read and write owner-isolated persistent scalar storage."
+    },
+    {
+      "id": 13,
+      "name": "companion.read",
+      "risk": "safe",
+      "description": "Read approval-bound files from declared companion content."
+    },
+    {
+      "id": 14,
+      "name": "quest.phase.handle",
+      "risk": "elevated",
+      "description": "Provide local behavior for manifest-declared custom quest phase contracts."
+    },
+    {
+      "id": 15,
+      "name": "quest.phase.observe",
+      "risk": "safe",
+      "description": "Observe local custom quest phase contracts after their primary provider."
+    },
+    {
+      "id": 16,
+      "name": "editor.quest.extend",
+      "risk": "elevated",
+      "description": "Run approved pointer-free validators for declared quest phase handlers inside Chrome Editor."
+    }
+  ]
+}

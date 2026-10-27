@@ -1,0 +1,28 @@
+{
+  "$schema": "mod.dluma.schema.json",
+  "schema": "dluma.mod.v1",
+  "api_version": "1.0",
+  "id": "example.native.dllmod",
+  "name": "Example Native Mod",
+  "version": "1.0.0",
+  "description": "Minimal full-trust native MOD using DLUMA API 1.0 and native ABI V2.",
+  "author": "DLUMA",
+  "language": "native",
+  "scope": "global",
+  "entry": "example.mod",
+  "load_priority": 1000,
+  "hosts": [
+    "player"
+  ],
+  "access": [
+    "quest.phase.handle",
+    "quest.phase.observe"
+  ],
+  "quest_phase_handlers": [
+    {
+      "id": "example.native.phase",
+      "command_alias": "native-example-phase",
+      "description": "Logs one authored native custom quest phase."
+    }
+  ]
+}

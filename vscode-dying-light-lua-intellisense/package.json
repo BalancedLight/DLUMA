@@ -1,0 +1,52 @@
+{
+  "name": "dluma-lua-intellisense",
+  "displayName": "DLUMA Lua IntelliSense",
+  "description": "Catalog-backed completion, signatures, access diagnostics, hover help, and snippets for DLUMA API 1.0 Lua mods.",
+  "version": "1.0.0",
+  "publisher": "dluma",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "dying light",
+    "lua",
+    "modding",
+    "dluma"
+  ],
+  "activationEvents": [
+    "onLanguage:lua"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "DLUMA Lua IntelliSense",
+      "properties": {
+        "dyingLightLuaIntellisense.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable DLUMA API 1.0 Lua completion, signatures, hover help, and mod.dluma.json access diagnostics."
+        }
+      }
+    },
+    "snippets": [
+      {
+        "language": "lua",
+        "path": "./snippets/dluma.code-snippets"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "**/mod.dluma.json",
+        "url": "./src/generated-mod-schema.json"
+      }
+    ]
+  },
+  "scripts": {
+    "check": "node --check extension.js && node --check src/api.js && node test/smoke.js"
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "quests",
+  "service": {
+    "id": "dluma.quests.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "quests.advance_to_phase",
+      "ordinal": 1,
+      "status": "gated",
+      "capability": "quests.native",
+      "access": [
+        "quest.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaQuestTransitionRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "quest_id_bytes": 128,
+        "phase_id_bytes": 128
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "scope_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "remote_session_denied"
+      ],
+      "documentation": "Queues an exact engine-synchronized transition to a pre-authored phase.",
+      "adapters": {
+        "core": "dluma_game_quests_advance_to_phase",
+        "lua": "dluma.quests.advance_to_phase",
+        "csharp": "IModContext.Quests.AdvanceToPhase",
+        "c": "DlumaQuestsV1.advance_to_phase",
+        "cpp": "context.quests().advance_to_phase"
+      },
+      "tests": [
+        "quest_advance_contract",
+        "quest_remote_session_denied"
+      ]
+    },
+    {
+      "id": "quests.start",
+      "ordinal": 2,
+      "status": "removed",
+      "capability": "quests.native",
+      "access": [
+        "quest.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaQuestTransitionRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "quest_id_bytes": 128
+      },
+      "errors": [
+        "removed_operation"
+      ],
+      "documentation": "Removed until a separately validated native start route exists.",
+      "adapters": {
+        "core": "",
+        "lua": "dluma.quests.start",
+        "csharp": "IModContext.Quests.Start",
+        "c": "DlumaQuestsV1.start",
+        "cpp": "context.quests().start"
+      },
+      "tests": [
+        "quest_start_removed_contract"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+// Complete loader-owned merge of the stock menu 3D placement table.
+// Loader screens keep unique roots while reusing proven stock scene anchors:
+// Loader Settings uses Options; the MODS stack uses the right-side Extras pose.
+!Placement(s, s)
+!Correction(s, f, f, f)
+
+Placement("MenuMain", "menu_main_pos")
+Placement("MenuSelectGameType", "menu_main_pos")
+
+Placement("MenuContinue", "menu_main_pos")
+
+Placement("MenuPlayGame", "menu_play_game_pos")
+Placement("MenuPlayGameBTZ", "menu_btz_pos")
+
+Placement("MenuExtras", "menu_extras_pos")
+Placement("MenuExtrasLeaderboards", "menu_extras_pos")
+Placement("MenuLeaderboardsDL", "menu_leaderboards_pos")
+Placement("MenuPersonalStatistics", "menu_extras_pos")
+Placement("MenuPlayGameOnInvite", "menu_invite_game_pos")
+
+Placement("MenuOptions", "menu_options_pos")
+Placement("MenuOptionsAudio", "menu_options_full_pos")
+Placement("MenuOptionsControls", "menu_options_full_pos")
+Placement("MenuOptionsControlsKeyboard", "menu_options_full_pos")
+Placement("MenuOptionsControlsGamepad", "menu_options_full_pos")
+Placement("MenuOptionsOnline", "menu_options_full_pos")
+Placement("MenuOptionsVideo", "menu_options_full_pos")
+Placement("MenuOptionsEyeTracking", "menu_options_full_pos")
+Placement("MenuDLUMALoaderSettings", "menu_options_full_pos")
+Placement("MenuDLUMAMods", "menu_extras_pos")
+Placement("MenuDLUMALogs", "menu_extras_pos")
+Placement("MenuDLUMAModConfig", "menu_extras_pos")
+Placement("MenuDLUMACustomMainMenu", "menu_extras_pos")
+Placement("MenuDLUMAModDetails", "menu_leaderboards_pos")
+
+Placement("MenuCustomMap", "menu_play_game_pos")
+Placement("MenuSteamWorkshop", "menu_play_game_pos")
+
+Correction("MenuMain", 150, -100, 0)
+Correction("MenuContinue", 150, 0, 0)
+Correction("MenuPlayGame", 150, 0, 0)
+Correction("MenuSteamWorkshop", 150, 0, 0)
+Correction("MenuPlayGameBTZ", 200, 0, 0)
+Correction("MenuOptions", -160, -160, 0)
+Correction("MenuOptionsAudio", -100, -20, 0)
+Correction("MenuOptionsControls", -100, -20, 0)
+Correction("MenuOptionsControlsKeyboard", -100, -20, 0)
+Correction("MenuOptionsControlsGamepad", -200, -20, 0)
+Correction("MenuOptionsOnline", -100, -20, 0)
+Correction("MenuOptionsVideo", -100, -20, 0)
+Correction("MenuOptionsEyeTracking", -100, -20, 0)
+Correction("MenuDLUMALoaderSettings", -100, -20, 0)

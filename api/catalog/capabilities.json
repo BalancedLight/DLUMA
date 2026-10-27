@@ -1,0 +1,140 @@
+{
+  "$schema": "../schemas/api-capabilities.schema.json",
+  "capabilities": [
+    {
+      "id": 1,
+      "name": "core.runtime",
+      "description": "The language-neutral DLUMA runtime and owner model are available."
+    },
+    {
+      "id": 2,
+      "name": "core.timers",
+      "description": "Owner-bound game-thread timers are available."
+    },
+    {
+      "id": 10,
+      "name": "world.find",
+      "description": "Exact-name world object lookup is validated for the running build."
+    },
+    {
+      "id": 11,
+      "name": "world.local_enable",
+      "description": "Local object enable state can be read and changed."
+    },
+    {
+      "id": 12,
+      "name": "world.position",
+      "description": "Copied object transforms can be read."
+    },
+    {
+      "id": 20,
+      "name": "player.read",
+      "description": "A generation-bound local-player handle and allowlisted variables are available."
+    },
+    {
+      "id": 21,
+      "name": "player.transform",
+      "description": "Copied local-player position and directions can be read."
+    },
+    {
+      "id": 22,
+      "name": "player.vitals",
+      "description": "Validated local-player health and alive-state access is available."
+    },
+    {
+      "id": 23,
+      "name": "player.vehicle",
+      "description": "Copied local-player vehicle state is available for the running exact build."
+    },
+    {
+      "id": 30,
+      "name": "events.sensor",
+      "description": "Named sensor state and edge events are available."
+    },
+    {
+      "id": 31,
+      "name": "events.interact",
+      "description": "Validated interaction observations are available."
+    },
+    {
+      "id": 32,
+      "name": "events.enemy_killed",
+      "description": "Copied post-death events are available."
+    },
+    {
+      "id": 40,
+      "name": "ui.subtitles",
+      "description": "Loader-owned subtitle presentation is available."
+    },
+    {
+      "id": 41,
+      "name": "ui.quest_hud",
+      "description": "Copied quest HUD state and presentation-only overrides are available."
+    },
+    {
+      "id": 42,
+      "name": "ui.overlay",
+      "description": "Loader overlay widgets are available."
+    },
+    {
+      "id": 50,
+      "name": "audio.radio_dialog",
+      "description": "Named radio-dialog playback is available."
+    },
+    {
+      "id": 51,
+      "name": "audio.registered_cues",
+      "description": "Registered 2D and positional cue playback is available."
+    },
+    {
+      "id": 52,
+      "name": "audio.stem",
+      "description": "Owner-bound companion stem playback is available."
+    },
+    {
+      "id": 53,
+      "name": "audio.wave_filter",
+      "description": "Exact-build per-wave wet-mix and cutoff control is available."
+    },
+    {
+      "id": 54,
+      "name": "audio.music_exclusive",
+      "description": "Transactional exclusive ownership of stock music is available."
+    },
+    {
+      "id": 55,
+      "name": "audio.music_filter",
+      "description": "Exact-build restorable stock-music filter control is available."
+    },
+    {
+      "id": 60,
+      "name": "quests.native",
+      "description": "Validated native quest transitions are available."
+    },
+    {
+      "id": 61,
+      "name": "quests.phase_handlers",
+      "description": "Manifest-declared custom quest phase providers and observers can receive copied local phase-entry events."
+    },
+    {
+      "id": 70,
+      "name": "actions.chain",
+      "description": "Exact-name authored ActionChain execution is available."
+    },
+    {
+      "id": 80,
+      "name": "configuration.mod",
+      "description": "Typed manifest-declared mod configuration is available."
+    },
+    {
+      "id": 90,
+      "name": "storage.mod",
+      "description": "Owner-isolated persistent scalar storage is available."
+    },
+    {
+      "id": 100,
+      "name": "companion.content",
+      "description": "Approval-bound companion content snapshots are available."
+    }
+  ]
+}

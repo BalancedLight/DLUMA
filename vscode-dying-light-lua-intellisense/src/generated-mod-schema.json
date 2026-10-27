@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mod.dluma.schema.json",
+  "title": "DLUMA mod manifest",
+  "description": "The shared DLUMA API 1.0 manifest for Lua, C#, and native mods.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "api_version",
+    "id",
+    "name",
+    "version",
+    "description",
+    "author",
+    "language",
+    "scope",
+    "entry",
+    "load_priority",
+    "access"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "const": "dluma.mod.v1"
+    },
+    "api_version": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 127,
+      "pattern": "^[a-z0-9][a-z0-9._-]*[a-z0-9]$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 127
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 127
+    },
+    "language": {
+      "enum": [
+        "lua",
+        "csharp",
+        "native"
+      ]
+    },
+    "scope": {
+      "enum": [
+        "global",
+        "project",
+        "map"
+      ]
+    },
+    "map": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 127,
+      "pattern": "^[^\\\\/:*?\"<>|.][^\\\\/:*?\"<>|]*$"
+    },
+    "entry": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "entry_type": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.+`]*$"
+    },
+    "load_priority": {
+      "type": "integer",
+      "minimum": -1000,
+      "maximum": 1000
+    },
+    "access": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+      },
+      "maxItems": 64,
+      "uniqueItems": true
+    },
+    "hosts": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "player",
+          "editor"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "default": [
+        "player"
+      ]
+    },
+    "quest_phase_handlers": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "description"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 127,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "command_alias": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 255
+          }
+        }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema"
+      ],
+      "properties": {
+        "schema": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "defaults": {
+          "$ref": "#/$defs/relativePath"
+        }
+      }
+    },
+    "companion_content": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "path"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "path": {
+            "$ref": "#/$defs/relativePath"
+          },
+          "audio_manifest": {
+            "$ref": "#/$defs/relativePath"
+          },
+          "required": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    },
+    "storage_migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "legacy_id"
+      ],
+      "properties": {
+        "legacy_id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 127
+        },
+        "legacy_fingerprint": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "language": {
+            "const": "csharp"
+          }
+        },
+        "required": [
+          "language"
+        ]
+      },
+      "then": {
+        "required": [
+          "entry_type"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "entry_type"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "scope": {
+            "const": "map"
+          }
+        },
+        "required": [
+          "scope"
+        ]
+      },
+      "then": {
+        "required": [
+          "map"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "map"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "quest_phase_handlers"
+        ]
+      },
+      "then": {
+        "properties": {
+          "language": {
+            "enum": [
+              "lua",
+              "native"
+            ]
+          },
+          "access": {
+            "contains": {
+              "const": "quest.phase.handle"
+            }
+          },
+          "hosts": {
+            "contains": {
+              "const": "player"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 511,
+      "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.?[/\\\\])(?!.+[ .]$)[^\\u0000]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-F0-9]{64}$"
+    }
+  }
+}
