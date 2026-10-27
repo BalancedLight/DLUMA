@@ -311,13 +311,16 @@ static void dluma_ui_fix_sync_logs_navigation(int apply_initial_focus)
         dluma_atomic_exchange(
             &g_dluma_ui_fix_logs_initial_focus_pending, 0))
     {
-        dluma_ui_list_set_selection(g_dluma_ui_logs_list, 0);
+        int active = dluma_ui_fix_logs_row_index_for_sequence(
+            g_dluma_ui_logs_selected_sequence);
+        if (active < 0) active = 0;
+        dluma_ui_list_set_selection(g_dluma_ui_logs_list, active);
         (void)dluma_ui_workshop_set_focus(
-            g_dluma_ui_logs_list, 0, 1);
+            g_dluma_ui_logs_list, active, 1);
         (void)dluma_ui_workshop_set_first_visible(
-            g_dluma_ui_logs_list, 0);
+            g_dluma_ui_logs_list, active);
         dluma_ui_focus_element(g_dluma_ui_logs_list);
-        dluma_ui_logs_update_detail(0);
+        dluma_ui_logs_update_detail((unsigned int)active);
         dluma_atomic_exchange(
             &g_dluma_ui_fix_logs_navigation_sync_depth, 0);
         return;
@@ -717,6 +720,7 @@ static void dluma_ui_fix_apply_settings_initial_focus(void)
     if (dluma_atomic_compare_exchange(
             &g_dluma_ui_fix_settings_initial_focus_pending, 0, 0) == 0 ||
         !g_dluma_ui_settings_list || g_dluma_ui_settings_edit_mode ||
+        g_dluma_ui_settings_experimental_warning_mode ||
         dluma_atomic_compare_exchange(
             &g_dluma_ui_fix_settings_sync_depth, 1, 0) != 0)
         return;
@@ -727,10 +731,14 @@ static void dluma_ui_fix_apply_settings_initial_focus(void)
         dluma_atomic_exchange(&g_dluma_ui_fix_settings_sync_depth, 0);
         return;
     }
-    dluma_ui_list_set_selection(g_dluma_ui_settings_list, 0);
-    (void)dluma_ui_workshop_set_focus(g_dluma_ui_settings_list, 0, 1);
-    dluma_ui_focus_element(g_dluma_ui_settings_list);
-    dluma_ui_settings_update_for_row(0);
+    {
+        unsigned int active = g_dluma_ui_settings_selected_row < g_dluma_ui_settings_row_count
+            ? g_dluma_ui_settings_selected_row : 0;
+        dluma_ui_list_set_selection(g_dluma_ui_settings_list, (int)active);
+        (void)dluma_ui_workshop_set_focus(g_dluma_ui_settings_list, (int)active, 1);
+        dluma_ui_focus_element(g_dluma_ui_settings_list);
+        dluma_ui_settings_update_for_row(active);
+    }
     dluma_atomic_exchange(
         &g_dluma_ui_fix_settings_initial_focus_pending, 0);
     dluma_atomic_exchange(&g_dluma_ui_fix_settings_sync_depth, 0);
@@ -862,7 +870,10 @@ static void __fastcall dluma_ui_workshop_post_hook(void *screen)
                 &g_dluma_ui_fix_mod_config_initial_focus_pending, 0) &&
             g_dluma_ui_mod_config_row_count)
         {
-            dluma_ui_list_set_selection(g_dluma_ui_mod_config_list, 0);
+            unsigned int active = g_dluma_ui_mod_config_selected_row < g_dluma_ui_mod_config_row_count
+                ? g_dluma_ui_mod_config_selected_row : 0;
+            dluma_ui_list_set_selection(g_dluma_ui_mod_config_list, (int)active);
+            (void)dluma_ui_workshop_set_focus(g_dluma_ui_mod_config_list, (int)active, 1);
             dluma_ui_focus_element(g_dluma_ui_mod_config_list);
         }
     }

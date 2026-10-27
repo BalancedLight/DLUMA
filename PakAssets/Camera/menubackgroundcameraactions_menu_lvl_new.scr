@@ -22,6 +22,7 @@ MenuWithCameraActions("MenuSteamWorkshop")
 MenuWithCameraActions("MenuDLUMAMods")
 MenuWithCameraActions("MenuDLUMALogs")
 MenuWithCameraActions("MenuDLUMAModConfig")
+MenuWithCameraActions("MenuDLUMAValueEditor")
 MenuWithCameraActions("MenuDLUMACustomMainMenu")
 MenuWithCameraActions("MenuDLUMAModDetails")
 

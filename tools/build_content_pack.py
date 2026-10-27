@@ -28,6 +28,7 @@ SOURCES = (
     (ROOT / 'PakAssets/XUI/MenuDLUMACustomMainMenu.xui', 'data/menu/scr/MenuDLUMACustomMainMenu.xui'),
     (ROOT / 'PakAssets/XUI/DLUMA_MenuOptions.xui', 'data/menu/scr/MenuOptions.xui'),
     (ROOT / 'PakAssets/XUI/MenuDLUMALoaderSettings.xui', 'data/menu/scr/MenuDLUMALoaderSettings.xui'),
+    (ROOT / 'PakAssets/XUI/MenuDLUMAValueEditor.xui', 'data/menu/scr/MenuDLUMAValueEditor.xui'),
     (ROOT / 'PakAssets/XUI/DLUMA_SteamWorkshop.xui', 'data/menu/scr/DLM_SteamWorkshop.xui'),
     (ROOT / 'PakAssets/Camera/menubackgroundcameraactions_menu_lvl_new.scr', 'data/menu/menubackgroundcameraactions_menu_lvl_new.scr'),
     (ROOT / 'PakAssets/Camera/menuscreen3dplacement_menu_lvl_new.scr', 'data/menu/menuscreen3dplacement_menu_lvl_new.scr'),

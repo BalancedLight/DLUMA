@@ -335,6 +335,8 @@
                         <NavRight>B_ConfigSave</NavRight>
                         <NavUp>B_ConfigCancel</NavUp>
                         <NavDown>B_ConfigSave</NavDown>
+                        <NavTabForward>B_ConfigSave</NavTabForward>
+                        <NavTabBackward>B_ConfigCancel</NavTabBackward>
                         <MaxChars>128</MaxChars>
                     </Properties>
                 </UIEditBox>
@@ -349,6 +351,12 @@
                         <UnfocusedInput>true</UnfocusedInput>
                         <Text>&amp;DLUMA_Common_Cancel&amp;</Text>
                         <PressKey>22529</PressKey>
+                        <NavLeft>B_ConfigSave</NavLeft>
+                        <NavRight>B_ConfigSave</NavRight>
+                        <NavUp>E_ConfigValue</NavUp>
+                        <NavDown>E_ConfigValue</NavDown>
+                        <NavTabForward>E_ConfigValue</NavTabForward>
+                        <NavTabBackward>B_ConfigSave</NavTabBackward>
                     </Properties>
                 </UINaviButton>
                 <UINaviButton>
@@ -360,6 +368,12 @@
                         <ClassOverride>UiButtonMainDi</ClassOverride>
                         <Visual>ButtonMainV</Visual>
                         <Text>&amp;DLUMA_Common_Save&amp;</Text>
+                        <NavLeft>B_ConfigCancel</NavLeft>
+                        <NavRight>B_ConfigCancel</NavRight>
+                        <NavUp>E_ConfigValue</NavUp>
+                        <NavDown>E_ConfigValue</NavDown>
+                        <NavTabForward>B_ConfigCancel</NavTabForward>
+                        <NavTabBackward>E_ConfigValue</NavTabBackward>
                     </Properties>
                 </UINaviButton>
             </AdvGroup>

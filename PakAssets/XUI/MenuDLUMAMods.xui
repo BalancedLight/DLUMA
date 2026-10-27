@@ -760,7 +760,9 @@
                         <Position>300.000000,0.000000,0.000000</Position>
                         <ClassOverride>UIDialogButton</ClassOverride>
                         <Visual>ButtonDialogV</Visual>
+                        <UnfocusedInput>true</UnfocusedInput>
                         <Text>&amp;DLUMA_AssetMods_MoveUp&amp;</Text>
+                        <PressKey>22534</PressKey>
                         <NavUp>L_Maps</NavUp>
                         <NavLeft>B_Back</NavLeft>
                         <NavRight>B_AssetMoveDown</NavRight>
@@ -776,7 +778,9 @@
                         <Position>420.000000,0.000000,0.000000</Position>
                         <ClassOverride>UIDialogButton</ClassOverride>
                         <Visual>ButtonDialogV</Visual>
+                        <UnfocusedInput>true</UnfocusedInput>
                         <Text>&amp;DLUMA_AssetMods_MoveDown&amp;</Text>
+                        <PressKey>22535</PressKey>
                         <NavUp>L_Maps</NavUp>
                         <NavLeft>B_AssetMoveUp</NavLeft>
                         <NavRight>B_Workshop</NavRight>

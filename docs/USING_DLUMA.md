@@ -17,9 +17,13 @@ Native and C# changes take effect on the next launch. An update that changes a m
 
 Use a mod's configuration screen to change its supported settings. An option's description explains what it does and whether a restart is required.
 
+For text settings and log searches, use the on-screen keyboard to edit the value and select **Save**. **Shift** and **Symbols** provide additional characters; **Clear** empties the current value.
+
+To replace a value using a physical keyboard, select **Type text**, press Enter to activate the field, enter the replacement, then choose **Use text** and **Save**.
+
 ## Loader settings
 
-Open the loader settings from the Mods menu. General options include presence integration and Developer Mode. The Game Fixes category contains the built-in fixes available for the current host.
+Open **Options → DLUMA** to change loader settings. General options include presence integration and Developer Mode. The Game Fixes category contains the built-in fixes available for the current host.
 
 Developer Mode exposes additional options and Lua limits. Its startup changes, such as developer keys, require a restart. **Reset custom project on exit** is visible only when Developer Mode is enabled.
 

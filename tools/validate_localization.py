@@ -39,6 +39,14 @@ UNTRANSLATED_ALLOWLIST = {
     "GENERAL", "General", "DESCRIPTION", "Description", "ID", "SHA-256", "DLL", "PE",
     "Runtime", "Exception", "Risk", "Name", "No", "DLUMA", "DLUMA {version}", "DLUMA v{version}",
 }
+SHARED_LOCALIZED_KEYS = {
+    ("Pl", "DLUMA_ValueEditor_Shift"),
+    ("Nl", "DLUMA_ValueEditor_Shift"),
+    ("Nl", "DLUMA_ValueEditor_Letters"),
+    ("Nl", "DLUMA_ValueEditor_Backspace"),
+    ("Br", "DLUMA_ValueEditor_Shift"),
+    ("Cs", "DLUMA_ValueEditor_Shift"),
+}
 FORBIDDEN_TRANSLATED_FRAGMENTS = ("review required",)
 
 sys.path.insert(0, str(ROOT / "tools"))
@@ -143,6 +151,7 @@ def validate(check_pack: bool = True) -> list[str]:
         if code != "En":
             same = [key for key in english if key in values and values[key] == english[key]
                     and values[key] not in UNTRANSLATED_ALLOWLIST
+                    and (code, key) not in SHARED_LOCALIZED_KEYS
                     and not re.search(r"(?:SHA|Workshop|Dying Light|DLUMA_|x64|Lua|DLL|INI|PE)", values[key])]
             if same:
                 errors.append(f"{code}: untranslated values: {', '.join(same)}")
