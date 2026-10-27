@@ -1,4 +1,4 @@
-# DLUMA — Dying Luma
+# DLUMA — Dying Light Universal Mod Assistant
 
 DLUMA is a mod loader and creator toolkit for Dying Light Player and Developer Tools on Windows. It adds a Mods menu, shared mod configuration, and a common API for Lua, C#, C, and C++ mods.
 
