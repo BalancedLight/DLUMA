@@ -149,6 +149,12 @@ def validate(check_pack: bool = True) -> list[str]:
             ):
                 errors.append(f"{code}: delimiter shape mismatch for {key}")
         if code != "En":
+            if code == "El":
+                greek = [key for key, value in values.items()
+                         if re.search(r"[\u0370-\u03ff\u1f00-\u1fff]", value)]
+                if greek:
+                    errors.append("El: Greek text in Latin American Spanish catalog: "
+                                  + ", ".join(sorted(greek)))
             same = [key for key in english if key in values and values[key] == english[key]
                     and values[key] not in UNTRANSLATED_ALLOWLIST
                     and (code, key) not in SHARED_LOCALIZED_KEYS

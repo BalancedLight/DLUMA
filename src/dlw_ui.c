@@ -1572,6 +1572,9 @@ typedef char DlumaBackgroundClearLevelInfoOffsetMustMatch[
         ? 1 : -1];
 
 static const DlumaLoaderSettingDefinition g_dluma_loader_settings[] = {
+{L"loader", L"auto_enable_mods", L"0", "DLUMA_Settings_loader_auto_enable_mods_Label", "Automatically enable mods",
+     DLUMA_LOADER_SETTING_BOOL, 0, 1, 1, 1, DLUMA_LOADER_CATEGORY_GENERAL,
+     "DLUMA_Settings_loader_auto_enable_mods_Hint", "Automatically enables new and updated global mods on the next game startup. Mods you disable stay disabled."},
 {L"loader", L"poll_interval_ms", L"250", "DLUMA_Settings_loader_poll_interval_ms_Label", "DISCOVERY POLL INTERVAL (MS)",
      DLUMA_LOADER_SETTING_UINT, 50, 5000, 50, 5, DLUMA_LOADER_CATEGORY_GENERAL,
      "DLUMA_Settings_loader_poll_interval_ms_Hint", "HOW OFTEN THE LOADER CHECKS FOR MAP AND SCRIPT CHANGES."},
@@ -6744,6 +6747,15 @@ static void dluma_ui_settings_hide_editor(void)
     dluma_ui_settings_close_editor(1);
 }
 
+static int dluma_ui_settings_is_auto_enable(unsigned int setting_index)
+{
+    const DlumaLoaderSettingDefinition *definition;
+    if (setting_index >= DLUMA_ARRAY_COUNT(g_dluma_loader_settings)) return 0;
+    definition = &g_dluma_loader_settings[setting_index];
+    return dluma_wstricmp(definition->section, L"loader") == 0 &&
+           dluma_wstricmp(definition->key, L"auto_enable_mods") == 0;
+}
+
 static int dluma_ui_settings_experimental_warning_available(void)
 {
     return g_dluma_ui_settings_experimental_warning_popup &&
@@ -6779,10 +6791,11 @@ static void dluma_ui_settings_close_experimental_warning(int restore_list_focus)
 static int dluma_ui_settings_show_experimental_warning(
     void *screen, unsigned int setting_index)
 {
-    char title[256];
-    char body[384];
-    char yes[64];
-    char no[64];
+    char title[512];
+    char body[2048];
+    char yes[128];
+    char no[128];
+    int auto_enable = dluma_ui_settings_is_auto_enable(setting_index);
     if (setting_index >= DLUMA_ARRAY_COUNT(g_dluma_loader_settings) ||
         !dluma_ui_settings_resolve_controls(screen))
         return 0;
@@ -6793,33 +6806,41 @@ static int dluma_ui_settings_show_experimental_warning(
         dluma_ui_settings_close_editor(0);
         dluma_ui_settings_close_experimental_warning(0);
         dluma_ui_settings_set_experimental_warning_status(
+            auto_enable ? "DLUMA_AutoEnable_Unavailable" :
             "DLUMA_Settings_GameFixes_CustomMapAssetIsolation_ExperimentalUnavailable",
+            auto_enable ? "Unable to show the confirmation. Automatic mod enabling remains off." :
             "EXPERIMENTAL CONFIRMATION IS UNAVAILABLE. THE SETTING REMAINS OFF.");
         dluma_ui_focus_element(g_dluma_ui_settings_list);
         dluma_log_line(
             "WARN",
-            "Experimental project resource unload confirmation was unavailable; the setting remained off.");
+            auto_enable ? "Automatic mod enabling confirmation unavailable; remains off." :
+        "Experimental project resource unload confirmation was unavailable; the setting remained off.");
         return -1;
     }
     dluma_ui_settings_close_editor(0);
     dluma_ui_settings_close_experimental_warning(0);
     dluma_ui_localize_text(
+        auto_enable ? "DLUMA_AutoEnable_Title" :
         "DLUMA_Settings_GameFixes_CustomMapAssetIsolation_ExperimentalTitle",
-        "EXPERIMENTAL PROJECT RESOURCE UNLOAD",
+        auto_enable ? "Automatically enable mods?" : "EXPERIMENTAL PROJECT RESOURCE UNLOAD",
         title, DLUMA_ARRAY_COUNT(title));
     dluma_ui_localize_text(
+        auto_enable ? "DLUMA_AutoEnable_Body" :
         "DLUMA_Settings_GameFixes_CustomMapAssetIsolation_ExperimentalBody",
+        auto_enable ? "Automatically enabling mods can run untrusted code and load changed files without asking you first. This can compromise your computer or damage your data. You are responsible for any problems caused by mods enabled automatically. Enable this option?" :
         "UNLOADING CUSTOM PROJECT RESOURCES ON EXIT IS EXPERIMENTAL AND IS NOT FULLY IMPLEMENTED YET. ENABLE IT ANYWAY? THE CHANGE APPLIES AFTER RESTARTING THE LOADER.",
         body, DLUMA_ARRAY_COUNT(body));
     dluma_ui_localize_text(
+        auto_enable ? "DLUMA_AutoEnable_Enable" :
         "DLUMA_Settings_GameFixes_CustomMapAssetIsolation_ExperimentalYes",
-        "YES", yes, DLUMA_ARRAY_COUNT(yes));
+        auto_enable ? "Enable" : "YES", yes, DLUMA_ARRAY_COUNT(yes));
     dluma_ui_localize_text(
+        auto_enable ? "DLUMA_AutoEnable_Cancel" :
         "DLUMA_Settings_GameFixes_CustomMapAssetIsolation_ExperimentalNo",
-        "NO", no, DLUMA_ARRAY_COUNT(no));
+        auto_enable ? "Cancel" : "NO", no, DLUMA_ARRAY_COUNT(no));
     dluma_ui_set_text_element_text(
         g_dluma_ui_settings_experimental_warning_title, title);
-    dluma_ui_set_text_element_text(
+    dluma_ui_set_text_element_long(
         g_dluma_ui_settings_experimental_warning_body, body);
     dluma_ui_set_element_text(
         g_dluma_ui_settings_experimental_warning_yes_button, yes);
@@ -6829,13 +6850,14 @@ static int dluma_ui_settings_show_experimental_warning(
     dluma_ui_set_element_visible(
         g_dluma_ui_settings_experimental_warning_popup, 1);
     g_dluma_ui_settings_experimental_warning_index = setting_index;
-    g_dluma_ui_settings_experimental_warning_mode = 1;
+    g_dluma_ui_settings_experimental_warning_mode = auto_enable ? 2 : 1;
     /* UIDialogButton handles direct Enter/Accept and Escape/Back actions.
      * Do not let the opening action also accept during this input update. */
     g_dluma_ui_settings_experimental_warning_open_generation =
         g_dluma_ui_settings_post_generation;
     dluma_log_line(
         "INFO",
+        auto_enable ? "Automatic mod enabling confirmation opened." :
         "Experimental project resource unload confirmation opened.");
     return 1;
 }
@@ -6844,16 +6866,20 @@ static void dluma_ui_settings_cancel_experimental_warning(void *screen)
 {
     unsigned int setting_index =
         g_dluma_ui_settings_experimental_warning_index;
+    int auto_enable = dluma_ui_settings_is_auto_enable(setting_index);
     dluma_ui_settings_close_experimental_warning(0);
     dluma_ui_settings_populate_list(screen);
     if (setting_index < DLUMA_ARRAY_COUNT(g_dluma_loader_settings))
         dluma_ui_settings_select_setting(setting_index);
     dluma_ui_settings_set_experimental_warning_status(
+        auto_enable ? "DLUMA_AutoEnable_KeptOff" :
         "DLUMA_Settings_GameFixes_CustomMapAssetIsolation_ExperimentalKeptOff",
+        auto_enable ? "Automatic mod enabling remains off." :
         "EXPERIMENTAL PROJECT RESOURCE UNLOAD REMAINS OFF.");
     dluma_ui_focus_element(g_dluma_ui_settings_list);
     dluma_log_line(
         "INFO",
+        auto_enable ? "Automatic mod enabling confirmation declined." :
         "Experimental project resource unload confirmation declined.");
 }
 
@@ -6861,6 +6887,7 @@ static int dluma_ui_settings_confirm_experimental_warning(void *screen)
 {
     unsigned int setting_index =
         g_dluma_ui_settings_experimental_warning_index;
+    int auto_enable = dluma_ui_settings_is_auto_enable(setting_index);
     if (!g_dluma_ui_settings_experimental_warning_mode ||
         g_dluma_ui_settings_experimental_warning_open_generation ==
             g_dluma_ui_settings_post_generation)
@@ -6884,11 +6911,14 @@ static int dluma_ui_settings_confirm_experimental_warning(void *screen)
     dluma_ui_settings_populate_list(screen);
     dluma_ui_settings_select_setting(setting_index);
     dluma_ui_settings_set_experimental_warning_status(
+        auto_enable ? "DLUMA_AutoEnable_Enabled" :
         "DLUMA_Settings_GameFixes_CustomMapAssetIsolation_ExperimentalEnabled",
+        auto_enable ? "Automatic mod enabling is on. It applies on the next game startup." :
         "EXPERIMENTAL PROJECT RESOURCE UNLOAD ENABLED. IT APPLIES AFTER RESTARTING THE LOADER.");
     dluma_ui_focus_element(g_dluma_ui_settings_list);
     dluma_log_line(
         "INFO",
+        auto_enable ? "Automatic mod enabling confirmed; applies next startup." :
         "Experimental project resource unload confirmation accepted; the setting will apply after restart.");
     return 1;
 }
@@ -6908,7 +6938,8 @@ static int dluma_ui_settings_should_confirm_custom_map_asset_isolation(
     unsigned int setting_index, const char *value)
 {
     char current[DLUMA_UI_SETTING_VALUE_CAPACITY];
-    if (!value || !dluma_ui_settings_is_custom_map_asset_isolation(setting_index) ||
+    if (!value || (!dluma_ui_settings_is_custom_map_asset_isolation(setting_index) &&
+                   !dluma_ui_settings_is_auto_enable(setting_index)) ||
         dluma_parse_u32(value, 0) != 1)
         return 0;
     current[0] = 0;
@@ -16700,8 +16731,12 @@ static void __fastcall dluma_ui_workshop_post_hook(void *screen)
             if (kept_off)
             {
                 dluma_ui_settings_set_experimental_warning_status(
-                    "DLUMA_Settings_GameFixes_CustomMapAssetIsolation_ExperimentalUnavailable",
-                    "EXPERIMENTAL CONFIRMATION IS UNAVAILABLE. THE SETTING REMAINS OFF.");
+                    setting_index >= 0 && dluma_ui_settings_is_auto_enable((unsigned int)setting_index)
+                        ? "DLUMA_AutoEnable_Unavailable"
+                        : "DLUMA_Settings_GameFixes_CustomMapAssetIsolation_ExperimentalUnavailable",
+                    setting_index >= 0 && dluma_ui_settings_is_auto_enable((unsigned int)setting_index)
+                        ? "Unable to show the confirmation. Automatic mod enabling remains off."
+                        : "EXPERIMENTAL CONFIRMATION IS UNAVAILABLE. THE SETTING REMAINS OFF.");
             }
             else
             {
@@ -21257,8 +21292,7 @@ custom_menu_configure_done:
         if (g_dluma_ui_settings_experimental_warning_mode)
         {
             handled = 1;
-            if (dluma_ui_object_id_equals(
-                    button, "B_SettingsExperimentalWarningYes"))
+            if (dluma_ui_object_id_equals(button, "B_SettingsExperimentalWarningYes"))
             {
                 (void)dluma_ui_settings_confirm_experimental_warning(screen);
             }

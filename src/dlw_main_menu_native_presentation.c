@@ -497,8 +497,8 @@ static void dluma_main_menu_native_enqueue_messages(void *menu_main)
     DlumaNativeNewsGroupView group;
     DlumaMainMenuTickerMessage holiday_message;
     const DlumaMainMenuTickerMessage new_mod_message = {
-        "DLUMA_Ticker_NewMods",
-        "%COLOR(f28c18)New global mods have been detected!%COLOR(RESET) They are disabled until reviewed. Open the %COLOR(f28c18)MODS%COLOR(RESET) page to review and enable them!",
+        "DLUMA_Ticker_NewModsAuto",
+        "New global mods discovered. Open the MODS page to view them.",
         0};
     const DlumaMainMenuTickerMessage developer_mode_message = {
         "DLUMA_Ticker_DevMode",

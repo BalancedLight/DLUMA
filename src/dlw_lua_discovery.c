@@ -3110,6 +3110,11 @@ void dluma_lua_discover_globals_mode(DlumaLuaDiscoveryMode mode)
         }
     }
 
+    if (!dluma_lua_initial_global_discovery_complete()) {
+        for (i = 0; i < next_count; ++i)
+            dluma_lua_auto_enable_startup(&next[i]);
+    }
+
     dluma_lua_registry_lock();
     if (scan_start_revision !=
         g_dluma.lua_discovery.global_registry_revision) {

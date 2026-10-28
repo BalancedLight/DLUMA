@@ -132,6 +132,49 @@
           "step": 10
         }
       ]
+    },
+    {
+      "id": "aiming",
+      "name": "Aiming",
+      "settings": [
+        {
+          "key": "aim_view",
+          "name": "Aim view",
+          "description": "Choose whether aiming keeps third person or temporarily switches to first person.",
+          "type": "enum",
+          "default": "third_person",
+          "options": [
+            {
+              "value": "third_person",
+              "name": "Third person"
+            },
+            {
+              "value": "first_person",
+              "name": "First person while aiming"
+            }
+          ]
+        },
+        {
+          "key": "aim_distance_percent",
+          "name": "Aim camera distance reduction (%)",
+          "description": "Moves the third-person camera closer while aiming. Zero keeps the saved distance.",
+          "type": "integer",
+          "default": 20,
+          "min": 0,
+          "max": 60,
+          "step": 5
+        },
+        {
+          "key": "aim_magnification_percent",
+          "name": "Aim magnification (%)",
+          "description": "Magnifies the third-person view while aiming. 100% keeps the normal field of view.",
+          "type": "integer",
+          "default": 125,
+          "min": 100,
+          "max": 200,
+          "step": 5
+        }
+      ]
     }
   ]
 }

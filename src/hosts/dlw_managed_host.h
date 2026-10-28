@@ -62,6 +62,7 @@ typedef struct DlumaManagedModSnapshot {
     unsigned int source_is_subscribed;
     unsigned int source_selected;
     unsigned int source_selection_missing;
+    unsigned int auto_approved;
 } DlumaManagedModSnapshot;
 
 typedef struct DlumaManagedModMutationRequest {

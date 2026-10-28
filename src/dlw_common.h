@@ -637,6 +637,7 @@ typedef struct DlumaLoaderConfig
     DWORD unmatched_level_grace_ms;
     unsigned char enable_key_events;
     unsigned char log_timer_events;
+    unsigned char auto_enable_mods;
     unsigned char discord_rich_presence_enabled;
     unsigned char editor_discord_rich_presence_enabled;
     unsigned char steam_rich_presence_enabled;
@@ -1134,6 +1135,7 @@ unsigned int dluma_lua_snapshot_globals_with_revision(
 void dluma_lua_get_global_registry_ini_path(WCHAR *out, unsigned int capacity);
 int dluma_lua_set_global_enabled(const char *id, int enabled);
 int dluma_lua_initial_global_discovery_complete(void);
+void dluma_lua_auto_enable_startup(DlumaLuaMetadata *item);
 int dluma_lua_disable_all_globals_next_launch(void);
 int dluma_lua_prepare_global_identity(DlumaLuaMetadata *item);
 int dluma_lua_prepare_local_identity(DlumaLuaMetadata *item);

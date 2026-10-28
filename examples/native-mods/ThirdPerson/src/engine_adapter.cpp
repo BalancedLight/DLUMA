@@ -4,6 +4,8 @@
 
 #include <windows.h>
 #include <bcrypt.h>
+#include <intrin.h>
+#include <MinHook.h>
 
 #include <algorithm>
 #include <array>
@@ -133,7 +135,9 @@ struct EngineAdapter::Impl {
     using RefreshAppearance = void (__fastcall*)(void*, unsigned char);
     using GetPlayer = void* (__fastcall*)(void*);
     using GetVector = Vec3* (__fastcall*)(void*, Vec3*);
+    using AssistDirection = Vec3* (__fastcall*)(void*, Vec3*, unsigned char);
     using GetScalar = float (__fastcall*)(void*);
+    using SetScalar = void (__fastcall*)(void*, float);
     using GetMatrix = const float* (__fastcall*)(void*);
     using InDuck = bool (__fastcall*)(void*);
     using Transform = void (__fastcall*)(void*, const Vec3&, const Vec3&, const Vec3&);
@@ -147,11 +151,14 @@ struct EngineAdapter::Impl {
     static inline LookUpdate stockLook = nullptr;
     static inline Keyboard stockKeyboard = nullptr;
     static inline MouseButton stockMouseButton = nullptr;
+    static inline GetVector stockWeaponDirection = nullptr;
+    static inline AssistDirection stockAssistDirection = nullptr;
     static inline std::atomic<unsigned> callbacks{0};
+    static inline thread_local unsigned callbackDepth = 0;
 
     struct Callback {
-        Callback() { callbacks.fetch_add(1, std::memory_order_acquire); }
-        ~Callback() { callbacks.fetch_sub(1, std::memory_order_release); }
+        Callback() { ++callbackDepth; callbacks.fetch_add(1, std::memory_order_acquire); }
+        ~Callback() { callbacks.fetch_sub(1, std::memory_order_release); --callbackDepth; }
     };
 
     Controller* controller = nullptr;
@@ -166,13 +173,14 @@ struct EngineAdapter::Impl {
     InDuck inDuck = nullptr;
     GetScalar getNearClip = nullptr;
     GetScalar getFov = nullptr;
+    SetScalar setFov = nullptr;
     GetScalar getAspect = nullptr;
     GetMatrix getProjection = nullptr;
     Transform setTransform = nullptr;
     Raytrace raytrace = nullptr;
     Sensitivity sensitivity = nullptr;
     Multipliers multipliers = nullptr;
-    TablePatch cameraPatch, lookPatch, keyboardPatch, mouseButtonPatch;
+    TablePatch cameraPatch, lookPatch, keyboardPatch, mouseButtonPatch, weaponDirectionPatch;
     std::recursive_mutex mutex;
     CameraOutput output{};
     CameraInput input{};
@@ -183,8 +191,18 @@ struct EngineAdapter::Impl {
     float stableYaw = 0.0f;
     float stablePitch = 0.0f;
     bool stableLookReady = false;
+    CameraPose resolvedPose{};
+    void* resolvedPlayer = nullptr;
+    void* resolvedCamera = nullptr;
     Vec3 previousAnchor{};
     bool haveAnchor = false;
+    bool assistHookCreated = false;
+    bool assistHookEnabled = false;
+    bool assistHookInitialized = false;
+    bool assistHookPublished = false;
+    unsigned char* assistHookModule = nullptr;
+    void* fovCamera = nullptr;
+    float originalFov = 0.0f;
     std::array<bool, 256> swallowed{};
     std::array<bool, 256> forwarded{};
     std::array<bool, 5> swallowedMouse{};
@@ -221,6 +239,7 @@ struct EngineAdapter::Impl {
     void resetMotion()
     {
         motion.reset();
+        resolvedPlayer = resolvedCamera = nullptr;
         previousMotionTime = {};
         haveAnchor = false;
     }
@@ -291,6 +310,9 @@ struct EngineAdapter::Impl {
     {
         void* p = player();
         void* m = manager();
+        if (fovCamera && m && field<void*>(m, 80) == fovCamera)
+            setFov(fovCamera, originalFov);
+        fovCamera = nullptr;
         restoreVisual(p);
         if (ownedView && p && m == ownerManager && p == ownerPlayer && field<int>(m, 88) == 1)
             changeCamera(m, 2, p);
@@ -299,7 +321,7 @@ struct EngineAdapter::Impl {
         resetMotion();
     }
 
-    void sample(float seconds)
+    void sample(float seconds, bool updatePresentation = false)
     {
         if (refreshingVisual) return;
         input.focused = focused();
@@ -325,7 +347,10 @@ struct EngineAdapter::Impl {
         }
         output = controller->update(input, seconds);
         input.mouseYawDelta = input.mousePitchDelta = 0.0f;
-        if (!output.applyCamera) {
+        // Input hooks may run within player action processing. Defer appearance
+        // replacement and native camera switching to the loader update.
+        if (!updatePresentation) return;
+        if (!output.applyCamera || output.temporaryFirstPerson) {
             swallowed.fill(false);
             swallowedMouse.fill(false);
             restoreView();
@@ -379,8 +404,12 @@ struct EngineAdapter::Impl {
     {
         void* p = player();
         void* m = manager();
-        if (refreshingVisual || !enabled || !output.applyCamera || !p || !m ||
+        if (refreshingVisual || !enabled || !output.applyCamera || output.temporaryFirstPerson || !p || !m ||
             field<void*>(m, 80) != camera || !stableLookReady || lookPlayer != p) return;
+        if (fovCamera == camera) {
+            setFov(camera, originalFov);
+            fovCamera = nullptr;
+        }
         Vec3 root{};
         getPosition(static_cast<unsigned char*>(p) + 24, &root);
         if (!finite(root)) return;
@@ -395,21 +424,17 @@ struct EngineAdapter::Impl {
         const Vec3 followed = motion.follow(target, dt, output.smoothCamera, output.smoothingSeconds);
         const float yaw = stableYaw;
         const float pitch = stablePitch;
-        const Vec3 direction{std::sin(yaw) * std::cos(pitch), std::sin(pitch),
-            std::cos(yaw) * std::cos(pitch)};
         CameraOutput framing = output;
-        if (input.aimOrFire) {
-            framing.framingYaw = 0.0f;
-            framing.framingPitch = 0.0f;
-        }
         framing.offsets.distance *= output.aimDistanceScale;
         CameraPose pose = makeCameraPose(followed, yaw, pitch, framing);
-        const bool combatView = input.aimOrFire && framing.orbitYaw == 0.0f && framing.orbitPitch == 0.0f &&
-            framing.framingYaw == 0.0f && framing.framingPitch == 0.0f;
-        Vec3 aimTarget{};
-        if (combatView) {
-            aimTarget = trace(p, target, add(target, scaled(direction, 1000.0f)));
-            pose.forward = aimDirection(pose.position, aimTarget, direction);
+        const float baseFov = getFov(camera);
+        if (std::isfinite(baseFov) && baseFov > 1.0f && baseFov < 179.0f &&
+            std::isfinite(output.aimMagnification) && output.aimMagnification > 1.0001f) {
+            originalFov = baseFov;
+            fovCamera = camera;
+            const float zoomed = 2.0f * std::atan(std::tan(baseFov * Radians * 0.5f) /
+                output.aimMagnification) / Radians;
+            setFov(camera, zoomed);
         }
         const float nearClip = getNearClip(camera);
         float aspect = getAspect(camera);
@@ -425,21 +450,60 @@ struct EngineAdapter::Impl {
             aspect = std::fabs(projection[5] / projection[0]);
         }
         ProbeContext context{this, p};
-        CameraPose desiredPose = pose;
-        const CameraMotion frameStart = motion;
         pose = motion.resolve(target, pose, nearClip, verticalFov, aspect, dt, traceCamera, &context);
-        if (combatView) {
-            // Recheck lens clearance when close-target parallax changes its angle.
-            for (int pass = 0; pass < 3; ++pass) {
-                const Vec3 forward = aimDirection(pose.position, aimTarget, direction);
-                if (length(add(forward, scaled(pose.forward, -1.0f))) < 0.0001f) break;
-                desiredPose.forward = forward;
-                motion = frameStart;
-                pose = motion.resolve(target, desiredPose, nearClip, verticalFov, aspect, dt, traceCamera, &context);
-            }
-        }
-        if (finite(pose.position) && finite(pose.forward))
+        if (finite(pose.position) && finite(pose.forward)) {
             setTransform(camera, scaled(pose.forward, -1.0f), pose.up, pose.position);
+            resolvedPose = pose;
+            resolvedPlayer = p;
+            resolvedCamera = camera;
+        }
+    }
+
+    static Vec3* __fastcall weaponDirectionHook(void* p, Vec3* result)
+    {
+        const void* caller = _ReturnAddress();
+        Callback callback;
+        Vec3* original = stockWeaponDirection(p, result);
+        Impl* self = current.load(std::memory_order_acquire);
+        if (!self || !original || caller != self->gameModule + 0xD36BD4) return original;
+        std::lock_guard<std::recursive_mutex> lock(self->mutex);
+        void* m = self->manager();
+        if (self->refreshingVisual || !self->enabled || !self->output.applyCamera || self->output.temporaryFirstPerson ||
+            !focused() || !self->gameplay() || !self->ownedView || p != self->player() ||
+            p != self->resolvedPlayer || !m || field<int>(m, 88) != 1 ||
+            field<void*>(m, 80) != self->resolvedCamera || !self->lastVisual ||
+            method<GetPlayer>(p, 194)(p) != self->lastVisual) return original;
+        Vec3 origin{};
+        Vec3* position = method<GetVector>(p, 230)(p, &origin);
+        if (!position || !finite(*position)) return original;
+        const Vec3 target = self->trace(p, self->resolvedPose.position,
+            add(self->resolvedPose.position, scaled(self->resolvedPose.forward, 1000.0f)));
+        if (finite(target)) *original = weaponAimDirection(*position, target, self->resolvedPose.forward);
+        return original;
+    }
+
+    static Vec3* __fastcall assistDirectionHook(void* dispatcher, Vec3* result, unsigned char mode)
+    {
+        const void* caller = _ReturnAddress();
+        Callback callback;
+        Vec3* original = stockAssistDirection(dispatcher, result, mode);
+        Impl* self = current.load(std::memory_order_acquire);
+        if (!self || !original || caller != self->gameModule + 0xB2ED56) return original;
+        std::lock_guard<std::recursive_mutex> lock(self->mutex);
+        void* p = self->player();
+        void* m = self->manager();
+        if (self->refreshingVisual || !self->enabled || !self->output.applyCamera ||
+            self->output.temporaryFirstPerson || !focused() || !self->gameplay() ||
+            !self->ownedView || !p || p != self->resolvedPlayer || !m ||
+            field<int>(m, 88) != 1 || field<void*>(m, 80) != self->resolvedCamera ||
+            !self->lastVisual || method<GetPlayer>(p, 194)(p) != self->lastVisual) return original;
+        Vec3 origin{};
+        Vec3* position = method<GetVector>(p, 230)(p, &origin);
+        if (!position || !finite(*position)) return original;
+        const Vec3 target = self->trace(p, self->resolvedPose.position,
+            add(self->resolvedPose.position, scaled(self->resolvedPose.forward, 1000.0f)));
+        if (finite(target)) *original = weaponAimDirection(*position, target, self->resolvedPose.forward);
+        return original;
     }
 
     static std::uintptr_t __fastcall cameraHook(void* camera)
@@ -449,25 +513,27 @@ struct EngineAdapter::Impl {
         if (!self) return stockCamera(camera);
         std::lock_guard<std::recursive_mutex> lock(self->mutex);
         if (self->refreshingVisual) return 0;
-        if (self->ownedView || self->output.applyCamera) {
+        if (self->ownedView || (self->output.applyCamera && !self->output.temporaryFirstPerson)) {
             void* p = self->player();
             void* m = self->manager();
             // A previous visual may have been destroyed since the last SDK tick.
             // Reattach before allowing the stock camera to read its target.
             if (!p || !m) return 0;
             if (field<void*>(m, 80) == camera && field<int>(m, 88) == 1) {
-                if (!self->selectThirdPersonVisual(p)) return 0;
                 void* visual = method<GetPlayer>(p, 194)(p);
                 if (!visual) return 0;
                 if (p != self->ownerPlayer || m != self->ownerManager || visual != self->lastVisual) {
-                    if (p != self->ownerPlayer || m != self->ownerManager) self->resetMotion();
-                    self->changeCamera(m, 1, p);
-                    self->ownedView = true;
-                    self->ownerPlayer = p;
-                    self->ownerManager = m;
-                    self->lastVisual = visual;
+                    // The current visual may have been destroyed. The loader
+                    // update will reattach it outside the native callback.
+                    return 0;
                 }
             }
+        }
+        if (self->fovCamera == camera) {
+            self->setFov(camera, self->originalFov);
+            self->fovCamera = nullptr;
+        } else if (self->fovCamera) {
+            self->fovCamera = nullptr;
         }
         const auto result = stockCamera(camera);
         self->updateCamera(camera);
@@ -591,19 +657,49 @@ struct EngineAdapter::Impl {
         return stockMouseButton(inputManager, button, pressed);
     }
 
+    void reportHookReleaseFailure()
+    {
+        // A remaining or chained callback must remain executable until exit.
+        HMODULE module = nullptr;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+            reinterpret_cast<LPCWSTR>(&cameraHook), &module);
+        shutdownFailed = true;
+        if (log) log("ERROR", "Third Person could not release a camera hook. Restart Player before enabling it again.");
+    }
+
     void restoreHooks()
     {
+        const bool assist = !assistHookEnabled || MH_DisableHook(gameModule + 0x3BA380) == MH_OK;
+        if (assist) assistHookEnabled = false;
+        const bool weaponDirection = weaponDirectionPatch.restore();
         const bool mouse = mouseButtonPatch.restore();
         const bool keyboard = keyboardPatch.restore();
         const bool look = lookPatch.restore();
         const bool camera = cameraPatch.restore();
-        if (!(mouse && keyboard && look && camera)) {
-            // A remaining or chained callback must remain executable until exit.
-            HMODULE module = nullptr;
-            GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-                reinterpret_cast<LPCWSTR>(&cameraHook), &module);
-            shutdownFailed = true;
-            if (log) log("ERROR", "Third Person could not release a camera hook. Restart Player before enabling it again.");
+        if (!(assist && weaponDirection && mouse && keyboard && look && camera))
+            reportHookReleaseFailure();
+    }
+
+    void releaseAssistHook()
+    {
+        // A thread may have entered the detour before incrementing callbacks.
+        // Keep a published trampoline alive until process exit.
+        if (shutdownFailed || assistHookPublished) return;
+        if (assistHookCreated) {
+            if (MH_RemoveHook(gameModule + 0x3BA380) != MH_OK) {
+                reportHookReleaseFailure();
+                return;
+            }
+            assistHookCreated = false;
+            assistHookModule = nullptr;
+            stockAssistDirection = nullptr;
+        }
+        if (assistHookInitialized) {
+            if (MH_Uninitialize() != MH_OK) {
+                reportHookReleaseFailure();
+                return;
+            }
+            assistHookInitialized = false;
         }
     }
 
@@ -643,6 +739,8 @@ bool EngineAdapter::Impl::install()
         "?GetClipNear@IBaseCamera@@QEAAMXZ"));
     getFov = reinterpret_cast<GetScalar>(GetProcAddress(engineModule,
         "?GetFOV@IBaseCamera@@QEAAMXZ"));
+    setFov = reinterpret_cast<SetScalar>(GetProcAddress(engineModule,
+        "?SetFOV@IBaseCamera@@QEAAXM@Z"));
     getAspect = reinterpret_cast<GetScalar>(GetProcAddress(engineModule,
         "?GetAspect@IBaseCamera@@QEAAMXZ"));
     getProjection = reinterpret_cast<GetMatrix>(GetProcAddress(engineModule,
@@ -651,24 +749,54 @@ bool EngineAdapter::Impl::install()
         "?FromForwardUpPos@IBaseCamera@@UEAAXAEBVvec3@@00@Z"));
     raytrace = reinterpret_cast<Raytrace>(GetProcAddress(engineModule,
         "?Raytrace@IGSObject@@QEAAEEPEAUSCollision@@AEBVvec3@@AEAV3@GPEAVIControlObject@@IIH@Z"));
-    if (!getPosition || !setTransform || !raytrace || !getNearClip || !getFov ||
+    if (!getPosition || !setTransform || !raytrace || !getNearClip || !getFov || !setFov ||
         !getAspect || !getProjection || !QueryPerformanceFrequency(&motionFrequency)) return false;
+    constexpr unsigned char assistPrologue[] = {0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x6c,
+        0x24,0x18,0x56,0x48,0x83,0xec,0x40,0x48};
+    if (std::memcmp(gameModule + 0x3BA380, assistPrologue, sizeof(assistPrologue)) != 0) return false;
     stockCamera = reinterpret_cast<CameraUpdate>(gameModule + 0x2CB410);
     stockLook = reinterpret_cast<LookUpdate>(gameModule + 0xCD0800);
     stockKeyboard = reinterpret_cast<Keyboard>(gameModule + 0x10C6D10);
     stockMouseButton = reinterpret_cast<MouseButton>(gameModule + 0x10C7390);
+    stockWeaponDirection = reinterpret_cast<GetVector>(gameModule + 0xB12950);
     current.store(this, std::memory_order_release);
-    const bool ok = cameraPatch.install(reinterpret_cast<void**>(gameModule + 0x155C7B8) + 9,
+    bool ok = cameraPatch.install(reinterpret_cast<void**>(gameModule + 0x155C7B8) + 9,
             reinterpret_cast<void*>(stockCamera), reinterpret_cast<void*>(cameraHook)) &&
         lookPatch.install(reinterpret_cast<void**>(gameModule + 0x180AE48) + 16,
             reinterpret_cast<void*>(stockLook), reinterpret_cast<void*>(lookHook)) &&
         keyboardPatch.install(reinterpret_cast<void**>(gameModule + 0x18FFD78) + 144,
             reinterpret_cast<void*>(stockKeyboard), reinterpret_cast<void*>(keyboardHook)) &&
         mouseButtonPatch.install(reinterpret_cast<void**>(gameModule + 0x18FFD78) + 146,
-            reinterpret_cast<void*>(stockMouseButton), reinterpret_cast<void*>(mouseButtonHook));
+            reinterpret_cast<void*>(stockMouseButton), reinterpret_cast<void*>(mouseButtonHook)) &&
+        weaponDirectionPatch.install(reinterpret_cast<void**>(gameModule + 0x17DD738) + 233,
+            reinterpret_cast<void*>(stockWeaponDirection), reinterpret_cast<void*>(weaponDirectionHook));
+    if (ok) {
+        if (!assistHookInitialized)
+            assistHookInitialized = MH_Initialize() == MH_OK;
+        if (assistHookInitialized && !assistHookCreated) {
+            assistHookCreated = MH_CreateHook(gameModule + 0x3BA380,
+                reinterpret_cast<void*>(assistDirectionHook), reinterpret_cast<void**>(&stockAssistDirection)) == MH_OK;
+            if (assistHookCreated) assistHookModule = gameModule;
+        }
+        if (assistHookCreated && assistHookModule == gameModule) {
+            HMODULE pinned = nullptr;
+            const bool pinnedOk = assistHookPublished || GetModuleHandleExW(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                reinterpret_cast<LPCWSTR>(&assistDirectionHook), &pinned) != 0;
+            if (pinnedOk) {
+                // Treat an enable attempt as published: failure may be reported
+                // after another thread could reach the detour.
+                assistHookPublished = true;
+                assistHookEnabled = MH_EnableHook(gameModule + 0x3BA380) == MH_OK;
+            }
+        }
+        ok = assistHookEnabled;
+    }
     if (!ok) {
         restoreHooks();
         current.store(nullptr, std::memory_order_release);
+        while (callbacks.load(std::memory_order_acquire)) SwitchToThread();
+        releaseAssistHook();
         return false;
     }
     installed = true;
@@ -735,7 +863,7 @@ void EngineAdapter::tick()
     const ULONGLONG now = GetTickCount64();
     const float seconds = impl_->lastTick ? (std::min)(static_cast<float>(now - impl_->lastTick) * 0.001f, 0.1f) : 0.0f;
     impl_->lastTick = now;
-    impl_->sample(seconds);
+    impl_->sample(seconds, Impl::callbackDepth == 0);
 }
 
 void EngineAdapter::shutdown()
@@ -745,6 +873,7 @@ void EngineAdapter::shutdown()
     impl_->restoreHooks();
     Impl::current.store(nullptr, std::memory_order_release);
     while (Impl::callbacks.load(std::memory_order_acquire)) SwitchToThread();
+    impl_->releaseAssistHook();
     impl_->installed = false;
     impl_->controller = nullptr;
     impl_->log = nullptr;

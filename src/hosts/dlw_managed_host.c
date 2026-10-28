@@ -1,4 +1,5 @@
 #include "dlw_managed_host.h"
+#include "../dlw_atomic_ini.h"
 
 #include "../core/dlw_api_runtime.h"
 #include "../core/dlw_runtime_tree.h"
@@ -1215,6 +1216,9 @@ static void dluma_managed_scan_project(
         truncated);
 }
 
+static void dluma_managed_auto_enable_startup(void);
+static int g_dluma_managed_initial_discovery_complete;
+
 void dluma_managed_mods_discover(void)
 {
     WCHAR (*projects)[DLUMA_MAX_WPATH] = 0;
@@ -1319,6 +1323,10 @@ void dluma_managed_mods_discover(void)
             &truncated);
     dluma_managed_sort_entries();
     dluma_managed_mark_conflicts();
+    if (!g_dluma_managed_initial_discovery_complete) {
+        g_dluma_managed_initial_discovery_complete = 1;
+        dluma_managed_auto_enable_startup();
+    }
     dluma_managed_prune_config_registry();
     ++g_dluma_managed.revision;
     dluma_managed_unlock();
@@ -1415,6 +1423,7 @@ static int dluma_managed_persist(
 {
     WCHAR section[128];
     WCHAR fingerprint[DLUMA_SHA256_HEX_CAPACITY];
+    WCHAR temporary[DLUMA_MAX_WPATH];
     dluma_managed_ini_path();
     dluma_managed_section(
         item, section, DLUMA_ARRAY_COUNT(section));
@@ -1424,18 +1433,52 @@ static int dluma_managed_persist(
             fingerprint,
             DLUMA_ARRAY_COUNT(fingerprint)))
         return 0;
-    if (enabled &&
-        !WritePrivateProfileStringW(
-            section,
-            L"approval_fingerprint",
-            fingerprint,
-            g_dluma_managed.ini_path))
+    if (!dluma_atomic_ini_begin(g_dluma_managed.ini_path,
+                                temporary, DLUMA_ARRAY_COUNT(temporary)))
         return 0;
-    return WritePrivateProfileStringW(
-        section,
-        L"enabled_next_launch",
-        enabled ? L"1" : L"0",
-        g_dluma_managed.ini_path) != 0;
+    if ((enabled && !WritePrivateProfileStringW(
+             section, L"approval_fingerprint", fingerprint, temporary)) ||
+        !WritePrivateProfileStringW(
+            section, L"enabled_next_launch", enabled ? L"1" : L"0",
+            temporary)) {
+        dluma_atomic_ini_abort(temporary);
+        return 0;
+    }
+    return dluma_atomic_ini_commit(g_dluma_managed.ini_path, temporary);
+}
+
+/* Called under the registry lock after source selection on the first scan. */
+static void dluma_managed_auto_enable_startup(void)
+{
+    unsigned int index;
+    if (!g_dluma.config.auto_enable_mods ||
+        dluma_startup_recovery_suppresses_mods()) return;
+    for (index = 0; index < g_dluma_managed.count; ++index) {
+        DlumaManagedModSnapshot* item = &g_dluma_managed.entries[index].snapshot;
+        WCHAR section[128];
+        WCHAR saved[16];
+        if (item->scope != DLUMA_SCOPE_GLOBAL || item->duplicate_id ||
+            !item->source_selected || item->source_selection_missing ||
+            item->runtime_error[0] || !item->approval_fingerprint[0])
+            continue;
+        dluma_managed_section(item, section, DLUMA_ARRAY_COUNT(section));
+        saved[0] = 0;
+        GetPrivateProfileStringW(section, L"enabled_next_launch", L"",
+            saved, DLUMA_ARRAY_COUNT(saved), g_dluma_managed.ini_path);
+        if (saved[0] && (saved[0] != L'1' || saved[1] != L'\0')) continue;
+        if (item->enabled_requested && item->approval_valid) continue;
+        if (!dluma_managed_persist(item, 1)) {
+            item->enabled_requested = 0;
+            item->approval_valid = 0;
+            dluma_log_pair("WARN", "managed_mod_auto_enable_write_failed", item->id);
+            continue;
+        }
+        item->approval_valid = 1U;
+        item->enabled_requested = 1U;
+        item->auto_approved = 1U;
+        item->state = DLUMA_MANAGED_STATE_APPROVED_NEXT_LAUNCH;
+        dluma_log_pair("INFO", "managed_mod_auto_enabled", item->id);
+    }
 }
 
 int dluma_managed_mods_request_enabled(

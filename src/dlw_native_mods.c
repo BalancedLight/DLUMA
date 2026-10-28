@@ -1,4 +1,5 @@
 #include "dlw_native_mods.h"
+#include "dlw_atomic_ini.h"
 #include "core/dlw_api_runtime.h"
 #include "core/dlw_mod_package_runtime.h"
 #include "game/dlw_game_backend.h"
@@ -770,7 +771,7 @@ static void dluma_native_apply_persistence(DlumaNativeModSnapshot* item)
             section, L"approval_fingerprint", L"", legacy_fingerprint,
             DLUMA_ARRAY_COUNT(legacy_fingerprint), g_dluma_native_mods.ini_path);
         GetPrivateProfileStringW(
-            section, L"enabled_next_launch", L"0", legacy_enabled,
+            section, L"enabled_next_launch", L"", legacy_enabled,
             DLUMA_ARRAY_COUNT(legacy_enabled), g_dluma_native_mods.ini_path);
         dluma_wide_to_utf8(
             legacy_fingerprint, legacy_fingerprint_utf8,
@@ -778,6 +779,16 @@ static void dluma_native_apply_persistence(DlumaNativeModSnapshot* item)
         dluma_wide_to_utf8(
             legacy_enabled, legacy_enabled_utf8,
             DLUMA_ARRAY_COUNT(legacy_enabled_utf8));
+        /* Absence of legacy state is a new mod, not a disabled choice. */
+        if (!legacy_fingerprint_utf8[0] && !legacy_enabled_utf8[0])
+            goto read_host_state;
+        /* Preserve the old enabled intent until the startup policy can
+         * validate and approve the changed identity after source selection. */
+        if (g_dluma.config.auto_enable_mods &&
+            dluma_parse_u32(legacy_enabled_utf8, 0) == 1U &&
+            dluma_stricmp(legacy_fingerprint_utf8,
+                          item->approval_fingerprint) != 0)
+            goto read_host_state;
         requested = legacy_fingerprint_utf8[0] &&
             dluma_stricmp(
                 legacy_fingerprint_utf8, item->approval_fingerprint) == 0 &&
@@ -817,6 +828,7 @@ static void dluma_native_apply_persistence(DlumaNativeModSnapshot* item)
                     ? "legacy_player_only" : "legacy_disabled");
         }
     }
+read_host_state:
     requested = dluma_parse_u32(host_state_utf8, 0);
     if (requested > DLUMA_NATIVE_HOST_BOTH) requested = DLUMA_NATIVE_HOST_OFF;
     companion_invalid = item->companion_pack.declared &&
@@ -1737,6 +1749,9 @@ static int dluma_native_project_seen(WCHAR projects[][DLUMA_MAX_WPATH],
     return 0;
 }
 
+static void dluma_native_auto_enable_startup(void);
+static int g_dluma_native_initial_discovery_complete;
+
 void dluma_native_mods_discover(void)
 {
     WCHAR (*projects)[DLUMA_MAX_WPATH] = 0;
@@ -1801,6 +1816,10 @@ void dluma_native_mods_discover(void)
             projects[i], &directories_seen, &traversal_truncated);
     dluma_native_sort_entries();
     dluma_native_mark_conflicts();
+    if (!g_dluma_native_initial_discovery_complete) {
+        g_dluma_native_initial_discovery_complete = 1;
+        dluma_native_auto_enable_startup();
+    }
     dluma_native_prune_config_registry();
     ++g_dluma_native_mods.revision;
     dluma_native_publish_crash_context_locked();
@@ -1892,8 +1911,8 @@ static int dluma_native_write_hosts(
     WCHAR player_fingerprint[DLUMA_SHA256_HEX_CAPACITY];
     WCHAR editor_fingerprint[DLUMA_SHA256_HEX_CAPACITY];
     WCHAR host_state[16];
+    WCHAR temporary[DLUMA_MAX_WPATH];
     char host_state_utf8[16];
-    int result;
     if (!item || host_flags > DLUMA_NATIVE_HOST_BOTH ||
         (host_flags & ~item->declared_host_flags))
         return 0;
@@ -1911,27 +1930,91 @@ static int dluma_native_write_hosts(
         !dluma_utf8_to_wide(
             host_state_utf8, host_state, DLUMA_ARRAY_COUNT(host_state)))
         return 0;
-    /* Write disabled first.  A later write failure therefore cannot accidentally
-     * leave a newly approved DLL enabled. */
-    if (!WritePrivateProfileStringW(
-            section, L"host_state_next_launch", L"0",
-            g_dluma_native_mods.ini_path))
+    if (!dluma_atomic_ini_begin(g_dluma_native_mods.ini_path,
+                                temporary, DLUMA_ARRAY_COUNT(temporary)))
         return 0;
     if (!WritePrivateProfileStringW(
             section, L"player_approval_fingerprint",
             (host_flags & DLUMA_NATIVE_HOST_PLAYER)
                 ? player_fingerprint : 0,
-            g_dluma_native_mods.ini_path) ||
+            temporary) ||
         !WritePrivateProfileStringW(
             section, L"editor_approval_fingerprint",
             (host_flags & DLUMA_NATIVE_HOST_EDITOR)
                 ? editor_fingerprint : 0,
-            g_dluma_native_mods.ini_path))
+            temporary) ||
+        !WritePrivateProfileStringW(
+            section, L"host_state_next_launch", host_state, temporary)) {
+        dluma_atomic_ini_abort(temporary);
         return 0;
-    result = WritePrivateProfileStringW(
-        section, L"host_state_next_launch", host_state,
-        g_dluma_native_mods.ini_path) != 0;
-    return result;
+    }
+    return dluma_atomic_ini_commit(g_dluma_native_mods.ini_path, temporary);
+}
+
+/* Called under the registry lock after source selection on the first scan. */
+static void dluma_native_auto_enable_startup(void)
+{
+    unsigned int i;
+    if (!g_dluma.config.auto_enable_mods ||
+        dluma_startup_recovery_suppresses_mods()) return;
+    for (i = 0; i < g_dluma_native_mods.count; ++i) {
+        DlumaNativeModSnapshot* item = &g_dluma_native_mods.entries[i].snapshot;
+        WCHAR section[128];
+        WCHAR saved[16];
+        WCHAR legacy[16];
+        unsigned int hosts;
+        if (item->scope != DLUMA_SCOPE_GLOBAL || item->duplicate_id ||
+            !item->source_selected || item->source_selection_missing ||
+            item->runtime_error[0] || !dluma_native_host_abi_compatible(item) ||
+            (item->companion_pack.declared && !item->companion_pack.valid))
+            continue;
+        dluma_native_section(item, section, DLUMA_ARRAY_COUNT(section));
+        saved[0] = legacy[0] = 0;
+        GetPrivateProfileStringW(section, L"host_state_next_launch", L"",
+            saved, DLUMA_ARRAY_COUNT(saved), g_dluma_native_mods.ini_path);
+        if (saved[0]) {
+            char text[16];
+            if (!dluma_wide_to_utf8(saved, text, DLUMA_ARRAY_COUNT(text)))
+                continue;
+            hosts = dluma_parse_u32(text, 0);
+            if (!hosts || hosts > DLUMA_NATIVE_HOST_BOTH) continue;
+            hosts &= item->declared_host_flags;
+        } else {
+            GetPrivateProfileStringW(section, L"enabled_next_launch", L"",
+                legacy, DLUMA_ARRAY_COUNT(legacy), g_dluma_native_mods.ini_path);
+            if (legacy[0]) {
+                if (legacy[0] != L'1' || legacy[1] != L'\0') continue;
+                hosts = DLUMA_NATIVE_HOST_PLAYER & item->declared_host_flags;
+            } else {
+                hosts = item->declared_host_flags;
+            }
+        }
+        if (!hosts ||
+            ((hosts & DLUMA_NATIVE_HOST_PLAYER) && !item->player_approval_fingerprint[0]) ||
+            ((hosts & DLUMA_NATIVE_HOST_EDITOR) && !item->editor_approval_fingerprint[0]))
+            continue;
+        if (item->requested_host_flags == hosts &&
+            (!(hosts & DLUMA_NATIVE_HOST_PLAYER) || item->player_approval_valid) &&
+            (!(hosts & DLUMA_NATIVE_HOST_EDITOR) || item->editor_approval_valid))
+            continue;
+        if (!dluma_native_write_hosts(item, hosts)) {
+            item->requested_host_flags = 0;
+            item->enabled_requested = 0;
+            item->approval_valid = 0;
+            item->player_approval_valid = 0;
+            item->editor_approval_valid = 0;
+            dluma_log_pair("WARN", "native_mod_auto_enable_write_failed", item->id);
+            continue;
+        }
+        item->requested_host_flags = (unsigned char)hosts;
+        item->player_approval_valid = (hosts & DLUMA_NATIVE_HOST_PLAYER) != 0;
+        item->editor_approval_valid = (hosts & DLUMA_NATIVE_HOST_EDITOR) != 0;
+        item->approval_valid = item->player_approval_valid;
+        item->enabled_requested = item->player_approval_valid;
+        item->auto_approved = 1;
+        item->state = DLUMA_NATIVE_STATE_APPROVED_NEXT_LAUNCH;
+        dluma_log_pair("INFO", "native_mod_auto_enabled", item->id);
+    }
 }
 
 static int dluma_native_write_enabled(

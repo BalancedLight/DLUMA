@@ -1,6 +1,7 @@
 #include "dlw_media_service.h"
 
 #include "../dlw_player_media_adapter.h"
+#include "../dlw_lua_project_exit.h"
 
 #include <string.h>
 
@@ -51,6 +52,10 @@ typedef struct DlumaMediaRegistry {
     uint32_t capability_registry_count;
     volatile LONG token_generation;
     volatile LONG stopping;
+    volatile LONG transitioning;
+    unsigned int transition_map_generation;
+    void* transition_outgoing_level;
+    unsigned char transition_cleanup_failed;
     unsigned char initialized;
     unsigned char retained;
     unsigned char reserved[2];
@@ -309,6 +314,11 @@ static DlumaStatus dluma_media_bank_open(
             dluma_stricmp(
                 existing->manifest.bank_identifier,
                 bank_id) == 0) {
+            adapter_result = dluma_player_media_adapter_open_bank(
+                archive, entry, &adapter_token);
+            status = dluma_media_status(adapter_result);
+            if (status != DLUMA_STATUS_OK) return status;
+            existing->adapter_token = adapter_token;
             result->token = dluma_media_token(
                 DLUMA_MEDIA_TOKEN_BANK,
                 existing->generation, index);
@@ -699,6 +709,44 @@ void dluma_media_service_tick(
     dluma_player_media_adapter_tick(
         game_subobject, level,
         GetTickCount64(), delta_seconds);
+    if (level && level != g_dluma_media.transition_outgoing_level &&
+        g_dluma_media.transitioning && !g_dluma_media.retained &&
+        !g_dluma_media.transition_cleanup_failed &&
+        dluma_lua_runtime_current_map_generation() !=
+            g_dluma_media.transition_map_generation)
+        dluma_atomic_exchange(&g_dluma_media.transitioning, 0);
+}
+
+int dluma_media_service_begin_transition(
+    unsigned int map_generation, void* outgoing_level)
+{
+    if (!g_dluma_media.initialized || g_dluma_media.stopping || !outgoing_level)
+        return 0;
+    if (!g_dluma_media.transitioning) {
+        if (g_dluma_media.retained) return 0;
+        g_dluma_media.transition_map_generation = map_generation;
+        g_dluma_media.transition_outgoing_level = outgoing_level;
+        dluma_atomic_exchange(&g_dluma_media.transitioning, 1);
+    } else {
+        if (g_dluma_media.transition_outgoing_level != outgoing_level)
+            return 0;
+        if (!g_dluma_media.transition_cleanup_failed) return 1;
+    }
+    if (!dluma_player_media_adapter_force_cleanup()) {
+        g_dluma_media.transition_cleanup_failed = 1U;
+        return 0;
+    }
+    g_dluma_media.transition_cleanup_failed = 0U;
+    memset(g_dluma_media.waves, 0, sizeof(g_dluma_media.waves));
+    memset(g_dluma_media.banks, 0, sizeof(g_dluma_media.banks));
+    memset(&g_dluma_media.music, 0, sizeof(g_dluma_media.music));
+    return 1;
+}
+
+void dluma_media_service_frontend_ready(void)
+{
+    if (!g_dluma_media.retained && !g_dluma_media.transition_cleanup_failed)
+        dluma_atomic_exchange(&g_dluma_media.transitioning, 0);
 }
 
 static void dluma_media_set_capability(
@@ -770,6 +818,10 @@ DlumaStatus dluma_media_service_invoke(
     if (!g_dluma_media.initialized ||
         dluma_atomic_compare_exchange(
             &g_dluma_media.stopping, 0, 0) != 0)
+        return DLUMA_STATUS_UNAVAILABLE;
+    if (g_dluma_media.transitioning &&
+        (operation_id == 6002U || operation_id == 6004U ||
+         operation_id == 6010U))
         return DLUMA_STATUS_UNAVAILABLE;
     switch (operation_id) {
     case 3012U:
@@ -891,6 +943,7 @@ int dluma_media_service_archive_in_use(
 int dluma_media_service_quiesce_all(void)
 {
     dluma_atomic_exchange(&g_dluma_media.stopping, 1);
+    if (!dluma_player_media_adapter_stop_exit_hook()) return 0;
     if (!dluma_player_media_adapter_force_cleanup()) {
         g_dluma_media.retained = 1U;
         return 0;
@@ -904,7 +957,7 @@ int dluma_media_service_quiesce_all(void)
 int dluma_media_service_all_drained(void)
 {
     unsigned int index;
-    if (g_dluma_media.retained) return 0;
+    if (g_dluma_media.retained || g_dluma_media.transition_cleanup_failed) return 0;
     if (g_dluma_media.music.active) return 0;
     for (index = 0; index < DLUMA_MEDIA_MAX_WAVES; ++index)
         if (g_dluma_media.waves[index].active) return 0;

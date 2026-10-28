@@ -13,6 +13,7 @@ typedef struct DlumaAssetSetting {
     char id[DLUMA_ASSET_MOD_ID_CAPACITY];
     char source[DLUMA_ASSET_MOD_SOURCE_CAPACITY];
     unsigned char enabled;
+    unsigned char auto_eligible;
 } DlumaAssetSetting;
 
 static DlumaAssetProvider g_dluma_asset_providers[DLUMA_ASSET_MAX_PROVIDERS];
@@ -264,6 +265,10 @@ static void dluma_asset_state_load(void)
         GetPrivateProfileStringW(L"asset_mods", key, L"0",
             value, DLUMA_ARRAY_COUNT(value), path);
         setting.enabled = value[0] == L'1' && !value[1];
+        dluma_asset_state_key(L"auto_eligible", index, key, DLUMA_ARRAY_COUNT(key));
+        GetPrivateProfileStringW(L"asset_mods", key, L"0",
+            value, DLUMA_ARRAY_COUNT(value), path);
+        setting.auto_eligible = value[0] == L'1' && !value[1];
         dluma_asset_state_key(L"source", index, key, DLUMA_ARRAY_COUNT(key));
         GetPrivateProfileStringW(L"asset_mods", key, L"",
             value, DLUMA_ARRAY_COUNT(value), path);
@@ -316,12 +321,23 @@ static int dluma_asset_state_save(void)
         dluma_asset_state_key(L"enabled", index, key, DLUMA_ARRAY_COUNT(key));
         if (!WritePrivateProfileStringW(L"asset_mods", key,
                 setting->enabled ? L"1" : L"0", temporary)) goto failed;
+        dluma_asset_state_key(L"auto_eligible", index, key, DLUMA_ARRAY_COUNT(key));
+        if (!WritePrivateProfileStringW(L"asset_mods", key,
+                setting->auto_eligible ? L"1" : L"0", temporary)) goto failed;
         dluma_asset_state_key(L"source", index, key, DLUMA_ARRAY_COUNT(key));
         if (!dluma_utf8_to_wide(setting->source, value, DLUMA_ARRAY_COUNT(value)) ||
             !WritePrivateProfileStringW(L"asset_mods", key, value, temporary))
             goto failed;
     }
-    if (!WritePrivateProfileStringW(0, 0, 0, temporary)) goto failed;
+    /* The profile cache flush can return zero despite successful writes. */
+    (void)WritePrivateProfileStringW(0, 0, 0, temporary);
+    file = CreateFileW(temporary, GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (file == INVALID_HANDLE_VALUE) goto failed;
+    valid = FlushFileBuffers(file) != 0;
+    CloseHandle(file);
+    if (!valid) goto failed;
     valid = MoveFileExW(temporary, path,
         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
     goto done;
@@ -498,6 +514,8 @@ static unsigned int dluma_asset_desired_sources(
 void dluma_asset_mods_discover(void)
 {
     unsigned int index;
+    unsigned char enabled_before[DLUMA_ASSET_MOD_MAX_ITEMS];
+    int auto_enabled = 0;
     dluma_asset_lock();
     /* Discovery owns the launch snapshot. Runtime edits alter desired state. */
     if (g_dluma_asset_initialized) { dluma_asset_unlock(); return; }
@@ -522,6 +540,26 @@ void dluma_asset_mods_discover(void)
             DlumaAssetSetting *setting = &g_dluma_asset_settings[g_dluma_asset_setting_count++];
             memset(setting, 0, sizeof(*setting));
             dluma_str_copy(setting->id, sizeof(setting->id), id);
+            setting->auto_eligible = 1;
+        }
+    }
+    if (g_dluma.config.auto_enable_mods &&
+        !dluma_startup_recovery_suppresses_mods()) {
+        for (index = 0; index < g_dluma_asset_setting_count; ++index) {
+            DlumaAssetSetting *setting = &g_dluma_asset_settings[index];
+            int missing = 0;
+            const DlumaAssetModSnapshot *item = dluma_asset_selected(setting, &missing);
+            enabled_before[index] = setting->enabled;
+            if (setting->auto_eligible && !setting->enabled &&
+                item && item->valid && !missing) {
+                setting->enabled = 1;
+                auto_enabled = 1;
+            }
+        }
+        if (auto_enabled && !dluma_asset_state_save()) {
+            for (index = 0; index < g_dluma_asset_setting_count; ++index)
+                g_dluma_asset_settings[index].enabled = enabled_before[index];
+            dluma_log_line("WARN", "asset_mod_auto_enable_persist_failed");
         }
     }
     g_dluma_asset_desired_revision = 1;
@@ -614,6 +652,7 @@ int dluma_asset_mods_set_enabled(
 {
     int index;
     unsigned char previous;
+    unsigned char previous_auto_eligible;
     const DlumaAssetModSnapshot *item;
     if (!id || !id[0])
         return dluma_asset_result(0, diagnostic, capacity, "Select an asset mod.");
@@ -625,10 +664,13 @@ int dluma_asset_mods_set_enabled(
         return dluma_asset_result(0, diagnostic, capacity, "This asset mod is unavailable.");
     }
     previous = g_dluma_asset_settings[index].enabled;
+    previous_auto_eligible = g_dluma_asset_settings[index].auto_eligible;
     g_dluma_asset_settings[index].enabled = enabled ? 1 : 0;
-    if (previous != g_dluma_asset_settings[index].enabled) {
+    g_dluma_asset_settings[index].auto_eligible = 0;
+    if (previous != g_dluma_asset_settings[index].enabled || previous_auto_eligible) {
         if (!dluma_asset_state_save()) {
             g_dluma_asset_settings[index].enabled = previous;
+            g_dluma_asset_settings[index].auto_eligible = previous_auto_eligible;
             dluma_asset_unlock();
             return dluma_asset_result(0, diagnostic, capacity, "Could not save asset mod settings.");
         }

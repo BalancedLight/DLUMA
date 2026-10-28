@@ -2,11 +2,13 @@
 
 #include "core/dlw_mod_owner.h"
 #include "dlw_common.h"
+#include "dlw_asset_mods.h"
 #include "dlw_native_mods.h"
 #include "hosts/dlw_managed_host.h"
 
 #define DLUMA_NEW_MOD_TICKER_MAX_CANDIDATES \
-    (DLUMA_MAX_LUA_FILES + DLUMA_MAX_NATIVE_MODS + DLUMA_MAX_MANAGED_MODS)
+    (DLUMA_MAX_LUA_FILES + DLUMA_MAX_NATIVE_MODS + DLUMA_MAX_MANAGED_MODS + \
+     DLUMA_ASSET_MOD_MAX_ITEMS)
 #define DLUMA_NEW_MOD_TICKER_SECTION L"new_mod_ticker_announced"
 
 typedef struct DlumaNewModTickerCandidate {
@@ -21,6 +23,7 @@ typedef struct DlumaNewModTickerState {
     unsigned int lua_count;
     unsigned int native_count;
     unsigned int managed_count;
+    unsigned int asset_count;
     unsigned char captured;
     unsigned char presented;
     unsigned char reserved[2];
@@ -125,8 +128,9 @@ static void dluma_new_mod_ticker_capture_lua(const WCHAR* path)
         const DlumaLuaMetadata* item = &entries[index];
         if (!item->valid || item->duplicate_id ||
             item->scope != DLUMA_LUA_SCOPE_GLOBAL ||
-            !item->is_new || !item->pending_review ||
-            item->approval_valid ||
+            !item->is_new ||
+            (!g_dluma.config.auto_enable_mods &&
+             (!item->pending_review || item->approval_valid)) ||
             !item->registry_key[0] ||
             !item->metadata_fingerprint[0])
             continue;
@@ -162,12 +166,13 @@ static void dluma_new_mod_ticker_capture_native(const WCHAR* path)
         if (item->scope != DLUMA_SCOPE_GLOBAL ||
             item->duplicate_id ||
             item->abi_kind != DLUMA_NATIVE_ABI_V2 ||
-            item->approval_valid ||
+            (item->approval_valid && !item->auto_approved) ||
             !item->registry_key[0] ||
             !item->approval_fingerprint[0] ||
             (item->companion_pack.declared &&
              !item->companion_pack.valid) ||
-            (item->state != DLUMA_NATIVE_STATE_DISCOVERED_DISABLED &&
+            (!item->auto_approved &&
+             item->state != DLUMA_NATIVE_STATE_DISCOVERED_DISABLED &&
              item->state !=
                  DLUMA_NATIVE_STATE_CHANGED_REVIEW_REQUIRED))
             continue;
@@ -202,10 +207,11 @@ static void dluma_new_mod_ticker_capture_managed(const WCHAR* path)
         const DlumaManagedModSnapshot* item = &entries[index];
         if (item->scope != DLUMA_SCOPE_GLOBAL ||
             item->duplicate_id ||
-            item->approval_valid ||
+            (item->approval_valid && !item->auto_approved) ||
             !item->registry_key[0] ||
             !item->approval_fingerprint[0] ||
-            (item->state != DLUMA_MANAGED_STATE_DISCOVERED_DISABLED &&
+            (!item->auto_approved &&
+             item->state != DLUMA_MANAGED_STATE_DISCOVERED_DISABLED &&
              item->state !=
                  DLUMA_MANAGED_STATE_CHANGED_REVIEW_REQUIRED))
             continue;
@@ -213,6 +219,37 @@ static void dluma_new_mod_ticker_capture_managed(const WCHAR* path)
                 path, "managed", item->registry_key,
                 item->approval_fingerprint))
             ++g_dluma_new_mod_ticker.managed_count;
+    }
+    dluma_free(entries);
+}
+
+static void dluma_new_mod_ticker_capture_assets(const WCHAR* path)
+{
+    DlumaAssetModSnapshot* entries;
+    unsigned int total = 0;
+    unsigned int count;
+    unsigned int index;
+    entries = (DlumaAssetModSnapshot*)dluma_alloc(
+        (SIZE_T)DLUMA_ASSET_MOD_MAX_ITEMS * sizeof(*entries));
+    if (!entries) {
+        dluma_log_line("ERROR", "new_mod_ticker_asset_snapshot_allocation_failed");
+        return;
+    }
+    memset(entries, 0, (SIZE_T)DLUMA_ASSET_MOD_MAX_ITEMS * sizeof(*entries));
+    (void)dluma_asset_mods_snapshot(entries, DLUMA_ASSET_MOD_MAX_ITEMS, &total, 0);
+    count = total > DLUMA_ASSET_MOD_MAX_ITEMS ? DLUMA_ASSET_MOD_MAX_ITEMS : total;
+    for (index = 0; index < count; ++index) {
+        const DlumaAssetModSnapshot* item = &entries[index];
+        const char* fields[2];
+        char identity[DLUMA_SHA256_HEX_CAPACITY];
+        if (!item->valid || item->source_selection_missing || !item->id[0] ||
+            !item->source_identity[0] || !item->fingerprint[0])
+            continue;
+        fields[0] = item->id;
+        fields[1] = item->source_identity;
+        dluma_sha256_fields_hex("DLW_NEW_MOD_TICKER_ASSET_ID_V1", fields, 0, 2U, identity);
+        if (dluma_new_mod_ticker_add(path, "asset", identity, item->fingerprint))
+            ++g_dluma_new_mod_ticker.asset_count;
     }
     dluma_free(entries);
 }
@@ -236,6 +273,7 @@ void dluma_new_mod_ticker_capture_startup(void)
     dluma_new_mod_ticker_capture_lua(path);
     dluma_new_mod_ticker_capture_native(path);
     dluma_new_mod_ticker_capture_managed(path);
+    dluma_new_mod_ticker_capture_assets(path);
     dluma_log_u64(
         "INFO", "new_mod_ticker_lua_candidates",
         (ULONGLONG)g_dluma_new_mod_ticker.lua_count);
@@ -245,6 +283,9 @@ void dluma_new_mod_ticker_capture_startup(void)
     dluma_log_u64(
         "INFO", "new_mod_ticker_managed_candidates",
         (ULONGLONG)g_dluma_new_mod_ticker.managed_count);
+    dluma_log_u64(
+        "INFO", "new_mod_ticker_asset_candidates",
+        (ULONGLONG)g_dluma_new_mod_ticker.asset_count);
     dluma_log_u64(
         "INFO", "new_mod_ticker_candidates",
         (ULONGLONG)g_dluma_new_mod_ticker.count);

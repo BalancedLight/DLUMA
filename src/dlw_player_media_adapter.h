@@ -94,6 +94,7 @@ extern "C" {
 #endif
 
 void dluma_player_media_adapter_reset(void);
+int dluma_player_media_adapter_stop_exit_hook(void);
 void dluma_player_media_adapter_bind(
     HMODULE original_gamedll, void* game_script_manager);
 void dluma_player_media_adapter_tick(

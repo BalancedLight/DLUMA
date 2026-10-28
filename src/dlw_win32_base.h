@@ -342,6 +342,7 @@ __declspec(dllimport) DWORD WINAPI GetFinalPathNameByHandleW(HANDLE hFile, LPWST
 __declspec(dllimport) BOOL WINAPI SetFilePointerEx(HANDLE hFile, LARGE_INTEGER liDistanceToMove, LARGE_INTEGER* lpNewFilePointer, DWORD dwMoveMethod);
 __declspec(dllimport) BOOL WINAPI FlushFileBuffers(HANDLE hFile);
 __declspec(dllimport) BOOL WINAPI DeleteFileW(LPCWSTR lpFileName);
+__declspec(dllimport) BOOL WINAPI CopyFileW(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, BOOL bFailIfExists);
 __declspec(dllimport) BOOL WINAPI MoveFileExW(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, DWORD dwFlags);
 __declspec(dllimport) DWORD WINAPI GetLastError(void);
 __declspec(dllimport) DWORD WINAPI GetCurrentProcessId(void);

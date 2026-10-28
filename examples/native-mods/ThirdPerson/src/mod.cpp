@@ -1,8 +1,10 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include "dluma_api.h"
 #include "controller.h"
 #include "engine_adapter.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 
@@ -115,6 +117,19 @@ struct Runtime {
         return result.value.integer_value != 0;
     }
 
+    bool firstPersonAimPreference() const
+    {
+        if (!configuration.get) return false;
+        auto request = record<DlumaConfigGetRequest>();
+        auto result = resultRecord<DlumaScalarResult>();
+        request.key = view("aim_view");
+        if (configuration.get(configuration.context, &request, &result) != DLUMA_STATUS_OK ||
+            result.value.kind != DLUMA_SCALAR_STRING || !result.value.string_value.data) return false;
+        constexpr char value[] = "first_person";
+        return result.value.string_value.size == sizeof(value) - 1 &&
+            std::memcmp(result.value.string_value.data, value, sizeof(value) - 1) == 0;
+    }
+
     void loadConfiguration()
     {
         KeyBindings keys{};
@@ -140,19 +155,19 @@ struct Runtime {
             preference("horizontal_angle_deg", 0, -180, 180)) * DegreesToRadians;
         config.verticalAngle = static_cast<float>(
             preference("vertical_angle_deg", 0, -85, 85)) * DegreesToRadians;
+        config.aimFirstPerson = firstPersonAimPreference();
+        config.aimDistanceReduction = static_cast<float>(preference("aim_distance_percent", 20, 0, 60)) / 100.0f;
+        config.aimMagnification = static_cast<float>(preference("aim_magnification_percent", 125, 100, 200)) / 100.0f;
         controller.configure(config);
     }
 
-    float storedNumber(const char* key, float fallback) const
+    float storedNumber(const char* key, float fallback, bool* found = nullptr) const
     {
         if (!storage.get)
             return fallback;
         auto request = record<DlumaStorageGetRequest>();
         auto result = resultRecord<DlumaScalarResult>();
         request.key = view(key);
-        request.has_fallback = 1;
-        request.fallback.kind = DLUMA_SCALAR_NUMBER;
-        request.fallback.number_value = fallback;
         if (storage.get(storage.context, &request, &result) != DLUMA_STATUS_OK)
             return fallback;
         double value = fallback;
@@ -160,31 +175,56 @@ struct Runtime {
             value = result.value.number_value;
         else if (result.value.kind == DLUMA_SCALAR_INTEGER)
             value = static_cast<double>(result.value.integer_value);
+        else
+            return fallback;
         if (!std::isfinite(value) ||
             value < -static_cast<double>((std::numeric_limits<float>::max)()) ||
             value > static_cast<double>((std::numeric_limits<float>::max)()))
             return fallback;
+        if (found) *found = true;
         return static_cast<float>(value);
     }
 
     void loadOffsets()
     {
         Offsets offsets{};
-        offsets.lateral = storedNumber("lateral_offset", offsets.lateral);
-        offsets.height = storedNumber("height_offset", offsets.height);
-        offsets.distance = storedNumber("camera_distance", offsets.distance);
+        auto request = record<DlumaStorageGetRequest>();
+        auto result = resultRecord<DlumaScalarResult>();
+        request.key = view("camera_offsets_v2");
+        if (storage.get && storage.get(storage.context, &request, &result) == DLUMA_STATUS_OK &&
+            result.value.kind == DLUMA_SCALAR_STRING && result.value.string_value.data &&
+            result.value.string_value.size > 0 && result.value.string_value.size < 128) {
+            char text[128]{};
+            std::memcpy(text, result.value.string_value.data, static_cast<size_t>(result.value.string_value.size));
+            int consumed = 0;
+            if (std::sscanf(text, "v2 %f %f %f %n", &offsets.lateral, &offsets.height, &offsets.distance, &consumed) == 3 &&
+                consumed > 0 && text[consumed] == '\0' && controller.setOffsets(offsets)) return;
+        }
+        offsets = {};
+        bool legacy = false;
+        bool legacyLateral = false;
+        offsets.lateral = storedNumber("lateral_offset", offsets.lateral, &legacyLateral);
+        if (legacyLateral) offsets.lateral = -offsets.lateral;
+        legacy = legacyLateral;
+        offsets.height = storedNumber("height_offset", offsets.height, &legacy);
+        offsets.distance = storedNumber("camera_distance", offsets.distance, &legacy);
         controller.setOffsets(offsets);
+        savePending = legacy;
     }
 
-    bool storeNumber(const char* key, float value) const
+    bool storeOffsets(const Offsets& offsets) const
     {
         if (!storage.set)
             return false;
+        char text[128]{};
+        const int length = std::snprintf(text, sizeof(text), "v2 %.9g %.9g %.9g",
+            static_cast<double>(offsets.lateral), static_cast<double>(offsets.height), static_cast<double>(offsets.distance));
+        if (length < 0 || static_cast<size_t>(length) >= sizeof(text)) return false;
         auto request = record<DlumaStorageSetRequest>();
         auto result = resultRecord<DlumaBoolResult>();
-        request.key = view(key);
-        request.value.kind = DLUMA_SCALAR_NUMBER;
-        request.value.number_value = value;
+        request.key = view("camera_offsets_v2");
+        request.value.kind = DLUMA_SCALAR_STRING;
+        request.value.string_value = view(text);
         return storage.set(storage.context, &request, &result) == DLUMA_STATUS_OK && result.value;
     }
 
@@ -197,11 +237,7 @@ struct Runtime {
         if (!flush && timestamp && timestamp < nextSaveAttempt)
             return;
         const Offsets offsets = controller.offsets();
-        // Attempt all fields so a temporary failure can be repaired on retry.
-        const bool lateralSaved = storeNumber("lateral_offset", offsets.lateral);
-        const bool heightSaved = storeNumber("height_offset", offsets.height);
-        const bool distanceSaved = storeNumber("camera_distance", offsets.distance);
-        savePending = !(lateralSaved && heightSaved && distanceSaved);
+        savePending = !storeOffsets(offsets);
         nextSaveAttempt = timestamp + 1000;
         if (savePending && !saveWarning) {
             log("WARN", "Third Person could not save its camera offsets; it will retry.");

@@ -13,7 +13,7 @@ Press **T** to switch between first person and a right-shoulder camera. Hold **L
 | Alt + Page Up / Page Down | Move closer / farther away |
 | Alt + Home | Reset the camera offsets |
 
-Offsets are saved automatically when adjustment ends. Each game session starts in first person. Aiming and firing return the camera to the normal shoulder view while keeping third person enabled. Holding right click brings the camera 20% closer with a smooth transition; releasing it restores your configured distance. Menus and scripted cameras temporarily take control.
+Offsets are saved automatically when adjustment ends. Each game session starts in first person. Aiming keeps the current camera angle. Right click smoothly moves the camera closer and magnifies the view; both amounts can be adjusted in Aiming settings. You can instead select first person while aiming. Menus and scripted cameras temporarily take control.
 
 ## Install
 
@@ -42,7 +42,7 @@ LLVM users can run `build_thirdperson_clang.bat Release` with `clang-cl` on PATH
 The Release build validates the DLL export and package lock, then produces:
 
 ```text
-dist/ThirdPerson-1.1.0.zip
+dist/ThirdPerson-1.1.3.zip
 dist/mods/native/global/thirdperson.camera/
 ```
 
@@ -54,4 +54,6 @@ An optional second argument to either build script supplies an explicit deployme
 
 The native adapter selects existing camera objects and updates camera transforms. It selects the equipped outfit's third-person mesh through the game's appearance module and restores the first-person selection when releasing its view. It does not call player creation, teleport, or player world-position setters. It reacquires the current player visual after appearance refreshes and before the stock third-person update.
 
-The controller checks cover state restoration, orbit and combat transitions, saved-offset timing, and camera geometry. Gameplay acceptance covers outfit changes, respawns, aiming, tight-space collision, menus, focus changes, scripted cameras, and repeated toggles while standing next to walls. Check that toggling or orbiting never changes the player's world position. 
+During ordinary third-person firing, the weapon aims toward the camera's target from the weapon's original firing position. The game's normal projectile spread and aim-assist scoring continue to apply.
+
+The controller checks cover state restoration, orbit and combat transitions, saved-offset timing, and camera geometry. Gameplay acceptance covers outfit changes, respawns, aiming, tight-space collision, menus, focus changes, scripted cameras, and repeated toggles while standing next to walls. Check that toggling or orbiting never changes the player's world position. These gameplay checks are pending an authorized Player run.

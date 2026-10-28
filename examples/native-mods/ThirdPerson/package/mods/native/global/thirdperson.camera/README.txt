@@ -11,7 +11,7 @@ Alt + Page Up / Page Down: move closer / farther
 Alt + Home: reset camera offsets
 
 Camera offsets are saved automatically. Each game session starts in first person.
-Hold right click to aim with the camera 20% closer. The zoom moves in and out smoothly and retains your saved distance.
+Hold right click to aim. Aiming settings control the closer camera and magnification, or let you use first person while aiming. Releasing aim restores your saved camera distance.
 
 Open Third Person in DLUMA's mod configuration to change controls and camera framing. Select a binding, choose Rebind or press Enter, then press a key or mouse button. Escape cancels the change; Reset restores its default.
 

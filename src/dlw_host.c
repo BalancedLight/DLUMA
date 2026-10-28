@@ -129,6 +129,8 @@ void dluma_load_config(void)
     g_dluma.config.unmatched_level_grace_ms = dluma_read_ini_u32(L"loader", L"unmatched_level_grace_ms", 1500);
     g_dluma.config.enable_key_events = (unsigned char)(dluma_read_ini_u32(L"loader", L"enable_key_events", 1) ? 1 : 0);
     g_dluma.config.log_timer_events = (unsigned char)(dluma_read_ini_u32(L"loader", L"log_timer_events", 0) ? 1 : 0);
+    g_dluma.config.auto_enable_mods = (unsigned char)(
+        dluma_read_ini_u32(L"loader", L"auto_enable_mods", 0) ? 1 : 0);
     g_dluma.config.discord_rich_presence_enabled =
         (unsigned char)(dluma_read_ini_u32(
             L"loader", L"discord_rich_presence_enabled", 1) ? 1 : 0);

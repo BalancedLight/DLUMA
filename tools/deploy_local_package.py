@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import sys
+import tempfile
 
 
 REJECTED_RUNTIME4_MOD_SHA256 = (
@@ -476,24 +477,35 @@ def _deploy_destination(
         removed.append(stale_mod.name)
 
     runtime_destination = destination / "dluma_runtime"
+    mod_data = runtime_destination / "mod_data"
+    backup_dir = None
     try:
+        _require_unlinked_parent_chain(destination, runtime_destination, "runtime")
+        if mod_data.exists():
+            _require_unlinked_parent_chain(destination, mod_data, "mod data")
+            if not mod_data.is_dir():
+                raise DeploymentError(f"mod data is not a directory: {mod_data}")
+            backup_dir = Path(tempfile.mkdtemp(prefix=".dluma-mod-data-", dir=destination))
+            os.replace(mod_data, backup_dir / "mod_data")
         if runtime_destination.exists():
             shutil.rmtree(runtime_destination)
-    except OSError as error:
-        raise DeploymentError(
-            f"cannot remove old private runtime {runtime_destination}: {error}"
-        ) from error
-
-    _atomic_copy(package_dir / mod_name, destination / mod_name)
-    for name in TOP_LEVEL_PACKAGE_FILES:
-        _atomic_copy(package_dir / name, destination / name)
-
-    try:
+        _atomic_copy(package_dir / mod_name, destination / mod_name)
+        for name in TOP_LEVEL_PACKAGE_FILES:
+            _atomic_copy(package_dir / name, destination / name)
         shutil.copytree(package_dir / "dluma_runtime", runtime_destination)
     except OSError as error:
         raise DeploymentError(
-            f"cannot copy private runtime to {runtime_destination}: {error}"
+            f"cannot replace private runtime {runtime_destination}: {error}"
         ) from error
+    finally:
+        if backup_dir is not None:
+            saved_data = backup_dir / "mod_data"
+            if saved_data.exists():
+                runtime_destination.mkdir(parents=True, exist_ok=True)
+                if mod_data.exists():
+                    raise DeploymentError(f"cannot restore mod data; saved at {saved_data}")
+                os.replace(saved_data, mod_data)
+            backup_dir.rmdir()
     _restore_ini_files(destination, expected_ini)
     _restore_runtime_diagnostics(destination, preserved_runtime_diagnostics)
     return tuple(removed)

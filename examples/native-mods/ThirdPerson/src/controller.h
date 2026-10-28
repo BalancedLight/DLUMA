@@ -21,6 +21,9 @@ struct ControllerConfig {
     float returnSeconds = 0.25f;
     bool smoothCamera = true;
     float smoothingSeconds = 0.12f;
+    bool aimFirstPerson = false;
+    float aimDistanceReduction = 0.20f;
+    float aimMagnification = 1.25f;
     // Camera boom angles in radians; positive verticalAngle raises the camera.
     float horizontalAngle = 0.0f;
     float verticalAngle = 0.0f;
@@ -54,6 +57,8 @@ struct CameraOutput {
     float smoothingSeconds = 0.12f;
     Offsets offsets{};
     float aimDistanceScale = 1.0f;
+    float aimMagnification = 1.0f;
+    bool temporaryFirstPerson = false;
     float framingYaw = 0.0f;
     float framingPitch = 0.0f;
     float orbitYaw = 0.0f;
@@ -110,9 +115,13 @@ CameraPose makeCameraPose(
     const Vec3& target, float baseYaw, float basePitch,
     const CameraOutput& output);
 
-// The adapter resolves the aim target and collision sweep through the engine.
+// The adapter supplies the native weapon origin and camera ray's world target.
 Vec3 aimDirection(
-    const Vec3& cameraPosition, const Vec3& aimTarget,
+    const Vec3& origin, const Vec3& aimTarget,
     const Vec3& fallback = Vec3{0.0f, 0.0f, 1.0f});
+
+// Camera hits behind the firing origin must not reverse the shot.
+Vec3 weaponAimDirection(
+    const Vec3& origin, const Vec3& aimTarget, const Vec3& cameraForward);
 
 } // namespace thirdperson

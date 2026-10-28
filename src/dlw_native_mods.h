@@ -116,6 +116,7 @@ typedef struct DlumaNativeModSnapshot {
     unsigned char config_available;
     unsigned char source_selected;
     unsigned char source_selection_missing;
+    unsigned char auto_approved;
 } DlumaNativeModSnapshot;
 
 typedef struct DlumaNativeModMutationRequest {

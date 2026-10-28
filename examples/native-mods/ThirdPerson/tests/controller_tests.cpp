@@ -125,7 +125,7 @@ void orbitAndCombat()
     controller.update(input, 0.01f);
     input.aimOrFire = true;
     out = controller.update(input, 0.01f);
-    require(!out.captureMouse && out.applyCamera && near(out.orbitYaw, 0.0f), "combat restores shoulder while retaining third person");
+    require(!out.captureMouse && out.applyCamera && near(out.orbitYaw, 1.0f), "combat retains orbit framing while releasing mouse capture");
     input.aimOrFire = false;
     require(!controller.update(input, 0.01f).captureMouse, "combat blocks orbit until Alt release");
     input.orbitHeld = false;
@@ -209,10 +209,10 @@ void settingsAndGeometry()
 
     CameraOutput frame;
     auto pose = makeCameraPose({0.0f, 1.5f, 0.0f}, 0.0f, 0.0f, frame);
-    require(near(pose.position.x, 0.45f) && near(pose.position.y, 1.5f) &&
+    require(near(pose.position.x, -0.45f) && near(pose.position.y, 1.5f) &&
         near(pose.position.z, -2.5f), "default pose has right shoulder offset");
     pose = makeCameraPose({0.0f, 1.5f, 0.0f}, 1.57079632679f, 0.0f, frame);
-    require(near(pose.position.x, -2.5f) && near(pose.position.z, -0.45f), "offset follows view orientation");
+    require(near(pose.position.x, -2.5f) && near(pose.position.z, 0.45f), "offset follows view orientation");
     ControllerConfig framing;
     framing.horizontalAngle = 1.57079632679f;
     framing.verticalAngle = 0.52359877559f;
@@ -227,6 +227,29 @@ void settingsAndGeometry()
     require(near(direction.x, 0.6f) && near(direction.z, 0.8f), "aim direction normalized");
     const auto fallback = aimDirection({}, {}, {0.0f, 2.0f, 0.0f});
     require(near(fallback.y, 1.0f), "coincident aim target uses normalized fallback");
+
+    const Vec3 weaponOrigin{0.0f, 1.5f, 0.0f};
+    const auto closeAim = weaponAimDirection(weaponOrigin, {-0.45f, 1.5f, 1.0f}, {0.0f, 0.0f, 1.0f});
+    require(near(closeAim.x, -0.41036468f) && near(closeAim.z, 0.91192151f),
+        "close shoulder target converges from the weapon origin");
+    const auto farAim = weaponAimDirection(weaponOrigin, {-0.45f, 1.5f, 100.0f}, {0.0f, 0.0f, 1.0f});
+    require(std::fabs(farAim.x) < std::fabs(closeAim.x) && farAim.z > 0.999f,
+        "shoulder parallax decreases with target distance");
+    CameraOutput orbitFrame;
+    orbitFrame.orbitYaw = 1.57079632679f;
+    const auto orbitPose = makeCameraPose(weaponOrigin, 0.0f, 0.0f, orbitFrame);
+    const Vec3 orbitTarget{orbitPose.position.x + 100.0f * orbitPose.forward.x,
+        orbitPose.position.y + 100.0f * orbitPose.forward.y,
+        orbitPose.position.z + 100.0f * orbitPose.forward.z};
+    const auto orbitAim = weaponAimDirection(weaponOrigin, orbitTarget, orbitPose.forward);
+    require(orbitAim.x > 0.999f && std::fabs(orbitAim.z) < 0.01f,
+        "weapon targets the retained orbit view instead of the original forward direction");
+    const auto blockedAim = weaponAimDirection(weaponOrigin, {-0.45f, 1.5f, -0.1f}, {0.0f, 0.0f, 1.0f});
+    require(near(blockedAim.x, 0.0f) && near(blockedAim.z, 1.0f),
+        "a camera obstruction behind the weapon cannot reverse the shot");
+    const auto blockedOrbitAim = weaponAimDirection(weaponOrigin, {-1.0f, 1.5f, 0.0f}, orbitPose.forward);
+    require(blockedOrbitAim.x > 0.999f,
+        "behind-origin obstruction keeps the retained orbit firing direction");
 
     CameraMotion slow;
     CameraMotion fast;
@@ -278,10 +301,18 @@ void settingsAndGeometry()
     auto zoomed = zoom.update(aim, 0.1f);
     require(zoomed.aimDistanceScale < 1.0f && zoomed.aimDistanceScale > 0.8f,
         "right-click aim moves smoothly toward a closer camera");
+    require(zoomed.aimMagnification > 1.0f && zoomed.aimMagnification < 1.25f, "aim magnification transitions smoothly");
     const float closeScale = zoomed.aimDistanceScale;
     aim.aimHeld = aim.aimOrFire = false;
     require(zoom.update(aim, 0.1f).aimDistanceScale > closeScale,
         "releasing aim smoothly restores normal distance");
+    ControllerConfig firstPersonConfig;
+    firstPersonConfig.aimFirstPerson = true;
+    zoom.configure(firstPersonConfig);
+    aim.aimHeld = aim.aimOrFire = true;
+    require(zoom.update(aim, 0.0f).temporaryFirstPerson && zoom.requested(), "aim can temporarily select first person without toggling the selected view");
+    aim.aimHeld = aim.aimOrFire = false;
+    require(!zoom.update(aim, 0.0f).temporaryFirstPerson && zoom.requested(), "releasing aim resumes the selected view");
     aim.focused = false;
     require(near(zoom.update(aim, 0.0f).aimDistanceScale, 1.0f),
         "suspension clears temporary aim zoom");

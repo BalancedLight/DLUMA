@@ -14,6 +14,9 @@ void dluma_media_service_bind(
 void dluma_media_service_tick(
     void* game_subobject,
     float delta_seconds);
+int dluma_media_service_begin_transition(
+    unsigned int map_generation, void* outgoing_level);
+void dluma_media_service_frontend_ready(void);
 void dluma_media_service_prepare_capabilities(
     DlumaCapabilityRegistry* registry);
 DlumaStatus dluma_media_service_invoke(

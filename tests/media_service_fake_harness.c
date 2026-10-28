@@ -8,6 +8,9 @@
 } } while (0)
 
 static DlumaCompanionArchive g_archive;
+static unsigned int g_map_generation;
+static void* g_session_level;
+unsigned int dluma_lua_runtime_current_map_generation(void) { return g_map_generation; }
 static DlumaGameHostContext g_host_context;
 static DlumaMediaToken g_next_wave = 1000U;
 static int g_stop_result = DLUMA_MEDIA_RESULT_SUCCESS;
@@ -17,6 +20,9 @@ static int g_vehicle_available = 1;
 static unsigned int g_stop_calls;
 static unsigned int g_music_release_calls;
 static unsigned int g_archive_mount_calls;
+static unsigned int g_bank_open_calls;
+static int g_bank_open_result;
+static DlumaMediaToken g_bank_adapter_token;
 
 int dluma_stricmp(const char* left, const char* right)
 {
@@ -76,13 +82,14 @@ int dluma_companion_archive_manifest_has_cue(
 }
 
 void dluma_player_media_adapter_reset(void) {}
+int dluma_player_media_adapter_stop_exit_hook(void) { return 1; }
 void dluma_player_media_adapter_bind(HMODULE module, void* manager)
 { (void)module; (void)manager; }
 void dluma_player_media_adapter_tick(
     void* game, void* level, ULONGLONG now, float delta)
 { (void)game; (void)level; (void)now; (void)delta; }
 int dluma_player_media_adapter_get_session_level(void** level)
-{ if (level) *level = 0; return DLUMA_MEDIA_RESULT_UNAVAILABLE; }
+{ if (level) *level = g_session_level; return g_session_level ? DLUMA_MEDIA_RESULT_SUCCESS : DLUMA_MEDIA_RESULT_UNAVAILABLE; }
 unsigned int dluma_player_media_adapter_capabilities(void)
 {
     return DLUMA_PLAYER_MEDIA_CAP_VEHICLE_STATE |
@@ -104,8 +111,11 @@ int dluma_player_media_adapter_open_bank(
     DlumaCompanionArchive* archive, const DlumaCompanionArchiveEntry* entry,
     DlumaMediaToken* token)
 {
-    (void)archive; (void)entry; *token = 100U;
-    return DLUMA_MEDIA_RESULT_SUCCESS;
+    (void)archive; (void)entry; ++g_bank_open_calls;
+    if (g_bank_open_result != DLUMA_MEDIA_RESULT_SUCCESS)
+        return g_bank_open_result;
+    *token = g_bank_adapter_token;
+    return g_bank_open_result;
 }
 int dluma_player_media_adapter_bank_loaded_for_pack(
     const DlumaCompanionArchive* archive)
@@ -113,7 +123,7 @@ int dluma_player_media_adapter_bank_loaded_for_pack(
 int dluma_player_media_adapter_probe_duration(
     DlumaMediaToken bank, const char* cue, DlumaMediaToken* duration)
 {
-    if (bank != 100U || strcmp(cue, "Main") != 0) return DLUMA_MEDIA_RESULT_INVALID;
+    if (bank != g_bank_adapter_token || strcmp(cue, "Main") != 0) return DLUMA_MEDIA_RESULT_INVALID;
     *duration = 1000U; return DLUMA_MEDIA_RESULT_SUCCESS;
 }
 int dluma_player_media_adapter_play(
@@ -214,7 +224,12 @@ static void reset_fixture(void)
     g_music_release_result = DLUMA_MEDIA_RESULT_SUCCESS;
     g_force_cleanup = 1; g_stop_calls = 0U; g_music_release_calls = 0U;
     g_archive_mount_calls = 0U;
+    g_bank_open_calls = 0U;
+    g_bank_open_result = DLUMA_MEDIA_RESULT_SUCCESS;
+    g_bank_adapter_token = 100U;
     g_vehicle_available = 1;
+    g_map_generation = 0U;
+    g_session_level = 0;
     dluma_media_service_start();
 }
 
@@ -317,6 +332,92 @@ static int test_generation_wildcard_and_failed_drain(void)
     return 1;
 }
 
+static int test_cached_bank_revalidation(void)
+{
+    DlumaModOwner first = owner(1U, 1U);
+    DlumaAudioBankOpenRequest request;
+    DlumaTokenResult result;
+    DlumaAudioCueRequest duration_request;
+    DlumaU64Result duration_result;
+    uint64_t bank;
+    unsigned int index, active = 0U;
+    reset_fixture();
+    bank = open_bank(&first);
+    CHECK(bank && g_bank_open_calls == 1U);
+    memset(&request, 0, sizeof(request));
+    memset(&result, 0, sizeof(result));
+    request.companion_token = 77U;
+    request.bank_id = view("media");
+    g_bank_open_result = DLUMA_MEDIA_RESULT_UNAVAILABLE;
+    CHECK(dluma_media_service_invoke(&g_host_context, &first, 6004U,
+        &request, &result) == DLUMA_STATUS_UNAVAILABLE);
+    CHECK(result.token == 0U && g_bank_open_calls == 2U);
+    g_bank_open_result = DLUMA_MEDIA_RESULT_SUCCESS;
+    g_bank_adapter_token = 101U;
+    CHECK(dluma_media_service_invoke(&g_host_context, &first, 6004U,
+        &request, &result) == DLUMA_STATUS_OK);
+    CHECK(result.token == bank && g_bank_open_calls == 3U);
+    for (index = 0; index < DLUMA_MEDIA_MAX_BANKS; ++index)
+        if (g_dluma_media.banks[index].active) ++active;
+    CHECK(active == 1U);
+    memset(&duration_request, 0, sizeof(duration_request));
+    memset(&duration_result, 0, sizeof(duration_result));
+    duration_request.bank_token = bank;
+    duration_request.cue = view("Main");
+    CHECK(dluma_media_service_invoke(0, &first, 6005U, &duration_request,
+        &duration_result) == DLUMA_STATUS_OK);
+    CHECK(duration_result.value == 1000U);
+    return 1;
+}
+
+static int test_transition_drain_and_retry(void)
+{
+    DlumaModOwner first = owner(4U, 1U);
+    DlumaAudioMusicAcquireRequest acquire;
+    DlumaAudioCueStopRequest stop;
+    DlumaBoolResult stopped;
+    DlumaTokenResult result;
+    uint64_t bank, wave;
+    int outgoing_level, next_level;
+    reset_fixture();
+    bank = open_bank(&first);
+    wave = play_cue(&first, bank);
+    CHECK(bank && wave);
+    memset(&acquire, 0, sizeof(acquire));
+    memset(&result, 0, sizeof(result));
+    CHECK(dluma_media_service_invoke(0, &first, 6010U, &acquire, &result) == DLUMA_STATUS_OK);
+    g_force_cleanup = 0;
+    CHECK(!dluma_media_service_begin_transition(7U, &outgoing_level));
+    CHECK(g_dluma_media.music.active && g_dluma_media.banks[0].active &&
+          g_dluma_media.waves[0].active);
+    CHECK(dluma_media_service_invoke(0, &first, 6010U, &acquire, &result) == DLUMA_STATUS_UNAVAILABLE);
+    CHECK(!open_bank(&first));
+    dluma_media_service_frontend_ready();
+    CHECK(g_dluma_media.transitioning);
+    g_force_cleanup = 1;
+    CHECK(dluma_media_service_begin_transition(7U, &outgoing_level));
+    CHECK(!g_dluma_media.retained && !g_dluma_media.music.active &&
+          !g_dluma_media.banks[0].active && !g_dluma_media.waves[0].active);
+    memset(&stop, 0, sizeof(stop));
+    memset(&stopped, 0, sizeof(stopped));
+    stop.cue_token = wave;
+    CHECK(dluma_media_service_invoke(0, &first, 6003U, &stop, &stopped) == DLUMA_STATUS_STALE_HANDLE);
+    CHECK(!open_bank(&first));
+    g_map_generation = 8U;
+    g_session_level = &outgoing_level;
+    dluma_media_service_tick(0, 0.0f);
+    CHECK(g_dluma_media.transitioning && !open_bank(&first));
+    g_session_level = &next_level;
+    dluma_media_service_tick(0, 0.0f);
+    CHECK(!g_dluma_media.transitioning);
+    CHECK(open_bank(&first));
+    CHECK(dluma_media_service_begin_transition(8U, &next_level));
+    CHECK(!open_bank(&first));
+    dluma_media_service_frontend_ready();
+    CHECK(open_bank(&first));
+    return 1;
+}
+
 int main(void)
 {
     unsigned int passed = 0U;
@@ -328,6 +429,10 @@ int main(void)
     ++passed; puts("[PASS] exclusive music contention and owner revocation");
     if (!test_generation_wildcard_and_failed_drain()) return 1;
     ++passed; puts("[PASS] wildcard revocation and retained failed drain");
+    if (!test_cached_bank_revalidation()) return 1;
+    ++passed; puts("[PASS] cached bank revalidation and retry");
+    if (!test_transition_drain_and_retry()) return 1;
+    ++passed; puts("[PASS] transition drain, gate, and retry");
     printf("media service fake cases passed: %u\n", passed);
     return 0;
 }

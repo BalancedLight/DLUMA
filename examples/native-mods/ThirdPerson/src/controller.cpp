@@ -71,6 +71,11 @@ void Controller::configure(const ControllerConfig& config)
     config_.smoothCamera = config.smoothCamera;
     config_.smoothingSeconds = std::isfinite(config.smoothingSeconds)
         ? std::clamp(config.smoothingSeconds, 0.02f, 0.3f) : 0.12f;
+    config_.aimFirstPerson = config.aimFirstPerson;
+    config_.aimDistanceReduction = std::isfinite(config.aimDistanceReduction)
+        ? std::clamp(config.aimDistanceReduction, 0.0f, 0.6f) : 0.20f;
+    config_.aimMagnification = std::isfinite(config.aimMagnification)
+        ? std::clamp(config.aimMagnification, 1.0f, 2.0f) : 1.25f;
     config_.horizontalAngle = std::clamp(
         finiteOrZero(config.horizontalAngle), -kPi, kPi);
     config_.verticalAngle = std::clamp(
@@ -116,8 +121,8 @@ CameraOutput Controller::update(const CameraInput& input, float seconds)
     } else {
         result.state = CameraState::Shoulder;
         if (input.aimOrFire) {
-            // Combat resumes from the shoulder in this same update.
-            clearOrbit(input.orbitHeld);
+            // Keep the current framing while releasing mouse capture for combat.
+            if (input.orbitHeld) orbitBlocked_ = true;
         } else if (input.orbitHeld && !orbitBlocked_) {
             orbiting_ = true;
             returning_ = false;
@@ -177,7 +182,9 @@ CameraOutput Controller::update(const CameraInput& input, float seconds)
         const float target = input.aimHeld ? 1.0f : 0.0f;
         aimBlend_ += (target - aimBlend_) * -std::expm1(-dt / 0.10f);
     }
-    result.aimDistanceScale = 1.0f - 0.20f * aimBlend_;
+    result.aimDistanceScale = 1.0f - config_.aimDistanceReduction * aimBlend_;
+    result.aimMagnification = 1.0f + (config_.aimMagnification - 1.0f) * aimBlend_;
+    result.temporaryFirstPerson = active && requested_ && input.aimHeld && config_.aimFirstPerson;
     result.thirdPersonRequested = requested_;
     result.applyCamera = active && requested_;
     result.captureMouse = result.state == CameraState::Orbit;
@@ -224,25 +231,37 @@ CameraPose makeCameraPose(
     CameraPose pose;
     pose.forward = {sineYaw * cosinePitch, sinePitch, cosineYaw * cosinePitch};
     pose.position = {
-        target.x + cosineYaw * output.offsets.lateral -
+        target.x - cosineYaw * output.offsets.lateral -
             pose.forward.x * output.offsets.distance,
         target.y + output.offsets.height - pose.forward.y * output.offsets.distance,
-        target.z - sineYaw * output.offsets.lateral -
+        target.z + sineYaw * output.offsets.lateral -
             pose.forward.z * output.offsets.distance};
     return pose;
 }
 
 Vec3 aimDirection(
-    const Vec3& cameraPosition, const Vec3& aimTarget, const Vec3& fallback)
+    const Vec3& origin, const Vec3& aimTarget, const Vec3& fallback)
 {
     const Vec3 toward = normalized({
-        aimTarget.x - cameraPosition.x,
-        aimTarget.y - cameraPosition.y,
-        aimTarget.z - cameraPosition.z});
+        aimTarget.x - origin.x,
+        aimTarget.y - origin.y,
+        aimTarget.z - origin.z});
     if (nonzero(toward))
         return toward;
     const Vec3 alternate = normalized(fallback);
     return nonzero(alternate) ? alternate : Vec3{0.0f, 0.0f, 1.0f};
+}
+
+Vec3 weaponAimDirection(const Vec3& origin, const Vec3& aimTarget, const Vec3& cameraForward)
+{
+    const Vec3 forward = aimDirection({}, cameraForward);
+    const double advance =
+        (static_cast<double>(aimTarget.x) - origin.x) * forward.x +
+        (static_cast<double>(aimTarget.y) - origin.y) * forward.y +
+        (static_cast<double>(aimTarget.z) - origin.z) * forward.z;
+    if (!std::isfinite(advance) || advance <= 0.001)
+        return forward;
+    return aimDirection(origin, aimTarget, forward);
 }
 
 } // namespace thirdperson

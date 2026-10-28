@@ -3,6 +3,8 @@
 #include "dlw_internal_hook_attestation.h"
 #include "dlw_path_security.h"
 #include "bindings/dlw_player_actor_binding.h"
+#include "game/dlw_media_service.h"
+#include "dlw_lua_project_exit.h"
 
 #define DLUMA_DL_ENGINE_TIMESTAMP 0x623395D0UL
 #define DLUMA_DL_ENGINE_IMAGE_SIZE 0x00E8D000UL
@@ -73,6 +75,7 @@
 #define DLUMA_DL_GET_WAVE_TIME_SECONDS_RVA 0x002B1040UL
 #define DLUMA_DL_GET_WAVE_DURATION_NAME_RVA 0x0027E740UL
 #define DLUMA_DL_IGSOBJECT_GET_LEVEL_RVA 0x00277A00UL
+#define DLUMA_DL_IGSOBJECT_GET_TIME_RVA 0x0027F6A0UL
 
 #define DLUMA_DL_MUSIC_MANAGER_SINGLETON_RVA 0x01D074E8UL
 #define DLUMA_DL_MUSIC_MANAGER_CTOR_RVA 0x00977A50UL
@@ -471,6 +474,7 @@ typedef float (__fastcall *DlumaPlayerMediaGetWaveTimeFn)(
 typedef float (__fastcall *DlumaPlayerMediaGetWaveDurationFn)(
     void* owner, const DlumaPlayerMediaTtlStringView* wave_name);
 typedef void* (__fastcall *DlumaPlayerMediaObjectLevelFn)(void* owner);
+typedef float (__fastcall *DlumaPlayerMediaObjectTimeFn)(void* owner);
 typedef void* (__fastcall *DlumaPlayerMediaSessionLevelFn)(void* session);
 typedef void (__fastcall *DlumaPlayerMediaMusicStopFn)(void* manager);
 typedef void (__fastcall *DlumaPlayerMediaMusicStartFn)(
@@ -565,6 +569,7 @@ typedef struct DlumaPlayerMediaPlayerProfile {
     DlumaPlayerMediaGetWaveDurationFn get_wave_duration_name;
     DlumaPlayerMediaObjectLevelFn get_object_level;
     DlumaPlayerMediaSessionLevelFn get_session_level;
+    DlumaPlayerMediaObjectTimeFn get_object_time;
     DlumaPlayerMediaMusicStopFn music_stop;
     DlumaPlayerMediaMusicStartFn music_start;
     DlumaPlayerMediaFrontendMusicFn frontend_music_mute;
@@ -630,6 +635,13 @@ enum DlumaPlayerMediaBankDiagnosticReason {
 };
 
 static DlumaPlayerMediaPlayerProfile g_dluma_player_media_player;
+
+typedef ULONG_PTR (__fastcall *DlumaMediaDestroyStateFn)(void*, unsigned int);
+static DlumaMediaDestroyStateFn g_dluma_media_destroy_state_original;
+static PVOID volatile* g_dluma_media_destroy_state_slot;
+static volatile LONG g_dluma_media_destroy_state_active;
+static volatile LONG g_dluma_media_destroy_state_stopping;
+static volatile LONG g_dluma_media_destroy_state_guard_logged;
 static int
 dluma_player_media_bind_wave_bank_detailed(
     DlumaPlayerMediaPlayerProfile* profile, unsigned int* reason_out);
@@ -667,6 +679,8 @@ static const char g_dluma_dl_get_wave_duration_name_export[] =
     "?GetWaveDuration@IGSObject@@QEBAMAEBV?$string_base@D@ttl@@@Z";
 static const char g_dluma_dl_get_object_level_export[] =
     "?GetLevel@IGSObject@@QEBAPEAVILevel@@XZ";
+static const char g_dluma_dl_get_object_time_export[] =
+    "?GetTime@IGSObject@@QEBAMXZ";
 
 static const BYTE g_dluma_dl_load_wave_bank_prefix[] = {
     0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,
@@ -703,6 +717,12 @@ static const BYTE g_dluma_dl_get_wave_duration_name_prefix[] = {
 static const BYTE g_dluma_dl_get_object_level_prefix[] = {
     0x48,0x8B,0x41,0x20,0x48,0x8B,0x40,0x48,
     0x48,0x85,0xC0,0x74,0x08,0x48,0x8B,0x80
+};
+static const BYTE g_dluma_dl_get_object_time_prefix[] = {
+    0x48,0x8B,0x41,0x20,0x48,0x8B,0x48,0x48,
+    0x48,0x85,0xC9,0x75,0x04,0x0F,0x57,0xC0,
+    0xC3,0xF3,0x0F,0x10,0x81,0x40,0x0F,0x00,
+    0x00,0xC3
 };
 static const BYTE g_dluma_dl_session_level_prefix[] = {
     0x48,0x8B,0x81,0xB0,0x00,0x00,0x00,0xC3
@@ -3579,6 +3599,14 @@ static int dluma_player_media_bind_music_manager_detailed(
         (BYTE*)profile->gamedll + DLUMA_DL_RTDYNAMICCAST_THUNK_RVA);
     profile->get_object_level =
         (DlumaPlayerMediaObjectLevelFn)function;
+    profile->get_object_time = 0;
+    if (dluma_player_media_engine_export(
+            profile, g_dluma_dl_get_object_time_export,
+            DLUMA_DL_IGSOBJECT_GET_TIME_RVA,
+            g_dluma_dl_get_object_time_prefix,
+            DLUMA_ARRAY_COUNT(g_dluma_dl_get_object_time_prefix),
+            &function))
+        profile->get_object_time = (DlumaPlayerMediaObjectTimeFn)function;
     profile->get_session_level =
         (DlumaPlayerMediaSessionLevelFn)(
             (BYTE*)profile->gamedll + DLUMA_DL_SESSION_LEVEL_RVA);
@@ -4453,6 +4481,135 @@ static int dluma_player_media_music_snapshot_restore(
     return valid;
 }
 
+static ULONG_PTR __fastcall dluma_player_media_destroy_state_hook(
+    void* game, unsigned int state)
+{
+    DlumaPlayerMediaPlayerProfile* profile = &g_dluma_player_media_player;
+    DlumaContentFinalizationAuthorityEvidence authority;
+    DlumaPlayerMediaManagerDiagnostic diagnostic;
+    void* owner_level = 0;
+    void* level_di = 0;
+    void* manager = 0;
+    unsigned int reason = 0, source = 0, session_class = 0;
+    int valid = 0;
+    ULONG_PTR result = 0;
+    DlumaMediaDestroyStateFn original = g_dluma_media_destroy_state_original;
+    dluma_atomic_increment(&g_dluma_media_destroy_state_active);
+    if (state >= 1U && state <= 5U && !g_dluma_media_destroy_state_stopping &&
+        !g_dluma.stop_requested && profile->exact_profile) {
+        memset(&authority, 0, sizeof(authority));
+        if (!dluma_engine_current_thread_can_finalize_content_ex(
+                &g_dluma.engine, 0, 0, &authority) ||
+            authority.selected_proof !=
+                DLUMA_CONTENT_FINALIZATION_PROOF_SERIALIZED_FRAME_ROUTE) {
+            if (dluma_atomic_compare_exchange(
+                    &g_dluma_media_destroy_state_guard_logged, 1, 0) == 0)
+                dluma_log_pair("WARN", "player_media_exit_cleanup",
+                               "serialized_frame_authority_unavailable");
+        } else {
+            __try {
+                void** global = (void**)((BYTE*)profile->gamedll +
+                                        DLUMA_DL_GAMEDI_GLOBAL_RVA);
+                if (dluma_is_readable(global, sizeof(*global)) &&
+                    *global == game &&
+                    !profile->published_frontend_owner_level &&
+                    !profile->published_frontend_music_manager &&
+                    !profile->published_frontend_main_menu_module &&
+                    dluma_player_media_resolve_game_session_music_manager(
+                        profile, profile->observed_active_level,
+                        &owner_level, &level_di, &manager, &reason, &source,
+                        &session_class, &diagnostic) &&
+                    (!profile->music_owned ||
+                     profile->owned_music_manager == manager))
+                    valid = 1;
+            } __except (1) { valid = 0; }
+            if (valid) {
+                int cleaned = dluma_media_service_begin_transition(
+                    dluma_lua_runtime_current_map_generation(), owner_level);
+                if (state == 1U || !cleaned)
+                    dluma_log_pair(cleaned ? "INFO" : "WARN",
+                                   "player_media_exit_cleanup",
+                                   cleaned ? "completed_before_session_destroy" :
+                                             "owner_cleanup_incomplete_retained");
+            } else if (dluma_atomic_compare_exchange(
+                           &g_dluma_media_destroy_state_guard_logged, 1, 0) == 0) {
+                dluma_log_pair("WARN", "player_media_exit_cleanup",
+                               "outgoing_game_session_or_manager_invalid");
+            }
+        }
+    }
+    __try {
+        if (original) result = original(game, state);
+    } __finally {
+        dluma_atomic_decrement(&g_dluma_media_destroy_state_active);
+    }
+    return result;
+}
+
+static int dluma_player_media_install_exit_hook(
+    DlumaPlayerMediaPlayerProfile* profile)
+{
+    static const BYTE prefix[] = {
+        0x48,0x8B,0xC4,0x48,0x89,0x58,0x18,0x55,
+        0x48,0x8D,0x68,0xA1,0x48,0x81,0xEC,0x90
+    };
+    BYTE* function;
+    PVOID volatile* slot;
+    DWORD protection, restored;
+    PVOID previous;
+    if (!profile || !profile->exact_profile ||
+        !profile->music_manager_ready || !profile->wave_exports_ready ||
+        g_dluma_media_destroy_state_slot)
+        return 0;
+    function = (BYTE*)profile->gamedll + 0x003D0760U;
+    slot = (PVOID volatile*)((BYTE*)profile->gamedll +
+        DLUMA_DL_GAMEDI_PRIMARY_VTABLE_RVA + 0x0BF0U);
+    if (!dluma_player_media_is_executable(profile->gamedll,
+            profile->gamedll_size, function, sizeof(prefix)) ||
+        !dluma_player_media_readonly_range(profile->gamedll,
+            profile->gamedll_size, (void*)slot, sizeof(*slot)) ||
+        !dluma_is_readable(function, sizeof(prefix)) ||
+        memcmp(function, prefix, sizeof(prefix)) != 0 ||
+        *slot != (PVOID)function ||
+        !VirtualProtect((void*)slot, sizeof(*slot), PAGE_READWRITE, &protection))
+        return 0;
+    g_dluma_media_destroy_state_original = (DlumaMediaDestroyStateFn)function;
+    g_dluma_media_destroy_state_stopping = 0;
+    previous = dluma_atomic_pointer_compare_exchange(
+        slot, (PVOID)dluma_player_media_destroy_state_hook, (PVOID)function);
+    if (previous == (PVOID)function)
+        g_dluma_media_destroy_state_slot = slot;
+    if (!VirtualProtect((void*)slot, sizeof(*slot), protection, &restored)) {
+        dluma_log_pair("ERROR", "player_media_exit_hook", "slot_protection_restore_failed");
+        return 0;
+    }
+    if (previous != (PVOID)function) return 0;
+    dluma_log_pair("INFO", "player_media_exit_hook", "installed");
+    return 1;
+}
+
+int dluma_player_media_adapter_stop_exit_hook(void)
+{
+    PVOID volatile* slot = g_dluma_media_destroy_state_slot;
+    DWORD protection, restored;
+    PVOID previous;
+    dluma_atomic_exchange(&g_dluma_media_destroy_state_stopping, 1);
+    if (slot) {
+        if (!VirtualProtect((void*)slot, sizeof(*slot), PAGE_READWRITE, &protection))
+            return 0;
+        previous = dluma_atomic_pointer_compare_exchange(
+            slot, (PVOID)g_dluma_media_destroy_state_original,
+            (PVOID)dluma_player_media_destroy_state_hook);
+        if (!VirtualProtect((void*)slot, sizeof(*slot), protection, &restored))
+            return 0;
+        if (previous != (PVOID)dluma_player_media_destroy_state_hook)
+            return 0;
+        g_dluma_media_destroy_state_slot = 0;
+    }
+    return dluma_atomic_compare_exchange(
+        &g_dluma_media_destroy_state_active, 0, 0) == 0;
+}
+
 void dluma_player_media_adapter_reset(void)
 {
     DlumaPlayerMediaPlayerProfile* profile =
@@ -4583,6 +4740,9 @@ void dluma_player_media_adapter_bind(
     }
     profile->music_fade_ready = profile->music_manager_ready;
     profile->music_wet_mix_ready = 0U;
+    if (profile->exact_profile && !g_dluma_media_destroy_state_slot &&
+        !dluma_player_media_install_exit_hook(profile))
+        dluma_log_pair("WARN", "player_media_exit_hook", "installation_unavailable");
     if (!profile->logged) {
         if (!profile->exact_profile) {
             dluma_log_pair(
@@ -4708,6 +4868,7 @@ int dluma_player_media_adapter_publish_frontend_music_manager(
         return 0;
     profile->published_frontend_owner_level = owner_level;
     profile->published_frontend_music_manager = music_manager;
+    dluma_media_service_frontend_ready();
     dluma_log_pair(
         "INFO", "player_media_frontend_music_manager",
         "published_owner_corroborated");
@@ -5415,6 +5576,27 @@ static void dluma_player_media_report_bank_diagnostic(
         dluma_log_pair("ERROR", "player_media_bank_probe_cue", cue_name);
 }
 
+static int dluma_player_media_validate_bank_cues(
+    DlumaPlayerMediaPlayerProfile* profile,
+    const DlumaCompanionArchive* pack,
+    const DlumaCompanionArchiveAudioManifest* manifest,
+    const char** failed_cue)
+{
+    unsigned int index;
+    if (failed_cue) *failed_cue = 0;
+    for (index = 0; index < manifest->cue_count; ++index) {
+        float duration_seconds = 0.0f;
+        DlumaMediaToken duration_ms = 0;
+        if (!dluma_player_media_duration_probe_internal(
+                profile, pack, manifest, manifest->cues[index].name,
+                &duration_seconds, &duration_ms)) {
+            if (failed_cue) *failed_cue = manifest->cues[index].name;
+            return 0;
+        }
+    }
+    return 1;
+}
+
 int dluma_player_media_adapter_open_bank(
     DlumaCompanionArchive* pack,
     const DlumaCompanionArchiveEntry* bank_entry,
@@ -5428,6 +5610,8 @@ int dluma_player_media_adapter_open_bank(
     unsigned int i;
     unsigned int slot_index = 0;
     char engine_bank_name[DLUMA_COMPANION_ARCHIVE_MAX_ENGINE_BANK_NAME];
+    const char* failed_cue = 0;
+    int cached_slot = 0;
     int load_result = -1;
     int delivered = 1;
     engine_bank_name[0] = 0;
@@ -5456,9 +5640,18 @@ int dluma_player_media_adapter_open_bank(
             dluma_stricmp(
                 existing->manifest.bank_identifier,
                 bank_manifest->bank_identifier) == 0) {
-            *bank_out = dluma_player_media_bank_token(
-                existing->generation, i);
-            return DLUMA_MEDIA_RESULT_SUCCESS;
+            if (dluma_player_media_validate_bank_cues(
+                    profile, pack, bank_manifest, 0)) {
+                *bank_out = dluma_player_media_bank_token(
+                    existing->generation, i);
+                return DLUMA_MEDIA_RESULT_SUCCESS;
+            }
+            /* Level changes can unload engine banks while the approved
+             * archive and its loader-side slot remain alive. */
+            slot = existing;
+            slot_index = i;
+            cached_slot = 1;
+            break;
         }
         if (!slot && !existing->in_use) {
             slot = existing;
@@ -5488,20 +5681,14 @@ int dluma_player_media_adapter_open_bank(
             profile, DLUMA_DL_BANK_DIAGNOSTIC_LOAD_RESULT_FAILED, 0);
         return DLUMA_MEDIA_RESULT_UNAVAILABLE;
     }
-    for (i = 0; i < bank_manifest->cue_count; ++i) {
-        float duration_seconds = 0.0f;
-        DlumaMediaToken duration_ms = 0;
-        if (!dluma_player_media_duration_probe_internal(
-                profile, pack, bank_manifest,
-                bank_manifest->cues[i].name,
-                &duration_seconds, &duration_ms)) {
-            dluma_player_media_report_bank_diagnostic(
-                profile, DLUMA_DL_BANK_DIAGNOSTIC_CUE_PROBE_FAILED,
-                bank_manifest->cues[i].name);
-            return DLUMA_MEDIA_RESULT_UNAVAILABLE;
-        }
+    if (!dluma_player_media_validate_bank_cues(
+            profile, pack, bank_manifest, &failed_cue)) {
+        dluma_player_media_report_bank_diagnostic(
+            profile, DLUMA_DL_BANK_DIAGNOSTIC_CUE_PROBE_FAILED, failed_cue);
+        return DLUMA_MEDIA_RESULT_UNAVAILABLE;
     }
-    slot->generation = dluma_player_media_next_generation(slot->generation);
+    if (!cached_slot)
+        slot->generation = dluma_player_media_next_generation(slot->generation);
     slot->pack = pack;
     slot->manifest = *bank_manifest;
     memset(&slot->prepared_descriptor, 0,
@@ -6473,7 +6660,10 @@ int dluma_player_media_adapter_music_release_after(
     void* main_menu_module = 0;
     float expected = (float)resume_delay_ms * 0.001f;
     float scheduled = 0.0f;
-    float difference = 0.0f;
+    float clock_before = 0.0f;
+    float clock_after = 0.0f;
+    float lower_bound = 0.0f;
+    float upper_bound = 0.0f;
     int delivered = 1;
     int confirmed = 0;
     if (resume_delay_ms > 60000U)
@@ -6561,26 +6751,40 @@ int dluma_player_media_adapter_music_release_after(
     if (!dluma_player_media_validate_music_manager(profile, &manager) ||
         manager != profile->owned_music_manager)
         return DLUMA_MEDIA_RESULT_UNAVAILABLE;
+    if (resume_delay_ms && !profile->get_object_time)
+        return DLUMA_MEDIA_RESULT_UNAVAILABLE;
     if (profile->music_snapshot.valid &&
         !dluma_player_media_music_snapshot_restore(
             profile, &profile->music_snapshot))
         return DLUMA_MEDIA_RESULT_BUSY;
     __try {
-        profile->music_start(manager, expected);
+        if (resume_delay_ms)
+            clock_before = profile->get_object_time(manager);
+        if (resume_delay_ms && !dluma_player_media_float_finite(clock_before))
+            delivered = 0;
+        else
+            profile->music_start(manager, expected);
         if (!resume_delay_ms) {
             confirmed =
                 (*(unsigned char*)((BYTE*)manager +
                     DLUMA_DL_MUSIC_MANAGER_FLAGS_OFFSET) &
                  DLUMA_DL_MUSIC_MANAGER_PAUSED) == 0U;
         } else {
+            if (delivered)
+                clock_after = profile->get_object_time(manager);
             scheduled = *(float*)((BYTE*)manager +
                 DLUMA_DL_MUSIC_MANAGER_DELAY_OFFSET);
-            difference = scheduled - expected;
-            if (difference < 0.0f) difference = -difference;
+            lower_bound = clock_before + expected;
+            upper_bound = clock_after + expected;
             confirmed =
+                delivered &&
+                dluma_player_media_float_finite(clock_after) &&
                 dluma_player_media_float_finite(scheduled) &&
-                dluma_player_media_float_finite(difference) &&
-                difference <= 0.0011f &&
+                dluma_player_media_float_finite(lower_bound) &&
+                dluma_player_media_float_finite(upper_bound) &&
+                clock_after + 0.0011f >= clock_before &&
+                scheduled >= lower_bound - 0.0011f &&
+                scheduled <= upper_bound + 0.0011f &&
                 ((*(unsigned char*)((BYTE*)manager +
                     DLUMA_DL_MUSIC_MANAGER_FLAGS_OFFSET) &
                   DLUMA_DL_MUSIC_MANAGER_PAUSED) != 0U);

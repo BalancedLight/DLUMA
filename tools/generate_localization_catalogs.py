@@ -13,6 +13,8 @@ import argparse
 import re
 from pathlib import Path
 
+from localization_auto_enable import KEYS as AUTO_ENABLE_KEYS, TEXT as AUTO_ENABLE_TEXT
+
 ROOT = Path(__file__).resolve().parents[1]
 LOCALE_ROOT = ROOT / "PakAssets" / "Locale"
 LOCALES = ("De", "Fr", "It", "Es", "Ru", "Jp", "Pl", "Nl", "Br", "Ko", "Cn", "Tw", "El", "Tr", "Th", "Cs")
@@ -349,6 +351,8 @@ ASSET_MOD_TEXT = {'De': ('ASSET-ERSATZ - HÖCHSTE ZUERST', 'RESSOURCE', 'NEULADE
 def translate(
     code: str, key: str, value: str, existing: dict[str, str]
 ) -> str:
+    if key in AUTO_ENABLE_KEYS:
+        return AUTO_ENABLE_TEXT[code][AUTO_ENABLE_KEYS.index(key)]
     if key in ASSET_MOD_KEYS:
         return ASSET_MOD_TEXT[code][ASSET_MOD_KEYS.index(key)]
     if key in LOG_KEYS:
@@ -358,7 +362,7 @@ def translate(
         return details_text
     if key == "DLUMA_NewModsPopup_Mod":
         labels = {"Cn":"模组：{name}","Tw":"模組：{name}","Jp":"MOD: {name}","Ko":"모드: {name}"}
-        return labels.get(code, "Naam van mod: {name}" if code == "It" else SHORT[code]["Mods"] + ": {name}")
+        return labels.get(code, "Nome mod: {name}" if code == "It" else SHORT[code]["Mods"] + ": {name}")
     if key in SETTING_TEXT.get(code, {}): return SETTING_TEXT[code][key]
     if key in FIXED.get(code, {}): return FIXED[code][key]
     if code in RUNTIME_TEMPLATES and key in runtime_map(code): return runtime_map(code)[key]
@@ -422,6 +426,11 @@ def main() -> int:
         existing = parse_scr(path)
         values: dict[str, str] = {}
         for key, value in english.items():
+            # Preserve existing specific translations. Generic fallback tables
+            # are useful for new entries but must not replace reviewed text.
+            if key in existing and key not in AUTO_ENABLE_KEYS:
+                values[key] = existing[key]
+                continue
             try:
                 values[key] = translate(code, key, value, existing)
             except KeyError:

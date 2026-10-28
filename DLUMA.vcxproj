@@ -1009,6 +1009,7 @@
     <ClInclude Include="src\generated\dluma_api_catalog.generated.h" />
     <ClInclude Include="src\generated\dluma_api_operations.generated.h" />
     <ClInclude Include="src\dlw_native_mod_config.h" />
+    <ClInclude Include="src\dlw_atomic_ini.h" />
     <ClInclude Include="src\dlw_path_security.h" />
     <ClInclude Include="src\dlw_project_owner_identity.h" />
     <ClInclude Include="src\dlw_project_launch_admission.h" />

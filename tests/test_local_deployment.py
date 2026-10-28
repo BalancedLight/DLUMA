@@ -113,10 +113,29 @@ def _deploy(layout: FakeDeployment) -> deployment.DeploymentResult:
     )
 
 
+def test_failed_runtime_copy_preserves_mod_data(tmp_path, monkeypatch):
+    layout = _make_fake_deployment(tmp_path)
+    saved = layout.subscribed / "dluma_runtime" / "mod_data" / "example" / "camera.dlws"
+    saved.parent.mkdir(parents=True)
+    saved.write_bytes(b"saved camera offsets")
+
+    def fail_copy(*args, **kwargs):
+        raise OSError("copy failed")
+
+    monkeypatch.setattr(deployment.shutil, "copytree", fail_copy)
+    with pytest.raises(deployment.DeploymentError):
+        _deploy(layout)
+    assert saved.read_bytes() == b"saved camera offsets"
+
+
 def test_shared_deployer_preserves_configuration_and_runtime_diagnostics(
     tmp_path,
 ):
     layout = _make_fake_deployment(tmp_path)
+    for root in (layout.subscribed, layout.devtools):
+        saved = root / "dluma_runtime" / "mod_data" / "example" / "camera.dlws"
+        saved.parent.mkdir(parents=True)
+        saved.write_bytes(b"saved camera offsets")
     ini_before = {
         root: {
             path.relative_to(root).as_posix(): path.read_bytes()
@@ -160,6 +179,7 @@ def test_shared_deployer_preserves_configuration_and_runtime_diagnostics(
         )
     )
     for root in (layout.subscribed, layout.devtools):
+        assert (root / "dluma_runtime" / "mod_data" / "example" / "camera.dlws").read_bytes() == b"saved camera offsets"
         assert (root / MOD_NAME).read_bytes() == layout.built_mod.read_bytes()
         assert (
             root / "dluma.pak"

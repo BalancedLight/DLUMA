@@ -73,7 +73,7 @@ def main() -> int:
         source = ROOT / "package" / MOD_RELATIVE
         destination = ROOT / "dist" / MOD_RELATIVE
         destination.mkdir(parents=True, exist_ok=True)
-        for filename in ("mod.dluma.json", "config.dluma.json", "README.txt"):
+        for filename in ("mod.dluma.json", "config.dluma.json", "README.txt", "LICENSE-MINHOOK.txt"):
             shutil.copyfile(source / filename, destination / filename)
         shutil.copyfile(module, destination / "ThirdPerson.dll")
         write_lock(destination)

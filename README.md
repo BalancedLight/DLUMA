@@ -8,6 +8,8 @@ Version **0.5.0** is an early release. Bugs, crashes, and unfinished features ar
 
 Install the complete DLUMA package through Steam Workshop or follow the instructions included with the release. Start the Player with the DLUMA Workshop project, then open **Mods** from the main menu to review and configure installed mods.
 
+To enable new and updated global mods automatically at startup, turn on **Automatically enable mods** in Options and accept the security warning. This is off by default. Mods you disable yourself stay disabled, and newly discovered mods still appear in the main-menu ticker.
+
 The first launch asks whether you want to continue with an early version of DLUMA. **Yes** remembers your choice for your Windows user account. **No** exits Player.
 
 Native and C# mods run with the same access as the game. Review their source and author before enabling them. Enabling or updating these mods requires a restart. Lua mods run in the loader's sandbox.

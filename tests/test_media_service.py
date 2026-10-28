@@ -19,8 +19,8 @@ def test_media_service_fake_harness() -> None:
         text=True,
         timeout=90,
     )
-    assert completed.stdout.count("[PASS]") == 4
-    assert "media service fake cases passed: 4" in completed.stdout
+    assert completed.stdout.count("[PASS]") == 6
+    assert "media service fake cases passed: 6" in completed.stdout
 
 
 def test_media_registry_is_mod_neutral_bounded_and_owner_scoped() -> None:

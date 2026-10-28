@@ -884,6 +884,53 @@ static unsigned int dluma_global_fill_review_mutations(
     return count;
 }
 
+void dluma_lua_auto_enable_startup(DlumaLuaMetadata* item)
+{
+    DlumaIniMutation mutations[12];
+    char enabled[32];
+    unsigned int count;
+    int has_override;
+    if (!item || !g_dluma.config.auto_enable_mods ||
+        dluma_lua_initial_global_discovery_complete() ||
+        dluma_startup_recovery_suppresses_mods() || !item->valid ||
+        item->duplicate_id || !item->source_selected ||
+        item->source_selection_missing || !item->metadata_fingerprint[0] ||
+        dluma_lua_permission_is_unsupported(item)) return;
+
+    dluma_global_persistence_lock();
+    enabled[0] = 0;
+    has_override = dluma_global_ini_read("global_mods", item->registry_key,
+                                        enabled, DLUMA_ARRAY_COUNT(enabled));
+    if (!has_override)
+        has_override = dluma_global_ini_read("global_mods", item->id,
+                                            enabled, DLUMA_ARRAY_COUNT(enabled));
+    if (has_override && !dluma_global_parse_enabled(enabled)) {
+        dluma_global_persistence_unlock();
+        return;
+    }
+    if (item->approval_valid && item->enabled) {
+        dluma_global_persistence_unlock();
+        return;
+    }
+    memset(mutations, 0, sizeof(mutations));
+    count = dluma_global_fill_review_mutations(mutations, item, 0, 1, 1, "1");
+    if (dluma_global_atomic_apply_mutations(mutations, count)) {
+        dluma_str_copy(item->approved_fingerprint,
+                       DLUMA_ARRAY_COUNT(item->approved_fingerprint),
+                       item->metadata_fingerprint);
+        item->approval_valid = 1;
+        item->pending_review = 0;
+        item->enabled_requested = 1;
+        item->enabled = 1;
+        item->has_enabled_override = 1;
+        item->review_state = DLUMA_GLOBAL_REVIEW_APPROVED_ENABLED;
+        dluma_log_pair("INFO", "global_mod_auto_enabled", item->id);
+    } else {
+        dluma_log_pair("WARN", "global_mod_auto_enable_persist_failed", item->id);
+    }
+    dluma_global_persistence_unlock();
+}
+
 static int dluma_global_find_exact_locked(
     const DlumaGlobalMutationRequest* request, unsigned int* index_out)
 {
@@ -950,7 +997,8 @@ void dluma_lua_recompute_unseen_batch_locked(void)
         const DlumaLuaMetadata* item =
             &g_dluma.lua_discovery.global_files[i];
         if (!item->valid || item->duplicate_id || !item->is_new ||
-            !item->metadata_fingerprint[0]) continue;
+            !item->metadata_fingerprint[0] ||
+            (g_dluma.config.auto_enable_mods && item->approval_valid)) continue;
         dluma_str_copy(fingerprints[count],
                      DLUMA_ARRAY_COUNT(fingerprints[count]),
                      item->metadata_fingerprint);
@@ -1000,7 +1048,8 @@ int dluma_lua_snapshot_unseen_batch(DlumaGlobalUnseenBatch* out)
     out->registry_revision = g_dluma.lua_discovery.global_registry_revision;
     for (i = 0; i < g_dluma.lua_discovery.global_count; ++i) {
         const DlumaLuaMetadata* item = &g_dluma.lua_discovery.global_files[i];
-        if (item->valid && !item->duplicate_id && item->is_new) {
+        if (item->valid && !item->duplicate_id && item->is_new &&
+            (!g_dluma.config.auto_enable_mods || !item->approval_valid)) {
             dluma_str_copy(out->first_name, DLUMA_ARRAY_COUNT(out->first_name),
                          item->name);
             break;
@@ -1044,7 +1093,8 @@ int dluma_lua_mark_unseen_batch_prompted(const char* expected_batch,
     for (i = 0; i < g_dluma.lua_discovery.global_count &&
                 count < DLUMA_MAX_LUA_FILES; ++i) {
         const DlumaLuaMetadata* item = &g_dluma.lua_discovery.global_files[i];
-        if (!item->valid || item->duplicate_id || !item->is_new) continue;
+        if (!item->valid || item->duplicate_id || !item->is_new ||
+            (g_dluma.config.auto_enable_mods && item->approval_valid)) continue;
         snapshots[count] = *item;
         mutations[count].section = "global_mod_prompted";
         mutations[count].key = snapshots[count].registry_key;

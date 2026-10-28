@@ -23,6 +23,7 @@
 #define DLUMA_GAME_HOST_STORAGE_KEY_LIMIT 128U
 #define DLUMA_GAME_HOST_STORAGE_VALUE_LIMIT (4U * 1024U)
 #define DLUMA_GAME_HOST_STORAGE_TOTAL_LIMIT (64U * 1024U)
+static const WCHAR dluma_game_host_storage_extension[] = L".dlumas";
 #define DLUMA_GAME_HOST_COMPANION_LIMIT (512U * 1024U * 1024U)
 #define DLUMA_GAME_HOST_COMPANION_ENTRY_LIMIT (1024U * 1024U)
 #define DLUMA_GAME_HOST_SCRATCH_CAPACITY \
@@ -373,7 +374,7 @@ static int dluma_game_host_storage_paths(
     CloseHandle(directory_handle);
     dluma_wstr_append(
         file_name, DLUMA_ARRAY_COUNT(file_name),
-        L".dlumas");
+        dluma_game_host_storage_extension);
     dluma_path_join(
         path, path_capacity,
         directory, file_name);
@@ -487,10 +488,10 @@ static uint64_t dluma_game_host_storage_usage(
             return 0;
         }
         length = wcslen(data.cFileName);
-        if (length <= 5U ||
+        if (length <= DLUMA_ARRAY_COUNT(dluma_game_host_storage_extension) - 1U ||
             dluma_wstricmp(
-                data.cFileName + length - 5U,
-                L".dlumas") != 0) {
+                data.cFileName + length - (DLUMA_ARRAY_COUNT(dluma_game_host_storage_extension) - 1U),
+                dluma_game_host_storage_extension) != 0) {
             FindClose(find);
             return 0;
         }
