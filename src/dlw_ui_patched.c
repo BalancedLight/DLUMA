@@ -39,6 +39,7 @@ static DlumaUiFixModColumnSlot
     g_dluma_ui_fix_registry_columns[DLUMA_UI_FIX_MODS_VISIBLE_ROWS];
 static void *g_dluma_ui_fix_registry_column_screen;
 static unsigned char g_dluma_ui_fix_registry_columns_ready;
+static void *g_dluma_ui_fix_registry_resolved_screen;
 static volatile LONG g_dluma_ui_fix_registry_columns_log_once;
 static void *g_dluma_ui_fix_logs_message_controls[
     DLUMA_UI_FIX_LOGS_VISIBLE_ROWS];
@@ -782,6 +783,13 @@ static void dluma_ui_fix_refresh_workshop_after_capacity(
 static void __fastcall dluma_ui_workshop_show_hook(
     void *screen, void *ui_data)
 {
+    /* ShowScreen can rebuild children while retaining the same screen
+     * address. Never carry the previous generation's controls across it. */
+    memset(g_dluma_ui_fix_registry_columns, 0,
+           sizeof(g_dluma_ui_fix_registry_columns));
+    g_dluma_ui_fix_registry_column_screen = 0;
+    g_dluma_ui_fix_registry_columns_ready = 0;
+    g_dluma_ui_fix_registry_resolved_screen = 0;
     if (dluma_ui_is_stock_workshop_screen(screen))
         dluma_ui_fix_set_capacity(
             dluma_ui_workshop_screen_list(screen),
@@ -808,6 +816,22 @@ static void __fastcall dluma_ui_workshop_show_hook(
     }
     else if (dluma_ui_is_mods_registry_screen(screen))
     {
+        /* Base ShowScreen may recreate controls during its call. Resolve the
+         * new scene and list rather than following cached row pointers. */
+        memset(g_dluma_ui_fix_registry_columns, 0,
+               sizeof(g_dluma_ui_fix_registry_columns));
+        g_dluma_ui_fix_registry_column_screen = 0;
+        g_dluma_ui_fix_registry_columns_ready = 0;
+        if (!dluma_ui_registry_resolve_controls(screen))
+        {
+            unsigned int i;
+            g_dluma_ui_registry_screen = 0;
+            g_dluma_ui_registry_list = 0;
+            for (i = 0; i < g_dluma_ui_registry_row_count; ++i)
+                g_dluma_ui_registry_rows[i].item = 0;
+            return;
+        }
+        g_dluma_ui_fix_registry_resolved_screen = screen;
         dluma_ui_fix_rebind_registry_rows();
         dluma_ui_fix_repair_registry_navigation();
         dluma_ui_fix_present_registry_columns(screen);
@@ -851,6 +875,10 @@ static void __fastcall dluma_ui_workshop_post_hook(void *screen)
     }
     else if (dluma_ui_is_mods_registry_screen(screen))
     {
+        if (g_dluma_ui_fix_registry_resolved_screen != screen ||
+            g_dluma_ui_registry_screen != screen ||
+            !g_dluma_ui_registry_list)
+            return;
         dluma_ui_fix_set_capacity(
             g_dluma_ui_registry_list,
             DLUMA_UI_FIX_MODS_VISIBLE_ROWS);
@@ -914,6 +942,7 @@ int dluma_ui_start(void)
            sizeof(g_dluma_ui_fix_registry_columns));
     g_dluma_ui_fix_registry_column_screen = 0;
     g_dluma_ui_fix_registry_columns_ready = 0;
+    g_dluma_ui_fix_registry_resolved_screen = 0;
     g_dluma_ui_fix_registry_columns_log_once = 0;
     memset(g_dluma_ui_fix_logs_message_controls, 0,
            sizeof(g_dluma_ui_fix_logs_message_controls));
@@ -947,6 +976,7 @@ void dluma_ui_stop(void)
            sizeof(g_dluma_ui_fix_registry_columns));
     g_dluma_ui_fix_registry_column_screen = 0;
     g_dluma_ui_fix_registry_columns_ready = 0;
+    g_dluma_ui_fix_registry_resolved_screen = 0;
     memset(g_dluma_ui_fix_logs_message_controls, 0,
            sizeof(g_dluma_ui_fix_logs_message_controls));
     g_dluma_ui_fix_logs_message_screen = 0;

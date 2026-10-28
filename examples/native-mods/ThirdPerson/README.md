@@ -2,7 +2,13 @@
 
 A standalone DLUMA mod for Dying Light Player, including Player launched from Developer Tools.
 
-Press **T** to switch between first person and a right-shoulder camera. Hold **Left Alt** and move the mouse to look around your character; release Alt to return to the shoulder view. Camera controls leave the player's position and movement under the game.
+Press **T** to switch between first person and third person. In the default **Shoulder** style, hold **Left Alt** and move the mouse to look around your character; release Alt to return to the shoulder view. Camera controls leave the player's position and movement under the game.
+
+In **Camera style**, select **Free camera** to rotate the camera with the mouse and move relative to its direction. While aiming, the character faces the target and movement strafes. Hold Alt with the adjustment keys to change camera positioning in either style.
+
+Free camera selects nearby usable objects that are visible from the camera, without requiring the character to face them. The normal interaction prompt and key use the same object. Reach and obstruction checks still apply, and the current object remains selected while it is valid.
+
+Enable **First person during special actions** in Actions to move into first person over 120 ms for takedowns, grapples, dropkicks, grabs, and pounces, then return over 200 ms when the action finishes or is cancelled. This option is off by default.
 
 | Control | Action |
 |---|---|
@@ -42,7 +48,7 @@ LLVM users can run `build_thirdperson_clang.bat Release` with `clang-cl` on PATH
 The Release build validates the DLL export and package lock, then produces:
 
 ```text
-dist/ThirdPerson-1.1.3.zip
+dist/ThirdPerson-1.2.1.zip
 dist/mods/native/global/thirdperson.camera/
 ```
 
@@ -55,5 +61,7 @@ An optional second argument to either build script supplies an explicit deployme
 The native adapter selects existing camera objects and updates camera transforms. It selects the equipped outfit's third-person mesh through the game's appearance module and restores the first-person selection when releasing its view. It does not call player creation, teleport, or player world-position setters. It reacquires the current player visual after appearance refreshes and before the stock third-person update.
 
 During ordinary third-person firing, the weapon aims toward the camera's target from the weapon's original firing position. The game's normal projectile spread and aim-assist scoring continue to apply.
+
+The visible body currently retains the local player's first-person animation graph to preserve native combat events and sounds. Some poses therefore retain first-person framing. A separate third-person animation presentation is not enabled in this release.
 
 The controller checks cover state restoration, orbit and combat transitions, saved-offset timing, and camera geometry. Gameplay acceptance covers outfit changes, respawns, aiming, tight-space collision, menus, focus changes, scripted cameras, and repeated toggles while standing next to walls. Check that toggling or orbiting never changes the player's world position. These gameplay checks are pending an authorized Player run.

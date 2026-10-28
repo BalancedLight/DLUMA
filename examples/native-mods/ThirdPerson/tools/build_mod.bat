@@ -35,7 +35,7 @@ if /I "%TP_CONFIG%"=="Release" (
 )
 rem Build the pinned upstream C dependency with its own warning policy.
 %TP_CC% %TP_CFLAGS% /c /Fo"%TP_OUT%\\" third_party\minhook\src\buffer.c third_party\minhook\src\hook.c third_party\minhook\src\trampoline.c third_party\minhook\src\hde\hde64.c || exit /b 1
-%TP_CC% %TP_FLAGS% /LD /Fo"%TP_OUT%\\" /Fe"%TP_OUT%\ThirdPerson.dll" src\mod.cpp src\controller.cpp src\camera_motion.cpp src\engine_adapter.cpp "%TP_OUT%\buffer.obj" "%TP_OUT%\hook.obj" "%TP_OUT%\trampoline.obj" "%TP_OUT%\hde64.obj" /link /machine:x64 /dynamicbase /nxcompat /highentropyva /guard:cf /PDBALTPATH:ThirdPerson.pdb kernel32.lib user32.lib bcrypt.lib || exit /b 1
+%TP_CC% %TP_FLAGS% /LD /Fo"%TP_OUT%\\" /Fe"%TP_OUT%\ThirdPerson.dll" src\mod.cpp src\controller.cpp src\camera_motion.cpp src\engine_adapter.cpp src\engine_reticle.cpp src\engine_actions.cpp src\engine_interactions.cpp src\interaction_selection.cpp "%TP_OUT%\buffer.obj" "%TP_OUT%\hook.obj" "%TP_OUT%\trampoline.obj" "%TP_OUT%\hde64.obj" /link /machine:x64 /dynamicbase /nxcompat /highentropyva /guard:cf /PDBALTPATH:ThirdPerson.pdb kernel32.lib user32.lib bcrypt.lib || exit /b 1
 echo Built: %TP_OUT%\ThirdPerson.dll
 if /I "%TP_CONFIG%"=="Release" (
     python tools\stage_package.py --module "%TP_OUT%\ThirdPerson.dll" || exit /b 1

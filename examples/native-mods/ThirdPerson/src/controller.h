@@ -22,6 +22,8 @@ struct ControllerConfig {
     bool smoothCamera = true;
     float smoothingSeconds = 0.12f;
     bool aimFirstPerson = false;
+    bool freeCamera = false;
+    bool firstPersonActions = false;
     float aimDistanceReduction = 0.20f;
     float aimMagnification = 1.25f;
     // Camera boom angles in radians; positive verticalAngle raises the camera.
@@ -40,6 +42,11 @@ struct CameraInput {
     bool orbitHeld = false;
     bool aimOrFire = false;
     bool aimHeld = false;
+    bool freeControlAvailable = false;
+    float bodyYaw = 0.0f;
+    float bodyPitch = 0.0f;
+    bool specialActionActive = false;
+    bool actionCameraAvailable = false;
     float mouseYawDelta = 0.0f;
     float mousePitchDelta = 0.0f;
     float lateralAdjust = 0.0f;
@@ -59,6 +66,9 @@ struct CameraOutput {
     float aimDistanceScale = 1.0f;
     float aimMagnification = 1.0f;
     bool temporaryFirstPerson = false;
+    bool freeCamera = false;
+    bool firstPersonActions = false;
+    float specialActionBlend = 0.0f;
     float framingYaw = 0.0f;
     float framingPitch = 0.0f;
     float orbitYaw = 0.0f;
@@ -105,6 +115,10 @@ private:
     float returnPitch_ = 0.0f;
     float returnElapsed_ = 0.0f;
     float aimBlend_ = 0.0f;
+    float actionBlend_ = 0.0f;
+    float freeYaw_ = 0.0f;
+    float freePitch_ = 0.0f;
+    bool freeSeeded_ = false;
 
     void clearOrbit(bool blockUntilRelease);
 };
@@ -115,6 +129,9 @@ CameraPose makeCameraPose(
     const Vec3& target, float baseYaw, float basePitch,
     const CameraOutput& output);
 
+// Interpolate positions and the shortest view arc, keeping an orthonormal frame.
+CameraPose blendCameraPoses(const CameraPose& third, const CameraPose& first, float amount);
+
 // The adapter supplies the native weapon origin and camera ray's world target.
 Vec3 aimDirection(
     const Vec3& origin, const Vec3& aimTarget,
@@ -123,5 +140,8 @@ Vec3 aimDirection(
 // Camera hits behind the firing origin must not reverse the shot.
 Vec3 weaponAimDirection(
     const Vec3& origin, const Vec3& aimTarget, const Vec3& cameraForward);
+
+// Horizontal input in world space; full diagonal input is normalized.
+Vec3 cameraRelativeMovement(float side, float forward, float cameraYaw);
 
 } // namespace thirdperson

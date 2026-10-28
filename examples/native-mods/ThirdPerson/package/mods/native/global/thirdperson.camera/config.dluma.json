@@ -75,6 +75,23 @@
       "name": "Camera",
       "settings": [
         {
+          "key": "camera_style",
+          "name": "Camera style",
+          "description": "Choose shoulder controls or a free camera with camera-relative movement.",
+          "type": "enum",
+          "default": "shoulder",
+          "options": [
+            {
+              "value": "shoulder",
+              "name": "Shoulder"
+            },
+            {
+              "value": "free_camera",
+              "name": "Free camera"
+            }
+          ]
+        },
+        {
           "key": "smooth_camera",
           "name": "Smooth camera movement",
           "description": "Smooth position follow and vertical movement. Mouse look, orbit, and aim stay responsive. Collision adjusts automatically whether smoothing is on or off.",
@@ -173,6 +190,19 @@
           "min": 100,
           "max": 200,
           "step": 5
+        }
+      ]
+    },
+    {
+      "id": "actions",
+      "name": "Actions",
+      "settings": [
+        {
+          "key": "first_person_actions",
+          "name": "First person during special actions",
+          "description": "Briefly switch to first person for takedowns, grapples, dropkicks, grabs, and pounces.",
+          "type": "boolean",
+          "default": false
         }
       ]
     }

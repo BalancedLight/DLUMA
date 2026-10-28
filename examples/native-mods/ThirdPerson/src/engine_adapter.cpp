@@ -1,6 +1,9 @@
 #include "engine_adapter.h"
 #include "controller.h"
 #include "camera_motion.h"
+#include "engine_reticle.h"
+#include "engine_actions.h"
+#include "engine_interactions.h"
 
 #include <windows.h>
 #include <bcrypt.h>
@@ -135,6 +138,10 @@ struct EngineAdapter::Impl {
     using RefreshAppearance = void (__fastcall*)(void*, unsigned char);
     using GetPlayer = void* (__fastcall*)(void*);
     using GetVector = Vec3* (__fastcall*)(void*, Vec3*);
+    using GetInputValue = float (__fastcall*)(void*, int);
+    using GetMeshElement = int (__fastcall*)(void*, unsigned char);
+    using ElementVisibility = bool (__fastcall*)(void*, int);
+    using TransformVector = Vec3* (__fastcall*)(void*, Vec3*, const Vec3*);
     using AssistDirection = Vec3* (__fastcall*)(void*, Vec3*, unsigned char);
     using GetScalar = float (__fastcall*)(void*);
     using SetScalar = void (__fastcall*)(void*, float);
@@ -148,10 +155,12 @@ struct EngineAdapter::Impl {
 
     static inline std::atomic<Impl*> current{nullptr};
     static inline CameraUpdate stockCamera = nullptr;
+    static inline CameraUpdate stockFirstPersonCamera = nullptr;
     static inline LookUpdate stockLook = nullptr;
     static inline Keyboard stockKeyboard = nullptr;
     static inline MouseButton stockMouseButton = nullptr;
     static inline GetVector stockWeaponDirection = nullptr;
+    static inline GetVector stockMovementInput = nullptr;
     static inline AssistDirection stockAssistDirection = nullptr;
     static inline std::atomic<unsigned> callbacks{0};
     static inline thread_local unsigned callbackDepth = 0;
@@ -170,6 +179,15 @@ struct EngineAdapter::Impl {
     RefreshAppearance refreshAppearance = nullptr;
     GetPlayer getPlayer = nullptr;
     GetVector getPosition = nullptr;
+    GetVector getCameraPosition = nullptr;
+    GetVector getCameraForward = nullptr;
+    GetVector getCameraUp = nullptr;
+    GetMeshElement getMeshElement = nullptr;
+    ElementVisibility isElementHidden = nullptr;
+    ElementVisibility hideElement = nullptr;
+    ElementVisibility unhideElement = nullptr;
+    TransformVector vectorWorldToLocal = nullptr;
+    GetPlayer getActiveLook = nullptr;
     InDuck inDuck = nullptr;
     GetScalar getNearClip = nullptr;
     GetScalar getFov = nullptr;
@@ -180,18 +198,35 @@ struct EngineAdapter::Impl {
     Raytrace raytrace = nullptr;
     Sensitivity sensitivity = nullptr;
     Multipliers multipliers = nullptr;
-    TablePatch cameraPatch, lookPatch, keyboardPatch, mouseButtonPatch, weaponDirectionPatch;
+    TablePatch cameraPatch, firstPersonCameraPatch, lookPatch, keyboardPatch, mouseButtonPatch, weaponDirectionPatch;
     std::recursive_mutex mutex;
     CameraOutput output{};
     CameraInput input{};
     CameraMotion motion{};
+    ActionVisualClassBridge actionVisualClass{};
+    std::atomic<bool> actionClassEnabled{false};
     LARGE_INTEGER motionFrequency{};
     LARGE_INTEGER previousMotionTime{};
     void* lookPlayer = nullptr;
+    void* lookObject = nullptr;
+    bool moveSampleAvailable = false;
     float stableYaw = 0.0f;
     float stablePitch = 0.0f;
     bool stableLookReady = false;
     CameraPose resolvedPose{};
+    CameraPose actionPose{};
+    void* actionPosePlayer = nullptr;
+    void* actionPoseCamera = nullptr;
+    CameraPose firstPersonNativePose{};
+    void* firstPersonNativeCamera = nullptr;
+    bool firstPersonPoseOverridden = false;
+    bool nativeActionCamera = false;
+    void* actionStatePlayer = nullptr;
+    void* hiddenHeadPlayer = nullptr;
+    void* hiddenHeadVisual = nullptr;
+    void* hiddenHeadModel = nullptr;
+    int hiddenHeadElement = -1;
+    bool hiddenHeadOwned = false;
     void* resolvedPlayer = nullptr;
     void* resolvedCamera = nullptr;
     Vec3 previousAnchor{};
@@ -199,6 +234,9 @@ struct EngineAdapter::Impl {
     bool assistHookCreated = false;
     bool assistHookEnabled = false;
     bool assistHookInitialized = false;
+    bool movementHookCreated = false;
+    bool movementHookEnabled = false;
+    unsigned char* movementHookModule = nullptr;
     bool assistHookPublished = false;
     unsigned char* assistHookModule = nullptr;
     void* fovCamera = nullptr;
@@ -212,6 +250,7 @@ struct EngineAdapter::Impl {
     bool enabled = false;
     bool toggleHeld = false;
     bool resetHeld = false;
+    bool deferredActionToggle = false;
     bool ownedView = false;
     bool ownsVisualSelection = false;
     bool visualRestorePending = false;
@@ -226,6 +265,11 @@ struct EngineAdapter::Impl {
 
     void* game() const { return *reinterpret_cast<void**>(gameModule + 0x1D07F88); }
     void* player() const { void* g = game(); return g ? getPlayer(g) : nullptr; }
+    static void* actionLocalPlayer(void* context) { return static_cast<Impl*>(context)->player(); }
+    static bool actionClassRequested(void* context)
+    {
+        return static_cast<Impl*>(context)->actionClassEnabled.load(std::memory_order_acquire);
+    }
     void* manager() const
     {
         void* g = game();
@@ -238,8 +282,11 @@ struct EngineAdapter::Impl {
 
     void resetMotion()
     {
+        interactions::clear();
         motion.reset();
         resolvedPlayer = resolvedCamera = nullptr;
+        actionPosePlayer = actionPoseCamera = nullptr;
+        moveSampleAvailable = false;
         previousMotionTime = {};
         haveAnchor = false;
     }
@@ -265,6 +312,98 @@ struct EngineAdapter::Impl {
             key == keys.farther || key == keys.reset);
     }
 
+    void restoreHiddenHead()
+    {
+        if (hiddenHeadOwned && hiddenHeadPlayer && player() == hiddenHeadPlayer) {
+            void* visual = method<GetPlayer>(hiddenHeadPlayer, 194)(hiddenHeadPlayer);
+            if (visual && visual == hiddenHeadVisual) {
+                void* modelHost = static_cast<unsigned char*>(visual) + 64;
+                void* model = method<GetPlayer>(modelHost, 1)(modelHost);
+                if (model && model == hiddenHeadModel && isElementHidden && unhideElement &&
+                    isElementHidden(model, hiddenHeadElement) && !unhideElement(model, hiddenHeadElement))
+                    return;
+            }
+        }
+        hiddenHeadPlayer = hiddenHeadVisual = hiddenHeadModel = nullptr;
+        hiddenHeadElement = -1;
+        hiddenHeadOwned = false;
+    }
+
+    bool captureActionPose(void* camera, void* p)
+    {
+        actionPosePlayer = actionPoseCamera = nullptr;
+        if (!camera || !p || !getMeshElement || !isElementHidden || !hideElement || !unhideElement)
+            return false;
+        void* visual = method<GetPlayer>(p, 194)(p);
+        if (!visual || visual != lastVisual) return false;
+        void* target = field<void*>(camera, 80);
+        if (target != static_cast<unsigned char*>(visual) + 11552 ||
+            *reinterpret_cast<void***>(target) != reinterpret_cast<void**>(gameModule + 0x17E2048))
+            return false;
+        void* modelHost = static_cast<unsigned char*>(visual) + 64;
+        void* model = method<GetPlayer>(modelHost, 1)(modelHost);
+        if (!model || getMeshElement(model, 8) < 0) return false;
+        CameraPose candidate{};
+        Vec3* position = method<GetVector>(target, 0)(target, &candidate.position);
+        Vec3* forward = method<GetVector>(target, 1)(target, &candidate.forward);
+        Vec3* up = method<GetVector>(target, 2)(target, &candidate.up);
+        if (!position || !forward || !up || !finite(*position) || !finite(*forward) || !finite(*up) ||
+            length(*forward) < 0.001f || length(*up) < 0.001f) return false;
+        candidate.position = *position;
+        candidate.forward = *forward;
+        candidate.up = *up;
+        actionPose = candidate;
+        actionPosePlayer = p;
+        actionPoseCamera = camera;
+        return true;
+    }
+
+    bool captureActiveFirstPersonPose(void* camera, void* p)
+    {
+        actionPosePlayer = actionPoseCamera = nullptr;
+        if (!camera || !p || !getCameraPosition || !getCameraForward || !getCameraUp) return false;
+        CameraPose candidate{};
+        Vec3* position = getCameraPosition(camera, &candidate.position);
+        Vec3* forward = getCameraForward(camera, &candidate.forward);
+        Vec3* up = getCameraUp(camera, &candidate.up);
+        if (!position || !forward || !up || !finite(*position) || !finite(*forward) || !finite(*up) ||
+            length(*forward) < 0.001f || length(*up) < 0.001f) return false;
+        candidate.position = *position;
+        candidate.forward = scaled(*forward, -1.0f);
+        candidate.up = *up;
+        actionPose = candidate;
+        actionPosePlayer = p;
+        actionPoseCamera = camera;
+        return true;
+    }
+
+    bool hideCurrentHead(void* p)
+    {
+        void* visual = p ? method<GetPlayer>(p, 194)(p) : nullptr;
+        if (!visual || visual != lastVisual || !getMeshElement || !isElementHidden || !hideElement)
+            return false;
+        void* modelHost = static_cast<unsigned char*>(visual) + 64;
+        void* model = method<GetPlayer>(modelHost, 1)(modelHost);
+        if (!model) return false;
+        const int element = getMeshElement(model, 8);
+        if (element < 0) return false;
+        if (hiddenHeadVisual && (hiddenHeadVisual != visual || hiddenHeadModel != model ||
+                hiddenHeadElement != element)) {
+            restoreHiddenHead();
+            if (hiddenHeadVisual) return false;
+        }
+        if (hiddenHeadVisual && isElementHidden(model, element)) return true;
+        if (hiddenHeadVisual) restoreHiddenHead();
+        const bool alreadyHidden = isElementHidden(model, element);
+        if (!alreadyHidden && !hideElement(model, element)) return false;
+        hiddenHeadPlayer = p;
+        hiddenHeadVisual = visual;
+        hiddenHeadModel = model;
+        hiddenHeadElement = element;
+        hiddenHeadOwned = !alreadyHidden;
+        return true;
+    }
+
     bool selectThirdPersonVisual(void* p)
     {
         if (refreshingVisual) return false;
@@ -276,9 +415,12 @@ struct EngineAdapter::Impl {
             previousVisualSelection = selection;
             ownsVisualSelection = true;
         }
+        actionClassEnabled.store(true, std::memory_order_release);
         selection = 1;
         visualRestorePending = false;
         if (refresh) {
+            reticle::setEligiblePlayer(nullptr);
+            interactions::clear();
             refreshingVisual = true;
             refreshAppearance(appearance, 1);
             refreshingVisual = false;
@@ -290,6 +432,7 @@ struct EngineAdapter::Impl {
     void restoreVisual(void* p)
     {
         if (refreshingVisual) return;
+        actionClassEnabled.store(false, std::memory_order_release);
         if (ownsVisualSelection) {
             *reinterpret_cast<unsigned char*>(gameModule + 0x1D075A2) = previousVisualSelection;
             ownsVisualSelection = false;
@@ -297,8 +440,11 @@ struct EngineAdapter::Impl {
             visualRestorePending = true;
         }
         if (!visualRestorePending) return;
+        // The native action owns the current visual until it finishes.
+        if (p && specialActionActive(p)) return;
         void* appearance = p ? field<void*>(p, 4968) : nullptr;
         if (appearance && field<void*>(appearance, 16)) {
+            interactions::clear();
             refreshingVisual = true;
             refreshAppearance(appearance, 1);
             refreshingVisual = false;
@@ -308,8 +454,18 @@ struct EngineAdapter::Impl {
 
     void restoreView()
     {
+        interactions::clear();
+        reticle::setEligiblePlayer(nullptr);
+        restoreHiddenHead();
         void* p = player();
         void* m = manager();
+        if (firstPersonPoseOverridden && m && field<void*>(m, 80) == firstPersonNativeCamera) {
+            setTransform(firstPersonNativeCamera, scaled(firstPersonNativePose.forward, -1.0f),
+                firstPersonNativePose.up, firstPersonNativePose.position);
+        }
+        firstPersonPoseOverridden = false;
+        firstPersonNativeCamera = nullptr;
+        nativeActionCamera = false;
         if (fovCamera && m && field<void*>(m, 80) == fovCamera)
             setFov(fovCamera, originalFov);
         fovCamera = nullptr;
@@ -325,13 +481,26 @@ struct EngineAdapter::Impl {
     {
         if (refreshingVisual) return;
         input.focused = focused();
-        input.available = player() != nullptr;
+        void* observedPlayer = player();
+        input.available = observedPlayer != nullptr;
         input.gameplay = enabled && gameplay();
         input.suspended = false;
+        if (enabled && observedPlayer) {
+            input.specialActionActive = specialActionActive(observedPlayer);
+            actionStatePlayer = observedPlayer;
+        } else if (!enabled || !observedPlayer || observedPlayer != actionStatePlayer) {
+            input.specialActionActive = false;
+            actionStatePlayer = nullptr;
+        }
+        const bool currentLook = stableLookReady && lookPlayer == player();
+        input.bodyYaw = currentLook ? stableYaw : 0.0f;
+        input.bodyPitch = currentLook ? stablePitch : 0.0f;
+        input.freeControlAvailable = currentLook && lookObject && getActiveLook &&
+            getActiveLook(lookPlayer) == static_cast<unsigned char*>(lookObject) + 24;
         const bool toggle = down(keys.toggle);
         const bool reset = down(keys.reset);
-        input.togglePressed = toggle && !toggleHeld;
-        input.resetPressed = reset && !resetHeld;
+        input.togglePressed = input.focused && input.gameplay && toggle && !toggleHeld;
+        input.resetPressed = input.focused && input.gameplay && reset && !resetHeld;
         toggleHeld = toggle;
         resetHeld = reset;
         input.orbitHeld = down(keys.orbit);
@@ -344,12 +513,53 @@ struct EngineAdapter::Impl {
         if (m) {
             const int type = field<int>(m, 88);
             input.suspended = type != 1 && type != 2;
+            if (type == 2 && input.specialActionActive && output.firstPersonActions)
+                captureActiveFirstPersonPose(field<void*>(m, 80), player());
         }
+        const bool acceptsToggle = input.focused && input.gameplay && input.available && !input.suspended;
+        if (input.specialActionActive) {
+            if (input.togglePressed && acceptsToggle) deferredActionToggle = !deferredActionToggle;
+            input.togglePressed = false;
+        } else if (deferredActionToggle && acceptsToggle) {
+            input.togglePressed = !input.togglePressed;
+            deferredActionToggle = false;
+        }
+        input.actionCameraAvailable = m && actionPosePlayer == player() && actionPosePlayer &&
+            field<void*>(m, 80) == actionPoseCamera;
         output = controller->update(input, seconds);
         input.mouseYawDelta = input.mousePitchDelta = 0.0f;
+        if (m && field<int>(m, 88) == 1) {
+            firstPersonPoseOverridden = false;
+            firstPersonNativeCamera = nullptr;
+            if (!input.specialActionActive && output.specialActionBlend <= 0.0f)
+                nativeActionCamera = false;
+        }
+        if (!input.freeControlAvailable || !input.focused || !input.gameplay ||
+            !output.applyCamera || !output.freeCamera || output.temporaryFirstPerson ||
+            input.specialActionActive) moveSampleAvailable = false;
+        void* reticlePlayer = player();
+        void* reticleManager = manager();
+        const bool showReticle = enabled && input.focused && input.gameplay &&
+            input.aimHeld && !input.specialActionActive && output.specialActionBlend <= 0.0f && output.applyCamera &&
+            !output.temporaryFirstPerson && ownedView && reticlePlayer &&
+            reticlePlayer == ownerPlayer && reticleManager && reticleManager == ownerManager &&
+            field<int>(reticleManager, 88) == 1;
+        reticle::setEligiblePlayer(showReticle ? reticlePlayer : nullptr);
+        if (!output.freeCamera || !output.applyCamera || output.temporaryFirstPerson ||
+            input.specialActionActive || output.specialActionBlend > 0.0f || !input.focused || !input.gameplay)
+            interactions::clear();
         // Input hooks may run within player action processing. Defer appearance
         // replacement and native camera switching to the loader update.
         if (!updatePresentation) return;
+        // Paired actions own their animation state until the native controller releases it.
+        if (input.specialActionActive) {
+            if (input.suspended || !input.focused || !input.gameplay || !output.firstPersonActions)
+                restoreHiddenHead();
+            return;
+        }
+        if (m && field<int>(m, 88) == 2 && ownedView && nativeActionCamera &&
+            output.applyCamera && !output.temporaryFirstPerson && output.specialActionBlend > 0.0f)
+            return;
         if (!output.applyCamera || output.temporaryFirstPerson) {
             swallowed.fill(false);
             swallowedMouse.fill(false);
@@ -371,6 +581,9 @@ struct EngineAdapter::Impl {
             if (!ownedView) resetMotion();
             // Reattach the outfit's current visual after its mesh refresh.
             changeCamera(m, 1, p);
+            nativeActionCamera = false;
+            firstPersonPoseOverridden = false;
+            firstPersonNativeCamera = nullptr;
             ownedView = true;
             ownerPlayer = p;
             ownerManager = m;
@@ -400,7 +613,7 @@ struct EngineAdapter::Impl {
         return {hit, hit && finite(point), point};
     }
 
-    void updateCamera(void* camera)
+    void updateCamera(void* camera, bool stockUpdated = false, bool nativeFirstPerson = false)
     {
         void* p = player();
         void* m = manager();
@@ -427,13 +640,29 @@ struct EngineAdapter::Impl {
         CameraOutput framing = output;
         framing.offsets.distance *= output.aimDistanceScale;
         CameraPose pose = makeCameraPose(followed, yaw, pitch, framing);
+        if (!nativeFirstPerson && output.firstPersonActions &&
+            (input.specialActionActive || output.specialActionBlend > 0.0f) && stockUpdated)
+            captureActionPose(camera, p);
+        else if (!input.specialActionActive && output.specialActionBlend <= 0.0f) {
+            restoreHiddenHead();
+            actionPosePlayer = actionPoseCamera = nullptr;
+        }
+        const bool validActionPose = actionPosePlayer == p && actionPoseCamera == camera;
+        float actionBlend = validActionPose ? output.specialActionBlend : 0.0f;
+        if (actionBlend >= 0.75f && !hideCurrentHead(p)) {
+            restoreHiddenHead();
+            actionPosePlayer = actionPoseCamera = nullptr;
+            actionBlend = 0.0f;
+        } else if (actionBlend < 0.75f) restoreHiddenHead();
+        if (actionBlend > 0.0f) pose = blendCameraPoses(pose, actionPose, actionBlend);
         const float baseFov = getFov(camera);
+        const float aimMagnification = 1.0f + (output.aimMagnification - 1.0f) * (1.0f - actionBlend);
         if (std::isfinite(baseFov) && baseFov > 1.0f && baseFov < 179.0f &&
-            std::isfinite(output.aimMagnification) && output.aimMagnification > 1.0001f) {
+            std::isfinite(aimMagnification) && aimMagnification > 1.0001f) {
             originalFov = baseFov;
             fovCamera = camera;
             const float zoomed = 2.0f * std::atan(std::tan(baseFov * Radians * 0.5f) /
-                output.aimMagnification) / Radians;
+                aimMagnification) / Radians;
             setFov(camera, zoomed);
         }
         const float nearClip = getNearClip(camera);
@@ -450,13 +679,60 @@ struct EngineAdapter::Impl {
             aspect = std::fabs(projection[5] / projection[0]);
         }
         ProbeContext context{this, p};
-        pose = motion.resolve(target, pose, nearClip, verticalFov, aspect, dt, traceCamera, &context);
+        if (actionBlend >= 1.0f) motion.seedResolved(pose.position);
+        else pose = motion.resolve(target, pose, nearClip, verticalFov, aspect, dt, traceCamera, &context);
         if (finite(pose.position) && finite(pose.forward)) {
             setTransform(camera, scaled(pose.forward, -1.0f), pose.up, pose.position);
             resolvedPose = pose;
             resolvedPlayer = p;
             resolvedCamera = camera;
+            interactions::Frame interactionFrame{};
+            interactionFrame.player = p;
+            interactionFrame.camera = camera;
+            interactionFrame.position = pose.position;
+            interactionFrame.forward = pose.forward;
+            interactionFrame.verticalFovRadians = verticalFov;
+            interactionFrame.aspect = aspect;
+            interactionFrame.eligible = output.freeCamera && output.applyCamera &&
+                !output.temporaryFirstPerson && !input.specialActionActive &&
+                output.specialActionBlend <= 0.0f && input.focused && input.gameplay;
+            interactions::setFrame(interactionFrame);
         }
+    }
+
+    static Vec3* __fastcall movementInputHook(void* move, Vec3* result)
+    {
+        const void* caller = _ReturnAddress();
+        Callback callback;
+        Vec3* original = stockMovementInput(move, result);
+        Impl* self = current.load(std::memory_order_acquire);
+        if (!self || !original || caller != self->gameModule + 0xCD81C1) return original;
+        std::lock_guard<std::recursive_mutex> lock(self->mutex);
+        void* p = self->player();
+        void* m = self->manager();
+        if (self->refreshingVisual || !self->enabled || !self->output.freeCamera || !self->output.applyCamera ||
+            self->output.temporaryFirstPerson || self->input.specialActionActive ||
+            !self->input.freeControlAvailable || !focused() || !self->gameplay() ||
+            !p || method<GetPlayer>(move, 4)(move) != p || p != self->resolvedPlayer ||
+            !m || field<void*>(m, 80) != self->resolvedCamera || !self->lookObject ||
+            self->getActiveLook(p) != static_cast<unsigned char*>(self->lookObject) + 24 ||
+            !finite(*original)) return original;
+
+        const float side = -original->x;
+        const float forward = original->z;
+        const float horizontal = std::hypot(side, forward);
+        self->moveSampleAvailable = true;
+        if (horizontal < 0.00001f) return original;
+        const float cameraYaw = std::atan2(self->resolvedPose.forward.x, self->resolvedPose.forward.z);
+        const Vec3 world = cameraRelativeMovement(side, forward, cameraYaw);
+        Vec3 local{};
+        const Vec3* transformed = self->vectorWorldToLocal(static_cast<unsigned char*>(p) + 24, &local, &world);
+        if (!transformed || !finite(*transformed)) return original;
+        const float magnitude = std::hypot(transformed->x, transformed->z);
+        if (magnitude < 0.00001f) return original;
+        original->x = transformed->x * horizontal / magnitude;
+        original->z = transformed->z * horizontal / magnitude;
+        return original;
     }
 
     static Vec3* __fastcall weaponDirectionHook(void* p, Vec3* result)
@@ -468,7 +744,8 @@ struct EngineAdapter::Impl {
         if (!self || !original || caller != self->gameModule + 0xD36BD4) return original;
         std::lock_guard<std::recursive_mutex> lock(self->mutex);
         void* m = self->manager();
-        if (self->refreshingVisual || !self->enabled || !self->output.applyCamera || self->output.temporaryFirstPerson ||
+        if (self->refreshingVisual || self->input.specialActionActive || self->output.specialActionBlend > 0.0f ||
+            !self->enabled || !self->output.applyCamera || self->output.temporaryFirstPerson ||
             !focused() || !self->gameplay() || !self->ownedView || p != self->player() ||
             p != self->resolvedPlayer || !m || field<int>(m, 88) != 1 ||
             field<void*>(m, 80) != self->resolvedCamera || !self->lastVisual ||
@@ -492,7 +769,8 @@ struct EngineAdapter::Impl {
         std::lock_guard<std::recursive_mutex> lock(self->mutex);
         void* p = self->player();
         void* m = self->manager();
-        if (self->refreshingVisual || !self->enabled || !self->output.applyCamera ||
+        if (self->refreshingVisual || self->input.specialActionActive || self->output.specialActionBlend > 0.0f ||
+            !self->enabled || !self->output.applyCamera ||
             self->output.temporaryFirstPerson || !focused() || !self->gameplay() ||
             !self->ownedView || !p || p != self->resolvedPlayer || !m ||
             field<int>(m, 88) != 1 || field<void*>(m, 80) != self->resolvedCamera ||
@@ -536,7 +814,47 @@ struct EngineAdapter::Impl {
             self->fovCamera = nullptr;
         }
         const auto result = stockCamera(camera);
-        self->updateCamera(camera);
+        self->updateCamera(camera, true);
+        return result;
+    }
+
+    static std::uintptr_t __fastcall firstPersonCameraHook(void* camera)
+    {
+        Callback callback;
+        Impl* self = current.load(std::memory_order_acquire);
+        if (!self) return stockFirstPersonCamera(camera);
+        std::lock_guard<std::recursive_mutex> lock(self->mutex);
+        if (self->refreshingVisual) return 0;
+        if (self->firstPersonPoseOverridden && self->firstPersonNativeCamera == camera) {
+            self->setTransform(camera, scaled(self->firstPersonNativePose.forward, -1.0f),
+                self->firstPersonNativePose.up, self->firstPersonNativePose.position);
+        }
+        self->firstPersonPoseOverridden = false;
+        self->firstPersonNativeCamera = nullptr;
+        if (self->fovCamera == camera) {
+            self->setFov(camera, self->originalFov);
+            self->fovCamera = nullptr;
+        }
+        const auto result = stockFirstPersonCamera(camera);
+        if (self->refreshingVisual || !self->enabled || !self->ownedView) return result;
+        void* p = self->player();
+        void* m = self->manager();
+        if (!p || !m || p != self->ownerPlayer || m != self->ownerManager ||
+            field<int>(m, 88) != 2 || field<void*>(m, 80) != camera) return result;
+        // Refresh accepted action state before the first native FP action frame.
+        self->sample(0.0f);
+        if (self->input.specialActionActive) self->nativeActionCamera = true;
+        if (!self->nativeActionCamera || !self->input.focused || !self->input.gameplay ||
+            !self->output.applyCamera || self->output.temporaryFirstPerson ||
+            !self->captureActiveFirstPersonPose(camera, p)) return result;
+        self->firstPersonNativePose = self->actionPose;
+        self->firstPersonNativeCamera = camera;
+        self->input.actionCameraAvailable = true;
+        self->input.togglePressed = self->input.resetPressed = false;
+        self->output = self->controller->update(self->input, 0.0f);
+        self->updateCamera(camera, false, true);
+        if (self->resolvedCamera == camera && self->resolvedPlayer == p)
+            self->firstPersonPoseOverridden = true;
         return result;
     }
 
@@ -548,6 +866,7 @@ struct EngineAdapter::Impl {
         std::lock_guard<std::recursive_mutex> lock(self->mutex);
         void* p = self->player();
         if (!p || method<GetPlayer>(look, 4)(look) != p) return stockLook(look, seconds);
+        self->lookObject = look;
         self->lastLook = GetTickCount64();
         self->sample(0.0f);
         if (self->output.captureMouse) {
@@ -572,6 +891,49 @@ struct EngineAdapter::Impl {
             }
             field<float>(look, 124) = 0.0f;
             field<float>(look, 128) = 0.0f;
+            if (self->output.freeCamera && self->input.freeControlAvailable &&
+                !self->input.specialActionActive && self->stableLookReady &&
+                !self->output.temporaryFirstPerson) {
+                const float viewYaw = self->stableYaw + self->output.framingYaw + self->output.orbitYaw;
+                const float viewPitch = self->stablePitch + self->output.framingPitch + self->output.orbitPitch;
+                float desiredYaw = self->stableYaw;
+                const bool movementAvailable = self->moveSampleAvailable;
+                self->moveSampleAvailable = false;
+                if (self->input.aimHeld) desiredYaw = viewYaw;
+                else if (movementAvailable) {
+                    const auto getInput = method<GetInputValue>(p, 324);
+                    const float side = getInput(p, 6) - getInput(p, 7);
+                    const float forward = getInput(p, 4) - getInput(p, 5);
+                    if (std::isfinite(side) && std::isfinite(forward) && std::hypot(side, forward) > 0.05f) {
+                        const Vec3 movement = cameraRelativeMovement(side, forward, viewYaw);
+                        desiredYaw = std::atan2(movement.x, movement.z);
+                    }
+                }
+                const float limit = 9.42477796f * std::clamp(seconds, 0.0f, 0.1f);
+                const float yawDelta = std::clamp(std::remainder(desiredYaw - self->stableYaw,
+                    6.28318530718f), -limit, limit);
+                const float pitchDelta = self->input.aimHeld
+                    ? std::clamp(viewPitch - self->stablePitch, -limit, limit) : 0.0f;
+                float scales[2]{1.0f, 1.0f};
+                float pitchScale = 1.0f, yawScale = 1.0f;
+                self->sensitivity(look, scales);
+                self->multipliers(look, &pitchScale, &yawScale);
+                const float yawFactor = scales[0] * yawScale * Radians;
+                const float pitchFactor = scales[1] * pitchScale * Radians;
+                const float steerThreshold = *reinterpret_cast<float*>(self->gameModule + 0x1DF5190);
+                if (std::isfinite(yawFactor) && std::isfinite(pitchFactor) &&
+                    std::isfinite(steerThreshold) && steerThreshold >= 0.0f) {
+                    const float shapedX = std::fabs(yawFactor) > 0.000001f ? -yawDelta / yawFactor : 0.0f;
+                    const float shapedY = std::fabs(pitchFactor) > 0.000001f ? pitchDelta / pitchFactor : 0.0f;
+                    const float shapedRadius = std::hypot(shapedX, shapedY);
+                    if (std::isfinite(shapedRadius) && shapedRadius > 0.000001f) {
+                        const float steerRadius = steerThreshold > 0.0f && shapedRadius < steerThreshold
+                            ? std::sqrt(4.0f * steerThreshold * shapedRadius) : shapedRadius + steerThreshold;
+                        field<float>(look, 124) = shapedX * steerRadius / shapedRadius;
+                        field<float>(look, 128) = shapedY * steerRadius / shapedRadius;
+                    }
+                }
+            }
         }
         const auto result = stockLook(look, seconds);
         if (self->player() == p) {
@@ -582,6 +944,12 @@ struct EngineAdapter::Impl {
                 self->stableYaw = std::remainder(1.57079632679f - yaw * Radians, 6.28318530718f);
                 self->stablePitch = pitch * Radians;
                 self->lookPlayer = p;
+                if (self->output.freeCamera) {
+                    self->input.bodyYaw = self->stableYaw;
+                    self->input.bodyPitch = self->stablePitch;
+                    self->input.togglePressed = self->input.resetPressed = false;
+                    self->output = self->controller->update(self->input, 0.0f);
+                }
             }
         }
         return result;
@@ -669,14 +1037,19 @@ struct EngineAdapter::Impl {
 
     void restoreHooks()
     {
+        const bool interaction = interactions::disable();
+        const bool reticleDisabled = reticle::disable();
+        const bool movement = !movementHookEnabled || MH_DisableHook(gameModule + 0xCDBCD0) == MH_OK;
+        if (movement) movementHookEnabled = false;
         const bool assist = !assistHookEnabled || MH_DisableHook(gameModule + 0x3BA380) == MH_OK;
         if (assist) assistHookEnabled = false;
         const bool weaponDirection = weaponDirectionPatch.restore();
         const bool mouse = mouseButtonPatch.restore();
         const bool keyboard = keyboardPatch.restore();
         const bool look = lookPatch.restore();
+        const bool firstPersonCamera = firstPersonCameraPatch.restore();
         const bool camera = cameraPatch.restore();
-        if (!(assist && weaponDirection && mouse && keyboard && look && camera))
+        if (!(interaction && reticleDisabled && movement && assist && weaponDirection && mouse && keyboard && look && firstPersonCamera && camera))
             reportHookReleaseFailure();
     }
 
@@ -730,11 +1103,28 @@ bool EngineAdapter::Impl::install()
     changeCamera = reinterpret_cast<ChangeCamera>(gameModule + 0x2BFE20);
     refreshAppearance = reinterpret_cast<RefreshAppearance>(gameModule + 0xC62910);
     getPlayer = reinterpret_cast<GetPlayer>(gameModule + 0x3C2D90);
+    getActiveLook = reinterpret_cast<GetPlayer>(gameModule + 0xB11B50);
     sensitivity = reinterpret_cast<Sensitivity>(gameModule + 0xCD5460);
     multipliers = reinterpret_cast<Multipliers>(gameModule + 0xCD6880);
     inDuck = reinterpret_cast<InDuck>(gameModule + 0xC652A0);
     getPosition = reinterpret_cast<GetVector>(GetProcAddress(engineModule,
         "?GetWorldPosition@IControlObject@@QEBA?AVvec3@@XZ"));
+    getCameraPosition = reinterpret_cast<GetVector>(GetProcAddress(engineModule,
+        "?GetPosition@IBaseCamera@@QEBA?BVvec3@@XZ"));
+    getCameraForward = reinterpret_cast<GetVector>(GetProcAddress(engineModule,
+        "?GetForwardVector@IBaseCamera@@QEBA?BVvec3@@XZ"));
+    getCameraUp = reinterpret_cast<GetVector>(GetProcAddress(engineModule,
+        "?GetUpVector@IBaseCamera@@QEBA?BVvec3@@XZ"));
+    getMeshElement = reinterpret_cast<GetMeshElement>(GetProcAddress(engineModule,
+        "?GetMeshElemFromBoneID@IModelObject@@QEBAHE@Z"));
+    isElementHidden = reinterpret_cast<ElementVisibility>(GetProcAddress(engineModule,
+        "?IsElementHidden@IModelObject@@QEBA_NH@Z"));
+    hideElement = reinterpret_cast<ElementVisibility>(GetProcAddress(engineModule,
+        "?HideElement@IModelObject@@QEAA_NH@Z"));
+    unhideElement = reinterpret_cast<ElementVisibility>(GetProcAddress(engineModule,
+        "?UnhideElement@IModelObject@@QEAA_NH@Z"));
+    vectorWorldToLocal = reinterpret_cast<TransformVector>(GetProcAddress(engineModule,
+        "?VectorWorldToLocal@IControlObject@@QEBA?AVvec3@@AEBV2@@Z"));
     getNearClip = reinterpret_cast<GetScalar>(GetProcAddress(engineModule,
         "?GetClipNear@IBaseCamera@@QEAAMXZ"));
     getFov = reinterpret_cast<GetScalar>(GetProcAddress(engineModule,
@@ -749,12 +1139,17 @@ bool EngineAdapter::Impl::install()
         "?FromForwardUpPos@IBaseCamera@@UEAAXAEBVvec3@@00@Z"));
     raytrace = reinterpret_cast<Raytrace>(GetProcAddress(engineModule,
         "?Raytrace@IGSObject@@QEAAEEPEAUSCollision@@AEBVvec3@@AEAV3@GPEAVIControlObject@@IIH@Z"));
-    if (!getPosition || !setTransform || !raytrace || !getNearClip || !getFov || !setFov ||
+    if (!getPosition || !getCameraPosition || !getCameraForward || !getCameraUp || !vectorWorldToLocal ||
+        !setTransform || !raytrace || !getNearClip || !getFov || !setFov ||
         !getAspect || !getProjection || !QueryPerformanceFrequency(&motionFrequency)) return false;
     constexpr unsigned char assistPrologue[] = {0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x6c,
         0x24,0x18,0x56,0x48,0x83,0xec,0x40,0x48};
     if (std::memcmp(gameModule + 0x3BA380, assistPrologue, sizeof(assistPrologue)) != 0) return false;
+    constexpr unsigned char movementPrologue[] = {0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x81,
+        0xec,0x80,0x00,0x00,0x00,0x0f,0x29,0x74};
+    if (std::memcmp(gameModule + 0xCDBCD0, movementPrologue, sizeof(movementPrologue)) != 0) return false;
     stockCamera = reinterpret_cast<CameraUpdate>(gameModule + 0x2CB410);
+    stockFirstPersonCamera = reinterpret_cast<CameraUpdate>(gameModule + 0x2BB220);
     stockLook = reinterpret_cast<LookUpdate>(gameModule + 0xCD0800);
     stockKeyboard = reinterpret_cast<Keyboard>(gameModule + 0x10C6D10);
     stockMouseButton = reinterpret_cast<MouseButton>(gameModule + 0x10C7390);
@@ -762,6 +1157,8 @@ bool EngineAdapter::Impl::install()
     current.store(this, std::memory_order_release);
     bool ok = cameraPatch.install(reinterpret_cast<void**>(gameModule + 0x155C7B8) + 9,
             reinterpret_cast<void*>(stockCamera), reinterpret_cast<void*>(cameraHook)) &&
+        firstPersonCameraPatch.install(reinterpret_cast<void**>(gameModule + 0x15590C8) + 9,
+            reinterpret_cast<void*>(stockFirstPersonCamera), reinterpret_cast<void*>(firstPersonCameraHook)) &&
         lookPatch.install(reinterpret_cast<void**>(gameModule + 0x180AE48) + 16,
             reinterpret_cast<void*>(stockLook), reinterpret_cast<void*>(lookHook)) &&
         keyboardPatch.install(reinterpret_cast<void**>(gameModule + 0x18FFD78) + 144,
@@ -792,10 +1189,24 @@ bool EngineAdapter::Impl::install()
         }
         ok = assistHookEnabled;
     }
+    if (ok) {
+        if (!movementHookCreated) {
+            movementHookCreated = MH_CreateHook(gameModule + 0xCDBCD0,
+                reinterpret_cast<void*>(movementInputHook), reinterpret_cast<void**>(&stockMovementInput)) == MH_OK;
+            if (movementHookCreated) movementHookModule = gameModule;
+        }
+        if (movementHookCreated && movementHookModule == gameModule)
+            movementHookEnabled = MH_EnableHook(gameModule + 0xCDBCD0) == MH_OK;
+        ok = movementHookEnabled;
+    }
+    if (ok) ok = reticle::install(gameModule);
+    if (ok) ok = interactions::install(gameModule, engineModule);
+    if (ok) ok = actionVisualClass.initialize(gameModule, this, actionLocalPlayer, actionClassRequested);
     if (!ok) {
         restoreHooks();
         current.store(nullptr, std::memory_order_release);
         while (callbacks.load(std::memory_order_acquire)) SwitchToThread();
+        if (!actionVisualClass.shutdown()) reportHookReleaseFailure();
         releaseAssistHook();
         return false;
     }
@@ -834,11 +1245,15 @@ void EngineAdapter::setBindings(const KeyBindings& keys)
 void EngineAdapter::activate()
 {
     std::lock_guard<std::recursive_mutex> lock(impl_->mutex);
+    reticle::setEligiblePlayer(nullptr);
+    impl_->restoreHiddenHead();
+    impl_->deferredActionToggle = false;
     impl_->enabled = true;
     impl_->lastTick = GetTickCount64();
     impl_->resetMotion();
     impl_->stableLookReady = false;
     impl_->lookPlayer = nullptr;
+    impl_->lookObject = nullptr;
     impl_->ownedView = false;
     impl_->ownerPlayer = impl_->ownerManager = impl_->lastVisual = nullptr;
     impl_->toggleHeld = down(impl_->keys.toggle);
@@ -873,6 +1288,7 @@ void EngineAdapter::shutdown()
     impl_->restoreHooks();
     Impl::current.store(nullptr, std::memory_order_release);
     while (Impl::callbacks.load(std::memory_order_acquire)) SwitchToThread();
+    if (!impl_->actionVisualClass.shutdown()) impl_->reportHookReleaseFailure();
     impl_->releaseAssistHook();
     impl_->installed = false;
     impl_->controller = nullptr;

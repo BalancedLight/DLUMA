@@ -15,6 +15,8 @@ using TraceFunction = TraceHit (*)(const Vec3& start, const Vec3& end, void* con
 class CameraMotion {
 public:
     void reset();
+    // Follow history remains intact while the native action camera owns position.
+    void seedResolved(Vec3 position);
     Vec3 follow(Vec3 desiredAnchor, float dt, bool smooth, float smoothingSeconds);
     CameraPose resolve(Vec3 currentAnchor, CameraPose proposed, float nearClip,
         float verticalFovRadians, float aspect, float dt, TraceFunction query, void* context);

@@ -1,7 +1,12 @@
 #include "../src/controller.h"
+#include "../src/interaction_selection.h"
 #include "../src/camera_motion.h"
+#include "../src/engine_actions.h"
 
+#include <array>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -61,6 +66,7 @@ CameraInput gameplay()
 {
     CameraInput input;
     input.focused = input.gameplay = input.available = true;
+    input.freeControlAvailable = true;
     return input;
 }
 
@@ -317,13 +323,142 @@ void settingsAndGeometry()
     require(near(zoom.update(aim, 0.0f).aimDistanceScale, 1.0f),
         "suspension clears temporary aim zoom");
 }
+template<class T, size_t N>
+void writeField(std::array<unsigned char, N>& bytes, size_t offset, T value)
+{
+    std::memcpy(bytes.data() + offset, &value, sizeof(value));
+}
+
+void actionObservation()
+{
+    alignas(void*) std::array<unsigned char, 3300> player{};
+    alignas(void*) std::array<unsigned char, 32> grab{};
+    alignas(void*) std::array<unsigned char, 32> stomp{};
+    alignas(void*) std::array<unsigned char, 80> defense{};
+    alignas(void*) std::array<unsigned char, 640> pvp{};
+    void* local = player.data();
+    writeField(player, 3032, grab.data());
+    writeField(player, 3112, stomp.data());
+    writeField(player, 3192, defense.data());
+    writeField(player, 3240, pvp.data());
+    require(!specialActionActive(nullptr) && !specialActionActive(local), "idle has no special action");
+    grab[16] = 1;
+    for (std::uint32_t type : {0u, 7u, 16u}) {
+        writeField(player, 1652, type);
+        require(specialActionActive(local), "accepted grab, finisher and throw select the action camera");
+    }
+    writeField(player, 1652, std::uint32_t{17});
+    require(!specialActionActive(local), "vehicle grab does not select the action camera");
+    grab[16] = 0;
+    stomp[16] = 1;
+    require(specialActionActive(local), "accepted stomp selects the action camera");
+    stomp[16] = 0;
+    defense[16] = 1;
+    for (std::uint32_t value : {5u, 6u, 7u}) {
+        writeField(defense, 56, value);
+        require(specialActionActive(local), "dropkick and recovery select the action camera");
+    }
+    for (std::uint32_t value : {1u, 4u, 8u, 10u}) {
+        writeField(defense, 56, value);
+        require(!specialActionActive(local), "ordinary kicks and slides do not select the action camera");
+    }
+    defense[16] = 0;
+    pvp[16] = 1;
+    writeField(pvp, 616, static_cast<void*>(pvp.data()));
+    writeField(pvp, 624, static_cast<void*>(grab.data()));
+    require(!specialActionActive(local), "another player as victim does not select the action camera");
+    writeField(pvp, 624, local);
+    require(specialActionActive(local), "local victim pounce selects the action camera");
+    pvp[16] = 0;
+    require(!specialActionActive(local), "finished pounce releases the action camera");
+}
 } // namespace
 
 int main()
 {
+    actionObservation();
     stateAndRestoration();
     orbitAndCombat();
     settingsAndGeometry();
+    InteractionCandidate candidates[] = {
+        {10, 1, 4.0f, 0.1f, true, true, true, true},
+        {20, 2, 3.0f, 0.2f, true, true, true, true},
+        {30, 3, 1.0f, 0.0f, false, true, true, true},
+        {40, 4, 1.0f, 0.0f, true, false, true, true},
+        {50, 5, 1.0f, 0.0f, true, true, true, false}};
+    require(selectInteraction(candidates, 5, 10) == 10, "valid current interaction stays selected");
+    candidates[0].usable = false;
+    require(selectInteraction(candidates, 5, 10) == 20, "invalid current target falls back to the best reachable visible target");
+    candidates[0].usable = true;
+    candidates[0].priority = candidates[1].priority;
+    candidates[0].distanceSquared = 2.0f;
+    require(selectInteraction(candidates, 5, 0) == 10, "nearer target wins within equal priority");
+    candidates[1].distanceSquared = 2.0f;
+    candidates[1].viewAngle = 0.05f;
+    require(selectInteraction(candidates, 5, 0) == 20, "view angle breaks equal-distance ties");
+    bool stillValid = false;
+    const auto revalidate = [](std::uint64_t, void* context) { return *static_cast<bool*>(context); };
+    require(!canActivateInteraction(20, revalidate, &stillValid), "stale target cannot activate");
+    stillValid = true;
+    require(canActivateInteraction(20, revalidate, &stillValid) && !canActivateInteraction(0, revalidate, &stillValid),
+        "activation requires a current valid target");
+    const auto forward = cameraRelativeMovement(0.0f, 1.0f, 1.57079632679f);
+    require(near(forward.x, 1.0f) && near(forward.z, 0.0f), "forward movement follows camera yaw");
+    const auto diagonal = cameraRelativeMovement(1.0f, 1.0f, 0.0f);
+    require(near(std::hypot(diagonal.x, diagonal.z), 1.0f) && diagonal.x < 0.0f,
+        "diagonal movement is normalized and right follows screen right");
+    ControllerConfig cfg;
+    cfg.freeCamera = true;
+    cfg.firstPersonActions = true;
+    Controller free(cfg);
+    auto input = gameplay();
+    input.togglePressed = true;
+    free.update(input, 0.0f);
+    input.togglePressed = false;
+    input.mouseYawDelta = 1.0f;
+    auto out = free.update(input, 0.01f);
+    require(out.captureMouse && near(out.orbitYaw, 1.0f), "free camera rotates without orbit modifier");
+    input.mouseYawDelta = 0.0f;
+    input.bodyYaw = 0.5f;
+    out = free.update(input, 0.25f);
+    require(near(out.orbitYaw + input.bodyYaw, 1.0f), "body turning retains independent camera yaw");
+    input.freeControlAvailable = false;
+    input.mouseYawDelta = 0.8f;
+    out = free.update(input, 0.01f);
+    require(out.applyCamera && !out.captureMouse && near(out.orbitYaw + input.bodyYaw, 1.0f),
+        "another look controller releases capture without losing the selected view");
+    input.freeControlAvailable = true;
+    input.mouseYawDelta = 0.0f;
+    input.bodyPitch = 0.3f;
+    out = free.update(input, 0.01f);
+    require(near(out.orbitPitch + input.bodyPitch, 0.0f), "body pitch retains independent camera elevation");
+    input.suspended = true;
+    free.update(input, 0.01f);
+    input.suspended = false;
+    input.bodyYaw = -0.5f;
+    out = free.update(input, 0.01f);
+    require(near(out.orbitYaw + input.bodyYaw, 1.0f), "scripted camera resumes the same free view");
+    input.specialActionActive = input.actionCameraAvailable = true;
+    out = free.update(input, 0.12f);
+    require(near(out.specialActionBlend, 1.0f) && !out.captureMouse, "committed action enters first person");
+    input.specialActionActive = false;
+    out = free.update(input, 0.1f);
+    require(near(out.specialActionBlend, 0.5f), "cancelled action blends back");
+    out = free.update(input, 0.1f);
+    require(near(out.specialActionBlend, 0.0f), "action transition finishes");
+    CameraPose third, first;
+    third.position = {0.0f, 1.0f, -2.0f};
+    first.position = {0.0f, 2.0f, 0.0f};
+    first.forward = {0.0f, 0.0f, -1.0f};
+    const auto atStart = blendCameraPoses(third, first, 0.0f);
+    const auto atEnd = blendCameraPoses(third, first, 1.0f);
+    require(near(atStart.position.z, -2.0f) && near(atStart.forward.z, 1.0f) &&
+        near(atEnd.position.y, 2.0f) && near(atEnd.forward.z, -1.0f),
+        "action camera blend reaches both views");
+    const auto middle = blendCameraPoses(third, first, 0.5f);
+    require(std::isfinite(middle.forward.x) && near(std::hypot(middle.forward.x, middle.forward.z), 1.0f) &&
+        near(middle.forward.x, 1.0f) && near(middle.up.y, 1.0f),
+        "opposing views rotate across a stable horizontal arc");
     std::puts("Third Person controller: 3 core scenarios passed.");
     return 0;
 }

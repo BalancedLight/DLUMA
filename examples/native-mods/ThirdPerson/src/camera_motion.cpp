@@ -128,6 +128,17 @@ void CameraMotion::reset()
     haveResolved_ = false;
 }
 
+void CameraMotion::seedResolved(Vec3 position)
+{
+    if (!finite(position)) {
+        haveResolved_ = false;
+        return;
+    }
+    previousResolved_ = position;
+    collisionFraction_ = 1.0f;
+    haveResolved_ = true;
+}
+
 Vec3 CameraMotion::follow(Vec3 desiredAnchor, float dt, bool smooth, float smoothingSeconds)
 {
     if (!finite(desiredAnchor)) return followedAnchor_;

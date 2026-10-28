@@ -72,6 +72,12 @@ void Controller::configure(const ControllerConfig& config)
     config_.smoothingSeconds = std::isfinite(config.smoothingSeconds)
         ? std::clamp(config.smoothingSeconds, 0.02f, 0.3f) : 0.12f;
     config_.aimFirstPerson = config.aimFirstPerson;
+    if (config_.freeCamera != config.freeCamera) {
+        if (config_.freeCamera && freeSeeded_) orbiting_ = true;
+        freeSeeded_ = false;
+    }
+    config_.freeCamera = config.freeCamera;
+    config_.firstPersonActions = config.firstPersonActions;
     config_.aimDistanceReduction = std::isfinite(config.aimDistanceReduction)
         ? std::clamp(config.aimDistanceReduction, 0.0f, 0.6f) : 0.20f;
     config_.aimMagnification = std::isfinite(config.aimMagnification)
@@ -113,11 +119,33 @@ CameraOutput Controller::update(const CameraInput& input, float seconds)
     if (active && input.togglePressed) {
         requested_ = !requested_;
         clearOrbit(input.orbitHeld);
+        freeSeeded_ = false;
     }
 
     if (!active || !requested_) {
-        clearOrbit(input.orbitHeld);
+        if (!config_.freeCamera || !requested_) {
+            clearOrbit(input.orbitHeld);
+            freeSeeded_ = false;
+        } else {
+            orbiting_ = returning_ = false;
+        }
         result.state = requested_ ? CameraState::Suspended : CameraState::FirstPerson;
+    } else if (config_.freeCamera) {
+        result.state = CameraState::Orbit;
+        if (!freeSeeded_ && input.freeControlAvailable) {
+            freeYaw_ = wrap(static_cast<double>(finiteOrZero(input.bodyYaw)) + config_.horizontalAngle + orbitYaw_);
+            freePitch_ = std::clamp(finiteOrZero(input.bodyPitch) - config_.verticalAngle + orbitPitch_, -kPitchLimit, kPitchLimit);
+            freeSeeded_ = true;
+        }
+        if (freeSeeded_ && input.freeControlAvailable && !(input.aimHeld && config_.aimFirstPerson) && !input.specialActionActive) {
+            freeYaw_ = wrap(static_cast<double>(freeYaw_) + finiteOrZero(input.mouseYawDelta));
+            freePitch_ = std::clamp(freePitch_ + finiteOrZero(input.mousePitchDelta), -kPitchLimit, kPitchLimit);
+        }
+        if (freeSeeded_) {
+            orbitYaw_ = wrap(static_cast<double>(freeYaw_) - finiteOrZero(input.bodyYaw) - config_.horizontalAngle);
+            orbitPitch_ = freePitch_ - finiteOrZero(input.bodyPitch) + config_.verticalAngle;
+        }
+        returning_ = orbiting_ = false;
     } else {
         result.state = CameraState::Shoulder;
         if (input.aimOrFire) {
@@ -150,7 +178,8 @@ CameraOutput Controller::update(const CameraInput& input, float seconds)
                     clearOrbit(orbitBlocked_);
             }
         }
-
+    }
+    if (active && requested_) {
         const Offsets before = offsets_;
         if (input.orbitHeld) {
             if (input.resetPressed) {
@@ -185,9 +214,18 @@ CameraOutput Controller::update(const CameraInput& input, float seconds)
     result.aimDistanceScale = 1.0f - config_.aimDistanceReduction * aimBlend_;
     result.aimMagnification = 1.0f + (config_.aimMagnification - 1.0f) * aimBlend_;
     result.temporaryFirstPerson = active && requested_ && input.aimHeld && config_.aimFirstPerson;
+    const bool actionTarget = active && requested_ && config_.firstPersonActions &&
+        input.specialActionActive && input.actionCameraAvailable;
+    if (!active || !requested_) actionBlend_ = 0.0f;
+    else if (actionTarget) actionBlend_ = std::min(1.0f, actionBlend_ + dt / 0.12f);
+    else actionBlend_ = std::max(0.0f, actionBlend_ - dt / 0.20f);
+    result.specialActionBlend = actionBlend_;
+    result.freeCamera = config_.freeCamera;
+    result.firstPersonActions = config_.firstPersonActions;
     result.thirdPersonRequested = requested_;
     result.applyCamera = active && requested_;
-    result.captureMouse = result.state == CameraState::Orbit;
+    result.captureMouse = result.state == CameraState::Orbit && !result.temporaryFirstPerson && !input.specialActionActive &&
+        (!config_.freeCamera || input.freeControlAvailable);
     result.smoothCamera = config_.smoothCamera;
     result.smoothingSeconds = config_.smoothingSeconds;
     result.offsets = offsets_;
@@ -211,6 +249,8 @@ void Controller::resetSession()
 {
     requested_ = false;
     aimBlend_ = 0.0f;
+    actionBlend_ = 0.0f;
+    freeSeeded_ = false;
     clearOrbit(true);
 }
 
@@ -262,6 +302,57 @@ Vec3 weaponAimDirection(const Vec3& origin, const Vec3& aimTarget, const Vec3& c
     if (!std::isfinite(advance) || advance <= 0.001)
         return forward;
     return aimDirection(origin, aimTarget, forward);
+}
+
+Vec3 cameraRelativeMovement(float side, float forward, float cameraYaw)
+{
+    side = axis(side);
+    forward = axis(forward);
+    const float length = std::hypot(side, forward);
+    if (length > 1.0f) { side /= length; forward /= length; }
+    const float yaw = finiteOrZero(cameraYaw);
+    return {-std::cos(yaw) * side + std::sin(yaw) * forward, 0.0f,
+        std::sin(yaw) * side + std::cos(yaw) * forward};
+}
+
+CameraPose blendCameraPoses(const CameraPose& third, const CameraPose& first, float amount)
+{
+    const auto valid = [](Vec3 v) {
+        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+    };
+    const auto dot = [](Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
+    const auto scale = [](Vec3 a, float s) { return Vec3{a.x * s, a.y * s, a.z * s}; };
+    const auto add = [](Vec3 a, Vec3 b) { return Vec3{a.x + b.x, a.y + b.y, a.z + b.z}; };
+    const auto cross = [](Vec3 a, Vec3 b) {
+        return Vec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+    };
+    if (!std::isfinite(amount) || !valid(third.position) || !valid(first.position) ||
+        !valid(third.forward) || !valid(first.forward) || !valid(third.up) || !valid(first.up))
+        return third;
+    const Vec3 a = normalized(third.forward);
+    const Vec3 b = normalized(first.forward);
+    if (!nonzero(a) || !nonzero(b)) return third;
+    const float t = std::clamp(amount, 0.0f, 1.0f);
+    const float cosine = std::clamp(dot(a, b), -1.0f, 1.0f);
+    Vec3 forward;
+    if (cosine > 0.9999f) {
+        forward = normalized(add(scale(a, 1.0f - t), scale(b, t)));
+    } else {
+        Vec3 tangent = normalized(add(b, scale(a, -cosine)));
+        if (!nonzero(tangent)) {
+            tangent = normalized(cross({0.0f, 1.0f, 0.0f}, a));
+            if (!nonzero(tangent)) tangent = normalized(cross({1.0f, 0.0f, 0.0f}, a));
+        }
+        const float angle = std::acos(cosine) * t;
+        forward = normalized(add(scale(a, std::cos(angle)), scale(tangent, std::sin(angle))));
+    }
+    Vec3 up = add(scale(third.up, 1.0f - t), scale(first.up, t));
+    up = normalized(add(up, scale(forward, -dot(up, forward))));
+    if (!nonzero(up)) {
+        const Vec3 reference = std::fabs(forward.y) < 0.9f ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
+        up = normalized(add(reference, scale(forward, -dot(reference, forward))));
+    }
+    return {add(scale(third.position, 1.0f - t), scale(first.position, t)), forward, up};
 }
 
 } // namespace thirdperson
