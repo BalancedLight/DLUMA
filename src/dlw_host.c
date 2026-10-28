@@ -6,6 +6,7 @@
 #include "dlw_discord_presence.h"
 #include "dlw_dual_host_runtime.h"
 #include "dlw_log.h"
+#include "dlw_nightly.h"
 #include "dlw_lua_discovery_internal.h"
 #include "dlw_path_security.h"
 #include "dlw_project_owner_identity.h"
@@ -876,6 +877,7 @@ int dluma_host_start(void)
         dluma_log_line("WARN", "Lua execution is unavailable for this session; loader forwarding and metadata discovery continue.");
     if (!dluma_shutdown_hooks_start())
         dluma_log_line("WARN", "Orderly menu-quit hook unavailable; the loader will still use the window-close path when possible.");
+    dlw_nightly_initialize(dluma_read_ini_u32(L"loader", L"nightly_updates_enabled", 0) != 0);
     ui_started = dluma_ui_start();
     if (!ui_started)
         dluma_log_line("WARN", "Game-thread UI timer could not be installed; lifecycle discovery will continue.");
@@ -920,6 +922,7 @@ int dluma_host_stop(void)
     if (dluma_atomic_compare_exchange(
             &g_dluma.retained_for_process_exit, 1, 1) != 0)
         return 0;
+    dlw_nightly_shutdown();
     dluma_request_quiesce("ShutdownGameScriptDLL");
     dluma_analysis_bridge_quiesce();
     dluma_discord_presence_quiesce();

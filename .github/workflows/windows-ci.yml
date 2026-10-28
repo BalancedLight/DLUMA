@@ -298,3 +298,79 @@ jobs:
             bin/x64/Debug/*.pdb
             build/package/Release/**
             build/package/Debug/**
+
+  publish-nightly:
+    name: Publish latest main build
+    needs: build-and-test
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: dluma-nightly-release
+      cancel-in-progress: false
+    steps:
+      - name: Download the verified package from this run
+        uses: actions/download-artifact@v7
+        with:
+          name: dluma-release-${{ github.sha }}
+          path: release
+
+      - name: Verify and publish the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          shopt -s nullglob
+          archives=(DLUMA-*.zip)
+          if [[ ${#archives[@]} -ne 1 || ! -f SHA256SUMS ]]; then
+            echo "Expected one versioned archive and SHA256SUMS." >&2
+            exit 1
+          fi
+          sed -i 's/\r$//' SHA256SUMS
+          if [[ $(wc -l < SHA256SUMS) -ne 1 ]] || ! grep -Fxq "$(awk '{print $1}' SHA256SUMS)  ${archives[0]}" SHA256SUMS; then
+            echo "SHA256SUMS does not identify the release archive." >&2
+            exit 1
+          fi
+          sha256sum --check SHA256SUMS
+          archive="${archives[0]%.zip}-$BUILD_SHA.zip"
+          mv "${archives[0]}" "$archive"
+          sha256sum "$archive" > SHA256SUMS
+          digest=$(cut -d ' ' -f 1 SHA256SUMS)
+          ARCHIVE="$archive" DIGEST="$digest" python3 -c 'import json, os; print(json.dumps({"schema": "dluma.nightly.v1", "commit": os.environ["BUILD_SHA"], "filename": os.environ["ARCHIVE"], "sha256": os.environ["DIGEST"]}, indent=2))' \
+            > nightly.json
+
+          current_sha=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [[ "$current_sha" != "$BUILD_SHA" ]]; then
+            echo "A newer commit is on main; skipping this release."
+            exit 0
+          fi
+
+          cat > release-notes.md <<EOF
+          Latest verified build from main.
+
+          Commit: $BUILD_SHA
+          Workflow run: $RUN_URL
+          EOF
+          if gh release view nightly --json isPrerelease --jq .isPrerelease > prerelease.txt 2>/dev/null; then
+            if [[ $(cat prerelease.txt) != true ]]; then
+              echo "The nightly release exists but is not a prerelease." >&2
+              exit 1
+            fi
+          else
+            gh release create nightly --target "$BUILD_SHA" --title "Latest main build" --notes-file release-notes.md --prerelease
+          fi
+          gh release upload nightly "$archive" SHA256SUMS --clobber
+          gh release upload nightly nightly.json --clobber
+          gh release edit nightly --title "Latest main build" --notes-file release-notes.md --prerelease
+          while IFS= read -r asset; do
+            if [[ "$asset" == DLUMA-*.zip && "$asset" != "$archive" ]]; then
+              gh release delete-asset nightly "$asset" --yes
+            fi
+          done < <(gh release view nightly --json assets --jq '.assets[].name')

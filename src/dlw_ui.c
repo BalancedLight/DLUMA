@@ -6,6 +6,7 @@
 #include "dlw_asset_mods.h"
 #include "dlw_custom_main_menu_runtime.h"
 #include "dlw_discord_presence.h"
+#include "dlw_nightly.h"
 #include "dlw_steam_presence.h"
 #include "dlw_dual_host_runtime.h"
 #include "dlw_frontend_level.h"
@@ -1250,6 +1251,14 @@ static ULONGLONG g_dluma_ui_quest_log_last_refresh_ms;
 static volatile LONG g_dluma_quest_log_deferred_populate;
 static volatile LONG g_dluma_quest_hud_unavailable_log_once;
 
+static void *g_dluma_nightly_popup;
+static void *g_dluma_nightly_text;
+static void *g_dluma_nightly_yes;
+static void *g_dluma_nightly_no;
+static void *g_dluma_nightly_ok;
+static ULONGLONG g_dluma_nightly_stable_since;
+static int g_dluma_nightly_offer_kind;
+
 static void *g_dluma_new_global_main_owner;
 static void *g_dluma_new_global_main_root;
 static void *g_dluma_new_global_popup;
@@ -1582,6 +1591,10 @@ static const DlumaLoaderSettingDefinition g_dluma_loader_settings[] = {
 {L"loader", L"developer_mode", L"0", "DLUMA_Settings_loader_developer_mode_Label", "DEVELOPER MODE",
      DLUMA_LOADER_SETTING_BOOL, 0, 1, 1, 1, DLUMA_LOADER_CATEGORY_GENERAL,
      "DLUMA_Settings_loader_developer_mode_Hint", "AFTER RESTART, ENABLES CHEATS AND DEVELOPER KEYS, SKIPS STARTUP LOGOS AND THE LEVEL-START WAIT ON SUPPORTED PLAYER BUILDS, AND SHOWS LUA LIMITS."},
+{L"loader", L"nightly_updates_enabled", L"0", "DLUMA_Settings_loader_nightly_updates_enabled_Label", "Nightly updates",
+     DLUMA_LOADER_SETTING_BOOL, 0, 1, 1, 1, DLUMA_LOADER_CATEGORY_GENERAL,
+     "DLUMA_Settings_loader_nightly_updates_enabled_Hint",
+     "Check for nightly builds and offer to install them. Turning this off offers to restore the previous build."},
 {L"loader", L"discord_rich_presence_enabled", L"1",
      "DLUMA_Settings_loader_discord_rich_presence_enabled_Label", "Discord Rich Presence",
      DLUMA_LOADER_SETTING_BOOL, 0, 1, 1, 1, DLUMA_LOADER_CATEGORY_GENERAL,
@@ -6213,6 +6226,9 @@ static int dluma_ui_settings_write_value(
             dluma_wstricmp(definition->key, L"developer_mode") == 0)
             g_dluma.config.developer_mode =
                 (unsigned char)(dluma_parse_u32(value, 0) ? 1 : 0);
+        else if (dluma_wstricmp(definition->section, L"loader") == 0 &&
+                 dluma_wstricmp(definition->key, L"nightly_updates_enabled") == 0)
+            dlw_nightly_set_enabled(dluma_parse_u32(value, 0) != 0);
         else if (dluma_wstricmp(definition->section, L"loader") == 0 &&
                  dluma_wstricmp(
                      definition->key,
@@ -24639,6 +24655,13 @@ static void dluma_ui_new_global_defer(const char *reason, ULONGLONG now)
 static void dluma_ui_new_global_clear_controls(void)
 {
     dluma_ui_first_launch_clear_controls();
+    g_dluma_nightly_popup = 0;
+    g_dluma_nightly_text = 0;
+    g_dluma_nightly_yes = 0;
+    g_dluma_nightly_no = 0;
+    g_dluma_nightly_ok = 0;
+    g_dluma_nightly_stable_since = 0;
+    g_dluma_nightly_offer_kind = 0;
     g_dluma_new_global_main_owner = 0;
     g_dluma_new_global_main_root = 0;
     g_dluma_new_global_popup = 0;
@@ -25119,12 +25142,116 @@ static void dluma_ui_new_global_hide_popup(void)
            sizeof(g_dluma_new_global_pending_batch));
 }
 
+static void dluma_ui_nightly_hide(void)
+{
+    void *mods_button = g_dluma_new_global_main_root
+        ? dluma_ui_find_required_child(g_dluma_new_global_main_root, "B_Mods") : 0;
+    dluma_ui_set_element_visible(g_dluma_nightly_popup, 0);
+    if (g_dluma_set_element_can_focus) {
+        g_dluma_set_element_can_focus(g_dluma_nightly_yes, 0);
+        g_dluma_set_element_can_focus(g_dluma_nightly_no, 0);
+        g_dluma_set_element_can_focus(g_dluma_nightly_ok, 0);
+    }
+    g_dluma_nightly_offer_kind = 0;
+    if (mods_button)
+        dluma_ui_focus_element(mods_button);
+}
+
+static int dluma_ui_nightly_handle_button(void *button)
+{
+    int accepted;
+    if (!g_dluma_nightly_offer_kind)
+        return 0;
+    accepted = g_dluma_nightly_offer_kind != DLW_NIGHTLY_ERROR &&
+        dluma_ui_object_id_equals(button, "B_DLUMANightlyYes");
+    if (!accepted &&
+        !(g_dluma_nightly_offer_kind != DLW_NIGHTLY_ERROR &&
+          dluma_ui_object_id_equals(button, "B_DLUMANightlyNo")) &&
+        !(g_dluma_nightly_offer_kind == DLW_NIGHTLY_ERROR &&
+          dluma_ui_object_id_equals(button, "B_DLUMANightlyOk")) &&
+        !dluma_ui_object_id_equals(button, "B_Back") &&
+        !dluma_ui_object_id_equals(button, "ButtonBack") &&
+        !dluma_ui_object_id_equals(button, "ID_BACK"))
+        return 1;
+    dluma_ui_nightly_hide();
+    dlw_nightly_respond(accepted);
+    return 1;
+}
+
+static void dluma_ui_nightly_tick(void *level, ULONGLONG now)
+{
+    const DlwNightlyOffer *offer;
+    char message[512];
+    char body[384];
+    int is_error;
+    offer = dlw_nightly_get_offer();
+    if (g_dluma_nightly_offer_kind)
+        return;
+    if (!g_dluma_get_element_visible || !g_dluma_set_element_visible ||
+        !g_dluma_set_element_focus || !g_dluma_set_element_can_focus ||
+        !dluma_ui_new_global_resolve_main(level))
+        return;
+    if (!g_dluma_nightly_stable_since) {
+        g_dluma_nightly_stable_since = now;
+        return;
+    }
+    if (now - g_dluma_nightly_stable_since < 1200 ||
+        dluma_first_launch_is_pending() || g_dluma_first_launch_visible ||
+        g_dluma_first_launch_declined ||
+        (g_dluma_first_launch_popup &&
+         dluma_ui_is_element_visible(g_dluma_first_launch_popup)) ||
+        g_dluma_mods_transition_screen_id >= 0 ||
+        g_dluma_mods_native_visible_logged ||
+        g_dluma_new_global_popup_visible || g_dluma_new_global_waiting_visibility ||
+        dluma_ui_is_element_visible(g_dluma_new_global_popup) ||
+        dluma_ui_stock_popup_visible(g_dluma_new_global_main_root))
+        return;
+    if (!offer || offer->kind == DLW_NIGHTLY_NONE)
+        return;
+    if (offer->kind != DLW_NIGHTLY_UPDATE && offer->kind != DLW_NIGHTLY_RESTORE &&
+        offer->kind != DLW_NIGHTLY_ERROR)
+        return;
+    g_dluma_nightly_popup = dluma_ui_find_required_child(g_dluma_new_global_main_root, "G_DLUMANightlyPopup");
+    g_dluma_nightly_text = dluma_ui_find_required_child(g_dluma_new_global_main_root, "T_DLUMANightlyText");
+    g_dluma_nightly_yes = dluma_ui_find_required_child(g_dluma_new_global_main_root, "B_DLUMANightlyYes");
+    g_dluma_nightly_no = dluma_ui_find_required_child(g_dluma_new_global_main_root, "B_DLUMANightlyNo");
+    g_dluma_nightly_ok = dluma_ui_find_required_child(g_dluma_new_global_main_root, "B_DLUMANightlyOk");
+    if (!g_dluma_nightly_popup || !g_dluma_nightly_text || !g_dluma_nightly_yes ||
+        !g_dluma_nightly_no || !g_dluma_nightly_ok)
+        return;
+    is_error = offer->kind == DLW_NIGHTLY_ERROR;
+    if (offer->kind == DLW_NIGHTLY_UPDATE) {
+        char commit[41];
+        dluma_ui_localize_text("DLUMA_Nightly_UpdateBody", "Install the available nightly build after the game closes? Commit: ", body, DLUMA_ARRAY_COUNT(body));
+        dluma_str_copy(message, DLUMA_ARRAY_COUNT(message), body);
+        memcpy(commit, offer->commit, sizeof(commit));
+        commit[sizeof(commit) - 1] = 0;
+        dluma_ui_html_append_escaped(message, DLUMA_ARRAY_COUNT(message), commit, "nightly_commit");
+    } else if (is_error) {
+        dluma_ui_localize_text("DLUMA_Nightly_ErrorBody", "Could not check for updates or start the update. Please try again.", message, DLUMA_ARRAY_COUNT(message));
+    } else {
+        dluma_ui_localize_text("DLUMA_Nightly_RestoreBody", "Restore the previous build after the game closes?", message, DLUMA_ARRAY_COUNT(message));
+    }
+    dluma_ui_set_element_popup_text(g_dluma_nightly_text, message);
+    dluma_ui_set_element_visible(g_dluma_nightly_yes, !is_error);
+    dluma_ui_set_element_visible(g_dluma_nightly_no, !is_error);
+    dluma_ui_set_element_visible(g_dluma_nightly_ok, is_error);
+    g_dluma_set_element_can_focus(g_dluma_nightly_yes, (unsigned char)!is_error);
+    g_dluma_set_element_can_focus(g_dluma_nightly_no, (unsigned char)!is_error);
+    g_dluma_set_element_can_focus(g_dluma_nightly_ok, (unsigned char)is_error);
+    g_dluma_nightly_offer_kind = offer->kind;
+    dluma_ui_set_element_visible(g_dluma_nightly_popup, 1);
+    dluma_ui_focus_element(is_error ? g_dluma_nightly_ok : g_dluma_nightly_no);
+}
+
 static void dluma_ui_new_global_tick(void *level, ULONGLONG now)
 {
     DlumaGlobalUnseenBatch batch;
     char count[32];
     char safe_name[100];
     char message[512];
+    if (g_dluma_nightly_offer_kind)
+        return;
     if (!dluma_lua_snapshot_unseen_batch(&batch) || !batch.should_prompt)
     {
         if (!g_dluma_new_global_popup_visible &&
@@ -25422,6 +25549,8 @@ static void __fastcall dluma_ui_menu_button_hook(
     dluma_ui_note_live_frontend_screen(menu_main);
     if (!g_dluma_menu_button_stopping && !g_dluma.stop_requested)
         handled = dluma_ui_first_launch_handle_button(button);
+    if (!handled && !g_dluma_menu_button_stopping && !g_dluma.stop_requested)
+        handled = dluma_ui_nightly_handle_button(button);
     if (!handled && !g_dluma_menu_button_stopping && !g_dluma.stop_requested)
         handled = dluma_ui_new_global_handle_button(
             menu_main, button, event_code, original);
@@ -27186,8 +27315,10 @@ static void dluma_ui_game_thread_tick_impl(unsigned int tick_source)
 
     if (dluma_ui_startup_recovery_prompt_tick(now))
         goto done;
-    if (!dluma_first_launch_is_pending())
+    if (!dluma_first_launch_is_pending()) {
         dluma_ui_new_global_tick(level, now);
+        dluma_ui_nightly_tick(level, now);
+    }
     if (g_dluma_ui_registered_level == level && g_dluma_ui_screen_id >= 0)
     {
         dluma_ui_observe_native_mods_screen(level);

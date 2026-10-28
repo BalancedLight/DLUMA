@@ -19,6 +19,7 @@ copy /y "%PACKAGE%\LICENSE" "%WORKSHOP%\DLUMA\mods\" >nul || exit /b 1
 copy /y "%PACKAGE%\THIRD_PARTY_NOTICES.md" "%WORKSHOP%\DLUMA\mods\" >nul || exit /b 1
 copy /y "%PACKAGE%\LICENSE_LUA_5.4.8.txt" "%WORKSHOP%\DLUMA\mods\" >nul || exit /b 1
 copy /y "%PACKAGE%\dluma_discord_presence.dll" "%WORKSHOP%\DLUMA\mods\" >nul || exit /b 1
+copy /y "%PACKAGE%\dluma_nightly_updater.exe" "%WORKSHOP%\DLUMA\mods\" >nul || exit /b 1
 xcopy /e /i /y "%PACKAGE%\dluma_runtime" "%WORKSHOP%\DLUMA\mods\dluma_runtime" >nul || exit /b 1
 if not exist "%WORKSHOP%\DLUMA\mods\dluma.ini" copy /y "%~dp0config\dluma.ini" "%WORKSHOP%\DLUMA\mods\" >nul || exit /b 1
 echo Installed loader to: %WORKSHOP%\DLUMA\mods

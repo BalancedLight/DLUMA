@@ -28,6 +28,9 @@ def main() -> int:
     args = parser.parse_args()
 
     package_dir = args.package_dir.resolve()
+    if any(path.is_file() and path.name.casefold() == "dluma.ini"
+           for path in package_dir.rglob("*")):
+        raise SystemExit("release packages must not contain user configuration: dluma.ini")
     expected = {
         args.mod_name,
         "LICENSE",
@@ -36,6 +39,7 @@ def main() -> int:
         "dluma_lua54.dll",
         "LICENSE_LUA_5.4.8.txt",
         "dluma_discord_presence.dll",
+        "dluma_nightly_updater.exe",
     }
     if not package_dir.is_dir():
         raise SystemExit(f"package directory does not exist: {package_dir}")

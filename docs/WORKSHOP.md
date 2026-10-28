@@ -4,6 +4,8 @@ Build and check a Release package before uploading. Keep the source repository, 
 
 ## Prepare a release
 
+Release packages and Workshop staging exclude the user's `dluma.ini`. Keep installation-specific settings out of upload content; the loader creates its defaults as needed, and updates preserve existing settings.
+
 From an x64 Visual Studio Native Tools prompt at the repository root:
 
 ```bat
@@ -11,7 +13,7 @@ build_windows_msvc.bat Release Offline
 python tools/prepare_release.py --package-dir build/package/Release --output-dir release
 ```
 
-This creates the versioned release ZIP and `SHA256SUMS`. Keep those files with the release notes. The complete runtime payload is in `build/package/Release/`.
+The Release build creates or refreshes `release/workshop/content/mods/`; it does not create upload metadata. The command creates the versioned release ZIP and `SHA256SUMS`. Keep those files with the release notes. The complete runtime payload is in `build/package/Release/`.
 
 For configurable upload metadata, copy `config/workshop.example.json` to the ignored `config/workshop.local.json`, fill in the title, description, preview, visibility, and Workshop item ID, then run:
 
@@ -19,7 +21,7 @@ For configurable upload metadata, copy `config/workshop.example.json` to the ign
 python tools/prepare_release.py --package-dir build/package/Release --output-dir release --workshop-config config/workshop.local.json
 ```
 
-The command creates `release/workshop/content/mods/` and `release/workshop/workshop.vdf`. The JSON accepts `publishedfileid`, `visibility`, `title`, `description`, `changenote`, and an optional `previewfile` path relative to the JSON file. Visibility defaults to `private`. The command prepares files without logging in to Steam or uploading them. Keep Steam credentials out of configuration and source control.
+The command creates `release/workshop/content/mods/` and `release/workshop/workshop.vdf`. Later Release builds refresh the content in this recognized staging directory while preserving the existing VDF, preview, and other metadata. README files are omitted from the release ZIP and Workshop content; licenses and third-party notices remain included. The JSON accepts `publishedfileid`, `visibility`, `title`, `description`, `changenote`, and an optional `previewfile` path relative to the JSON file. Visibility defaults to `private`. The command prepares files without logging in to Steam or uploading them. Keep Steam credentials out of configuration and source control.
 
 ## Publish through Developer Tools
 

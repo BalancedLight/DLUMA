@@ -30,7 +30,7 @@ def package_files(package: Path) -> list[Path]:
     paths = sorted(package.rglob("*"), key=lambda path: path.relative_to(package).as_posix().casefold())
     if any(path.is_symlink() for path in paths):
         raise ValueError("release packages must not contain symbolic links")
-    return [path for path in paths if path.is_file()]
+    return [path for path in paths if path.is_file() and not is_readme(path.name)]
 
 
 def write_archive(package: Path, output: Path, files: list[Path]) -> None:
@@ -52,6 +52,60 @@ def vdf_value(value: object) -> str:
     if "\0" in text:
         raise ValueError("Workshop metadata must not contain NUL characters")
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "").replace("\n", "\\n") + '"'
+
+
+def is_readme(name: str) -> bool:
+    return name.casefold() == "readme" or name.casefold().startswith("readme.")
+
+
+def ignore_readmes(directory: str, names: list[str]) -> set[str]:
+    return {name for name in names if is_readme(name)}
+
+
+def refresh_workshop(package: Path, output: Path) -> Path | None:
+    """Refresh only the generated payload, retaining upload metadata and preview."""
+    destination = output / "workshop"
+    if not destination.exists() and not destination.is_symlink():
+        output.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".dluma-workshop-", dir=output) as temporary:
+            staged = Path(temporary) / "workshop"
+            shutil.copytree(package, staged / "content" / "mods", ignore=ignore_readmes)
+            (staged / ".dluma-staging").write_text("DLUMA Workshop release staging\n", encoding="utf-8")
+            staged.replace(destination)
+        return destination
+    marker = destination / ".dluma-staging"
+    if (destination.is_symlink() or not destination.is_dir() or marker.is_symlink()
+            or not marker.is_file() or marker.read_text(encoding="utf-8") != "DLUMA Workshop release staging\n"):
+        raise ValueError("Workshop output already exists and was not created by this tool")
+    content = destination / "content"
+    mods = content / "mods"
+    if content.is_symlink() or mods.is_symlink() or not content.is_dir():
+        raise ValueError("Workshop content must be a normal directory")
+    temporary = Path(tempfile.mkdtemp(prefix=".dluma-refresh-", dir=destination))
+    preserve_backup = False
+    try:
+        staged = temporary / "mods"
+        backup = temporary / "previous-mods"
+        shutil.copytree(package, staged, ignore=ignore_readmes)
+        if mods.exists():
+            if not mods.is_dir():
+                raise ValueError("Workshop mods destination must be a directory")
+            mods.replace(backup)
+        try:
+            staged.replace(mods)
+        except OSError as error:
+            if backup.exists():
+                try:
+                    backup.replace(mods)
+                except OSError as rollback_error:
+                    preserve_backup = True
+                    raise OSError(f"Workshop refresh failed and the previous payload could not be restored. "
+                                  f"Previous payload retained at {backup}: {rollback_error}") from error
+            raise
+    finally:
+        if not preserve_backup:
+            shutil.rmtree(temporary)
+    return destination
 
 
 def stage_workshop(package: Path, output: Path, config_path: Path) -> Path:
@@ -86,7 +140,7 @@ def stage_workshop(package: Path, output: Path, config_path: Path) -> Path:
             raise ValueError("Workshop output already exists and was not created by this tool; choose another output directory")
     with tempfile.TemporaryDirectory(prefix=".dluma-workshop-", dir=output) as temporary:
         staged = Path(temporary) / "workshop"
-        shutil.copytree(package, staged / "content" / "mods")
+        shutil.copytree(package, staged / "content" / "mods", ignore=ignore_readmes)
         (staged / marker_name).write_text(marker_text, encoding="utf-8")
         metadata = {
             "appid": "239140",
@@ -116,22 +170,30 @@ def main() -> int:
     parser.add_argument("--package-dir", type=Path, default=ROOT / "build" / "package" / "Release")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "release")
     parser.add_argument("--workshop-config", type=Path, help="optional local Workshop metadata JSON")
+    parser.add_argument("--refresh-workshop", action="store_true", help="create or refresh the Workshop staging payload only")
     args = parser.parse_args()
     package = args.package_dir.resolve()
     output = args.output_dir.resolve()
     if output == package or output.is_relative_to(package):
         parser.error("release output must be outside the package directory")
     try:
+        if args.refresh_workshop and args.workshop_config:
+            parser.error("--refresh-workshop cannot be combined with --workshop-config")
         version = loader_version()
         mod_name = f"DLUMA ({version}).mod"
         subprocess.run([sys.executable, str(ROOT / "tools" / "verify_package_manifest.py"), "--package-dir", str(package), "--mod-name", mod_name], check=True)
         files = package_files(package)
+        if args.refresh_workshop:
+            staging = refresh_workshop(package, output)
+            if staging:
+                print(f"Refreshed Workshop content: {staging}")
+            return 0
         output.mkdir(parents=True, exist_ok=True)
         archive = output / f"DLUMA-{version}.zip"
         write_archive(package, archive, files)
         with archive.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        (output / "SHA256SUMS").write_text(f"{digest}  {archive.name}\n", encoding="ascii")
+        (output / "SHA256SUMS").write_text(f"{digest}  {archive.name}\n", encoding="ascii", newline="\n")
         print(f"Created {archive.name}: {digest}")
         if args.workshop_config:
             staging = stage_workshop(package, output, args.workshop_config.resolve())

@@ -44,6 +44,7 @@ def _make_fake_deployment(tmp_path: Path) -> FakeDeployment:
         "dluma_lua54.dll": b"lua helper",
         "LICENSE_LUA_5.4.8.txt": b"lua license",
         "dluma_discord_presence.dll": b"discord helper",
+        "dluma_nightly_updater.exe": b"nightly helper",
     }
     for name, content in top_level.items():
         _write(package / name, content)

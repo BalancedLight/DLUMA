@@ -112,6 +112,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\dlw_nightly.c" />
     <ClCompile Include="src\dlw_analysis_bridge.c" />
     <ClCompile Include="src\dlw_animation_refresh_runtime.c" />
     <ClCompile Include="src\dlw_animation_pack_runtime.c" />
@@ -930,6 +931,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\dlw_nightly.h" />
     <ClInclude Include="src\dlw_analysis_bridge.h" />
     <ClInclude Include="src\dlw_animation_refresh_runtime.h" />
     <ClInclude Include="src\dlw_animation_pack_runtime.h" />
@@ -1186,6 +1188,8 @@
     <RemoveDir Directories="$(DlumaQuestGraphOutputDir)" />
     <Exec Command="dotnet restore &quot;$(ProjectDir)workbench\Dluma.QuestGraph\Dluma.QuestGraph.csproj&quot; --locked-mode --nologo" />
     <Exec Command="dotnet publish &quot;$(ProjectDir)workbench\Dluma.QuestGraph\Dluma.QuestGraph.csproj&quot; -c $(Configuration) --no-restore --nologo -o &quot;$(DlumaQuestGraphOutputDir).&quot;" />
+    <Exec Command="dotnet publish &quot;$(ProjectDir)tools\Dluma.NightlyUpdater\Dluma.NightlyUpdater.csproj&quot; -c $(Configuration) -r win-x64 --self-contained true -p:PublishSingleFile=true --nologo -o &quot;$(OutDir)nightly-helper&quot;" />
+    <Copy SourceFiles="$(OutDir)nightly-helper\Dluma.NightlyUpdater.exe" DestinationFiles="$(DlumaPackageDir)dluma_nightly_updater.exe" />
     <Copy SourceFiles="$(TargetPath)"
           DestinationFiles="$(DlumaPackageDir)$(TargetFileName)" />
     <Copy SourceFiles="$(ProjectDir)LICENSE;$(ProjectDir)THIRD_PARTY_NOTICES.md" DestinationFolder="$(DlumaPackageDir)" />
@@ -1195,6 +1199,7 @@
     <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\build_content_pack.ps1&quot; -OutputPath &quot;$(DlumaContentPackPath)&quot;" />
     <Exec Command="python &quot;$(ProjectDir)tools\build_managed_runtime.py&quot; --output-dir &quot;$(DlumaPackageDir).&quot; --managed-output &quot;$(DlumaManagedOutputDir).&quot; --quest-graph-output &quot;$(DlumaQuestGraphOutputDir).&quot; --catalog-hash &quot;$(ProjectDir)api\generated\dluma_api_catalog.sha256&quot; --loader-symbol-manifest &quot;$(DlumaLoaderAddressManifestPath)&quot;" />
     <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot;" />
+    <Exec Condition="'$(Configuration)' == 'Release'" Command="python &quot;$(ProjectDir)tools\prepare_release.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --output-dir &quot;$(ProjectDir)release&quot; --refresh-workshop" />
     <Message Importance="high"
              Text="Built clean $(Configuration) package at $(DlumaPackageDir). Any enabled local deployment runs only after package and PE verification." />
   </Target>

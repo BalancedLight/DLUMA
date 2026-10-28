@@ -214,6 +214,7 @@ def test_package_manifest_rejects_extra_runtime_files(tmp_path):
         "dluma_lua54.dll",
         "LICENSE_LUA_5.4.8.txt",
         "dluma_discord_presence.dll",
+        "dluma_nightly_updater.exe",
     ):
         (package / name).write_bytes(b"x")
     runtime_sources = []

@@ -21,6 +21,7 @@ TOP_LEVEL_PACKAGE_FILES = (
     "dluma_lua54.dll",
     "LICENSE_LUA_5.4.8.txt",
     "dluma_discord_presence.dll",
+    "dluma_nightly_updater.exe",
 )
 PRESERVED_RUNTIME_DIAGNOSTIC_PATHS = (
     "dluma_runtime/dluma.log",

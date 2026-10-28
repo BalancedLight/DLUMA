@@ -59,7 +59,7 @@ After building Release, prepare the distributable archive and checksums:
 python tools/prepare_release.py --package-dir build/package/Release --output-dir release
 ```
 
-The output includes `DLUMA-0.5.0.zip` and `SHA256SUMS`. See [Workshop publishing](WORKSHOP.md) for upload metadata and the publishing process.
+The output includes `DLUMA-0.5.0.zip` and `SHA256SUMS`. README files are omitted from the archive; licenses and third-party notices remain included. Release builds also create or refresh `release/workshop/content/mods/`. Existing upload metadata is preserved. See [Workshop publishing](WORKSHOP.md) for upload metadata and the publishing process.
 
 ## Check a change
 

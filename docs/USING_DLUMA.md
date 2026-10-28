@@ -27,6 +27,10 @@ Open **Options → DLUMA** to change loader settings. General options include pr
 
 Developer Mode exposes additional options and Lua limits. Its startup changes, such as developer keys, require a restart. **Reset custom project on exit** is visible only when Developer Mode is enabled.
 
+**Enable nightly updates** checks for the latest verified build from GitHub when Player starts. It is off by default. When an update is available, DLUMA shows its commit and asks whether to download it. Accepted updates replace the loader package after Player closes; your settings, logs, and other mods are retained. Leave Player closed until the updater finishes.
+
+Turning nightly updates off offers to restore the stable package saved before the first nightly update. Restoration also runs after Player closes. Steam may replace local nightly files when it updates or restores the Workshop subscription.
+
 ## Troubleshooting
 
 If a problem starts after enabling or updating a mod, disable that mod and restart Player. Check the mod's version requirements and any dependencies. Keep a copy of the steps that reproduce the problem and the relevant log or crash report.
