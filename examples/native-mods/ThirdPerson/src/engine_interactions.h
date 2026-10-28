@@ -20,6 +20,7 @@ struct Frame {
 bool install(unsigned char* gameModule, HMODULE engineModule);
 void setFrame(const Frame& frame);
 void clear();
+void drainDiagnostics(void (*log)(const char* level, const char* message));
 bool disable();
 
 } // namespace thirdperson::interactions

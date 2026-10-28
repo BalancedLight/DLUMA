@@ -22,6 +22,7 @@ private:
     LocalPlayer localPlayer_ = nullptr;
     WantsFirstPersonClass wantsFirstPersonClass_ = nullptr;
     void** slot_ = nullptr;
+    void** cameraParameterSlot_ = nullptr;
 };
 
 } // namespace thirdperson

@@ -161,6 +161,7 @@ struct EngineAdapter::Impl {
     static inline MouseButton stockMouseButton = nullptr;
     static inline GetVector stockWeaponDirection = nullptr;
     static inline GetVector stockMovementInput = nullptr;
+    static inline GetVector stockJumpInput = nullptr;
     static inline AssistDirection stockAssistDirection = nullptr;
     static inline std::atomic<unsigned> callbacks{0};
     static inline thread_local unsigned callbackDepth = 0;
@@ -237,6 +238,9 @@ struct EngineAdapter::Impl {
     bool movementHookCreated = false;
     bool movementHookEnabled = false;
     unsigned char* movementHookModule = nullptr;
+    bool jumpHookCreated = false;
+    bool jumpHookEnabled = false;
+    unsigned char* jumpHookModule = nullptr;
     bool assistHookPublished = false;
     unsigned char* assistHookModule = nullptr;
     void* fovCamera = nullptr;
@@ -279,6 +283,21 @@ struct EngineAdapter::Impl {
     }
 
     bool gameplay() const;
+
+    bool normalLookOwnsInput(void* p) const
+    {
+        return p && lookObject && getActiveLook &&
+            getActiveLook(p) == static_cast<unsigned char*>(lookObject) + 24;
+    }
+
+    bool edgeLookOwnsInput(void* p) const
+    {
+        void* active = p && getActiveLook ? getActiveLook(p) : nullptr;
+        if (!active || *reinterpret_cast<void***>(active) !=
+                reinterpret_cast<void**>(gameModule + 0x1808F28)) return false;
+        auto* edge = static_cast<unsigned char*>(active) - 24;
+        return field<unsigned char>(edge, 16) && method<GetPlayer>(edge, 4)(edge) == p;
+    }
 
     void resetMotion()
     {
@@ -495,8 +514,10 @@ struct EngineAdapter::Impl {
         const bool currentLook = stableLookReady && lookPlayer == player();
         input.bodyYaw = currentLook ? stableYaw : 0.0f;
         input.bodyPitch = currentLook ? stablePitch : 0.0f;
-        input.freeControlAvailable = currentLook && lookObject && getActiveLook &&
-            getActiveLook(lookPlayer) == static_cast<unsigned char*>(lookObject) + 24;
+        const bool normalLook = currentLook && normalLookOwnsInput(lookPlayer);
+        input.freeControlAvailable = currentLook &&
+            (normalLook || edgeLookOwnsInput(lookPlayer));
+        if (!normalLook) moveSampleAvailable = false;
         const bool toggle = down(keys.toggle);
         const bool reset = down(keys.reset);
         input.togglePressed = input.focused && input.gameplay && toggle && !toggleHeld;
@@ -700,33 +721,26 @@ struct EngineAdapter::Impl {
         }
     }
 
-    static Vec3* __fastcall movementInputHook(void* move, Vec3* result)
+    Vec3* remapMovementInput(void* move, Vec3* original, bool recordSample)
     {
-        const void* caller = _ReturnAddress();
-        Callback callback;
-        Vec3* original = stockMovementInput(move, result);
-        Impl* self = current.load(std::memory_order_acquire);
-        if (!self || !original || caller != self->gameModule + 0xCD81C1) return original;
-        std::lock_guard<std::recursive_mutex> lock(self->mutex);
-        void* p = self->player();
-        void* m = self->manager();
-        if (self->refreshingVisual || !self->enabled || !self->output.freeCamera || !self->output.applyCamera ||
-            self->output.temporaryFirstPerson || self->input.specialActionActive ||
-            !self->input.freeControlAvailable || !focused() || !self->gameplay() ||
-            !p || method<GetPlayer>(move, 4)(move) != p || p != self->resolvedPlayer ||
-            !m || field<void*>(m, 80) != self->resolvedCamera || !self->lookObject ||
-            self->getActiveLook(p) != static_cast<unsigned char*>(self->lookObject) + 24 ||
+        void* p = player();
+        void* m = manager();
+        if (!original || refreshingVisual || !enabled || !output.freeCamera || !output.applyCamera ||
+            output.temporaryFirstPerson || input.specialActionActive ||
+            !input.freeControlAvailable || !focused() || !gameplay() ||
+            !p || method<GetPlayer>(move, 4)(move) != p || p != resolvedPlayer ||
+            !m || field<void*>(m, 80) != resolvedCamera || !normalLookOwnsInput(p) ||
             !finite(*original)) return original;
 
         const float side = -original->x;
         const float forward = original->z;
         const float horizontal = std::hypot(side, forward);
-        self->moveSampleAvailable = true;
+        if (recordSample) moveSampleAvailable = true;
         if (horizontal < 0.00001f) return original;
-        const float cameraYaw = std::atan2(self->resolvedPose.forward.x, self->resolvedPose.forward.z);
+        const float cameraYaw = std::atan2(resolvedPose.forward.x, resolvedPose.forward.z);
         const Vec3 world = cameraRelativeMovement(side, forward, cameraYaw);
         Vec3 local{};
-        const Vec3* transformed = self->vectorWorldToLocal(static_cast<unsigned char*>(p) + 24, &local, &world);
+        const Vec3* transformed = vectorWorldToLocal(static_cast<unsigned char*>(p) + 24, &local, &world);
         if (!transformed || !finite(*transformed)) return original;
         const float magnitude = std::hypot(transformed->x, transformed->z);
         if (magnitude < 0.00001f) return original;
@@ -735,15 +749,54 @@ struct EngineAdapter::Impl {
         return original;
     }
 
+    static Vec3* __fastcall movementInputHook(void* move, Vec3* result)
+    {
+        const void* caller = _ReturnAddress();
+        Callback callback;
+        Vec3* original = stockMovementInput(move, result);
+        Impl* self = current.load(std::memory_order_acquire);
+        if (!self || (caller != self->gameModule + 0xCD81C1 &&
+                caller != self->gameModule + 0xCE14CA)) return original;
+        std::lock_guard<std::recursive_mutex> lock(self->mutex);
+        return self->remapMovementInput(move, original, caller == self->gameModule + 0xCD81C1);
+    }
+
+    static Vec3* __fastcall jumpInputHook(void* move, Vec3* result)
+    {
+        const void* caller = _ReturnAddress();
+        Callback callback;
+        Vec3* original = stockJumpInput(move, result);
+        Impl* self = current.load(std::memory_order_acquire);
+        if (!self || caller != self->gameModule + 0xCDCDA6) return original;
+        std::lock_guard<std::recursive_mutex> lock(self->mutex);
+        return self->remapMovementInput(move, original, false);
+    }
+
     static Vec3* __fastcall weaponDirectionHook(void* p, Vec3* result)
     {
         const void* caller = _ReturnAddress();
         Callback callback;
         Vec3* original = stockWeaponDirection(p, result);
         Impl* self = current.load(std::memory_order_acquire);
-        if (!self || !original || caller != self->gameModule + 0xD36BD4) return original;
+        if (!self || !original) return original;
+        const bool edgeInput = caller == self->gameModule + 0xCA4E31;
+        const bool edgeLaunch = caller == self->gameModule + 0xC9A1C7;
+        if (!edgeInput && !edgeLaunch && caller != self->gameModule + 0xD36BD4) return original;
         std::lock_guard<std::recursive_mutex> lock(self->mutex);
         void* m = self->manager();
+        if (edgeInput || edgeLaunch) {
+            // These native callers own ledge-jump acceptance and launch. The
+            // edge look controller may have released ownership after acceptance.
+            if (!self->refreshingVisual && self->enabled && self->output.freeCamera &&
+                self->output.applyCamera && !self->output.temporaryFirstPerson &&
+                !self->input.specialActionActive && self->output.specialActionBlend <= 0.0f &&
+                focused() && (edgeLaunch || self->gameplay()) && self->ownedView &&
+                p == self->player() && p == self->resolvedPlayer &&
+                m && m == self->ownerManager && field<int>(m, 88) == 1 &&
+                field<void*>(m, 80) == self->resolvedCamera && finite(self->resolvedPose.forward))
+                *original = self->resolvedPose.forward;
+            return original;
+        }
         if (self->refreshingVisual || self->input.specialActionActive || self->output.specialActionBlend > 0.0f ||
             !self->enabled || !self->output.applyCamera || self->output.temporaryFirstPerson ||
             !focused() || !self->gameplay() || !self->ownedView || p != self->player() ||
@@ -893,7 +946,7 @@ struct EngineAdapter::Impl {
             field<float>(look, 128) = 0.0f;
             if (self->output.freeCamera && self->input.freeControlAvailable &&
                 !self->input.specialActionActive && self->stableLookReady &&
-                !self->output.temporaryFirstPerson) {
+                !self->output.temporaryFirstPerson && self->normalLookOwnsInput(p)) {
                 const float viewYaw = self->stableYaw + self->output.framingYaw + self->output.orbitYaw;
                 const float viewPitch = self->stablePitch + self->output.framingPitch + self->output.orbitPitch;
                 float desiredYaw = self->stableYaw;
@@ -1041,6 +1094,8 @@ struct EngineAdapter::Impl {
         const bool reticleDisabled = reticle::disable();
         const bool movement = !movementHookEnabled || MH_DisableHook(gameModule + 0xCDBCD0) == MH_OK;
         if (movement) movementHookEnabled = false;
+        const bool jump = !jumpHookEnabled || MH_DisableHook(gameModule + 0xCDBBB0) == MH_OK;
+        if (jump) jumpHookEnabled = false;
         const bool assist = !assistHookEnabled || MH_DisableHook(gameModule + 0x3BA380) == MH_OK;
         if (assist) assistHookEnabled = false;
         const bool weaponDirection = weaponDirectionPatch.restore();
@@ -1049,7 +1104,7 @@ struct EngineAdapter::Impl {
         const bool look = lookPatch.restore();
         const bool firstPersonCamera = firstPersonCameraPatch.restore();
         const bool camera = cameraPatch.restore();
-        if (!(interaction && reticleDisabled && movement && assist && weaponDirection && mouse && keyboard && look && firstPersonCamera && camera))
+        if (!(interaction && reticleDisabled && movement && jump && assist && weaponDirection && mouse && keyboard && look && firstPersonCamera && camera))
             reportHookReleaseFailure();
     }
 
@@ -1148,6 +1203,9 @@ bool EngineAdapter::Impl::install()
     constexpr unsigned char movementPrologue[] = {0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x81,
         0xec,0x80,0x00,0x00,0x00,0x0f,0x29,0x74};
     if (std::memcmp(gameModule + 0xCDBCD0, movementPrologue, sizeof(movementPrologue)) != 0) return false;
+    constexpr unsigned char jumpPrologue[] = {0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x83,
+        0xec,0x50,0x48,0x8b,0x01,0x0f,0x29,0x74};
+    if (std::memcmp(gameModule + 0xCDBBB0, jumpPrologue, sizeof(jumpPrologue)) != 0) return false;
     stockCamera = reinterpret_cast<CameraUpdate>(gameModule + 0x2CB410);
     stockFirstPersonCamera = reinterpret_cast<CameraUpdate>(gameModule + 0x2BB220);
     stockLook = reinterpret_cast<LookUpdate>(gameModule + 0xCD0800);
@@ -1199,8 +1257,17 @@ bool EngineAdapter::Impl::install()
             movementHookEnabled = MH_EnableHook(gameModule + 0xCDBCD0) == MH_OK;
         ok = movementHookEnabled;
     }
+    if (ok) {
+        if (!jumpHookCreated) {
+            jumpHookCreated = MH_CreateHook(gameModule + 0xCDBBB0,
+                reinterpret_cast<void*>(jumpInputHook), reinterpret_cast<void**>(&stockJumpInput)) == MH_OK;
+            if (jumpHookCreated) jumpHookModule = gameModule;
+        }
+        if (jumpHookCreated && jumpHookModule == gameModule)
+            jumpHookEnabled = MH_EnableHook(gameModule + 0xCDBBB0) == MH_OK;
+        ok = jumpHookEnabled;
+    }
     if (ok) ok = reticle::install(gameModule);
-    if (ok) ok = interactions::install(gameModule, engineModule);
     if (ok) ok = actionVisualClass.initialize(gameModule, this, actionLocalPlayer, actionClassRequested);
     if (!ok) {
         restoreHooks();
@@ -1279,6 +1346,7 @@ void EngineAdapter::tick()
     const float seconds = impl_->lastTick ? (std::min)(static_cast<float>(now - impl_->lastTick) * 0.001f, 0.1f) : 0.0f;
     impl_->lastTick = now;
     impl_->sample(seconds, Impl::callbackDepth == 0);
+    interactions::drainDiagnostics(impl_->log);
 }
 
 void EngineAdapter::shutdown()

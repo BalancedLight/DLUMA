@@ -386,16 +386,43 @@ int main()
         {30, 3, 1.0f, 0.0f, false, true, true, true},
         {40, 4, 1.0f, 0.0f, true, false, true, true},
         {50, 5, 1.0f, 0.0f, true, true, true, false}};
-    require(selectInteraction(candidates, 5, 10) == 10, "valid current interaction stays selected");
+    require(selectInteraction(candidates, 5, 10) == 10, "current interaction stays selected while camera focus agrees");
     candidates[0].usable = false;
     require(selectInteraction(candidates, 5, 10) == 20, "invalid current target falls back to the best reachable visible target");
     candidates[0].usable = true;
+    require(selectInteraction(candidates, 5, 20) == 10,
+        "camera focus can leave a valid higher-priority target");
     candidates[0].priority = candidates[1].priority;
     candidates[0].distanceSquared = 2.0f;
     require(selectInteraction(candidates, 5, 0) == 10, "nearer target wins within equal priority");
     candidates[1].distanceSquared = 2.0f;
     candidates[1].viewAngle = 0.05f;
     require(selectInteraction(candidates, 5, 0) == 20, "view angle breaks equal-distance ties");
+    InteractionCandidate nearby[] = {
+        {60, 0, 1.0f, 0.20f, true, true, true, true},
+        {70, 0, 2.0f, 0.08f, true, true, true, true},
+        {80, 0, 3.0f, 0.01f, true, true, true, true}};
+    require(selectInteraction(nearby, 3, 60) == 80,
+        "camera can select a pickup beyond the current nearby stash");
+    nearby[1].viewAngle = 0.015f;
+    nearby[2].viewAngle = 0.016f;
+    require(selectInteraction(nearby, 3, 80) == 80,
+        "small focus changes do not flicker between nearby items");
+    nearby[1].viewAngle = 0.0f;
+    nearby[2].viewAngle = 0.10f;
+    require(selectInteraction(nearby, 3, 80) == 70,
+        "turning toward another pickup releases the previous target");
+    nearby[1].unobstructed = false;
+    require(selectInteraction(nearby, 3, 70) == 80,
+        "blocked focused item cannot retain the interaction prompt");
+    nearby[0].viewAngle = 0.01f;
+    nearby[1].unobstructed = true;
+    nearby[1].viewAngle = 0.0f;
+    require(selectInteraction(nearby, 3, 60) == 70,
+        "centered item beats a closer object within one degree");
+    nearby[0].viewAngle = 0.02f;
+    require(selectInteraction(nearby, 3, 60) == 70,
+        "selection margin cannot trap an exactly centered item");
     bool stillValid = false;
     const auto revalidate = [](std::uint64_t, void* context) { return *static_cast<bool*>(context); };
     require(!canActivateInteraction(20, revalidate, &stillValid), "stale target cannot activate");

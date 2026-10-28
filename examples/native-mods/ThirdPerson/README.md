@@ -4,11 +4,7 @@ A standalone DLUMA mod for Dying Light Player, including Player launched from De
 
 Press **T** to switch between first person and third person. In the default **Shoulder** style, hold **Left Alt** and move the mouse to look around your character; release Alt to return to the shoulder view. Camera controls leave the player's position and movement under the game.
 
-In **Camera style**, select **Free camera** to rotate the camera with the mouse and move relative to its direction. While aiming, the character faces the target and movement strafes. Hold Alt with the adjustment keys to change camera positioning in either style.
-
-Free camera selects nearby usable objects that are visible from the camera, without requiring the character to face them. The normal interaction prompt and key use the same object. Reach and obstruction checks still apply, and the current object remains selected while it is valid.
-
-Enable **First person during special actions** in Actions to move into first person over 120 ms for takedowns, grapples, dropkicks, grabs, and pounces, then return over 200 ms when the action finishes or is cancelled. This option is off by default.
+**First person during special actions** is enabled by default. It moves into first person over 120 ms for takedowns, grapples, dropkicks, grabs, and pounces, then return over 200 ms when the action finishes or is cancelled. You can turn it off in Actions.
 
 | Control | Action |
 |---|---|
@@ -48,7 +44,7 @@ LLVM users can run `build_thirdperson_clang.bat Release` with `clang-cl` on PATH
 The Release build validates the DLL export and package lock, then produces:
 
 ```text
-dist/ThirdPerson-1.2.1.zip
+dist/ThirdPerson-1.2.4.zip
 dist/mods/native/global/thirdperson.camera/
 ```
 

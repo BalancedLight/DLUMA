@@ -130,19 +130,6 @@ struct Runtime {
             std::memcmp(result.value.string_value.data, value, sizeof(value) - 1) == 0;
     }
 
-    bool freeCameraPreference() const
-    {
-        if (!configuration.get) return false;
-        auto request = record<DlumaConfigGetRequest>();
-        auto result = resultRecord<DlumaScalarResult>();
-        request.key = view("camera_style");
-        if (configuration.get(configuration.context, &request, &result) != DLUMA_STATUS_OK ||
-            result.value.kind != DLUMA_SCALAR_STRING || !result.value.string_value.data) return false;
-        constexpr char value[] = "free_camera";
-        return result.value.string_value.size == sizeof(value) - 1 &&
-            std::memcmp(result.value.string_value.data, value, sizeof(value) - 1) == 0;
-    }
-
     void loadConfiguration()
     {
         KeyBindings keys{};
@@ -169,8 +156,8 @@ struct Runtime {
         config.verticalAngle = static_cast<float>(
             preference("vertical_angle_deg", 0, -85, 85)) * DegreesToRadians;
         config.aimFirstPerson = firstPersonAimPreference();
-        config.freeCamera = freeCameraPreference();
-        config.firstPersonActions = booleanPreference("first_person_actions", false);
+        config.freeCamera = false;
+        config.firstPersonActions = booleanPreference("first_person_actions", true);
         config.aimDistanceReduction = static_cast<float>(preference("aim_distance_percent", 20, 0, 60)) / 100.0f;
         config.aimMagnification = static_cast<float>(preference("aim_magnification_percent", 125, 100, 200)) / 100.0f;
         controller.configure(config);
