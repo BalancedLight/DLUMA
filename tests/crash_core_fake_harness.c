@@ -66,6 +66,29 @@ int main(void)
     DlumaCrashCoreModuleIdentity module_identity;
     DlumaCrashCoreModuleClassification module_classification;
     int ok = 1;
+    const unsigned int game_profile_count =
+        (unsigned int)(sizeof(game_profiles) / sizeof(game_profiles[0]));
+
+    ok &= expect(
+        dluma_crash_core_game_profile_basename_matches(
+            L"GAMEDLL_X64_RWDI.DLL", game_profiles, game_profile_count),
+        "game profile basename matches case-insensitively");
+    ok &= expect(
+        !dluma_crash_core_game_profile_basename_matches(
+            L"engine_x64_rwdi.dll", game_profiles, game_profile_count) &&
+        !dluma_crash_core_game_profile_basename_matches(
+            L"gamedll_x64_rwdi.dll.bak", game_profiles, game_profile_count) &&
+        !dluma_crash_core_game_profile_basename_matches(
+            L"C:\\Game\\gamedll_x64_rwdi.dll", game_profiles, game_profile_count),
+        "game profile basename rejects unknown names, suffixes, and paths");
+    ok &= expect(
+        !dluma_crash_core_game_profile_basename_matches(
+            0, game_profiles, game_profile_count) &&
+        !dluma_crash_core_game_profile_basename_matches(
+            L"gamedll_x64_rwdi.dll", 0, game_profile_count) &&
+        !dluma_crash_core_game_profile_basename_matches(
+            L"gamedll_x64_rwdi.dll", game_profiles, 0),
+        "game profile basename rejects null inputs and empty profiles");
     memset(&primary, 0, sizeof(primary));
     memset(&secondary, 0, sizeof(secondary));
     primary.chunk = 5;

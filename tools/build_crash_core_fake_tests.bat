@@ -32,7 +32,11 @@ cl.exe /nologo /TC /MT /O2 /Oi- /W4 /WX /D_CRT_SECURE_NO_WARNINGS ^
   /Fe"build\crash-core-fake\crash_worker_stack_fake_harness.exe" ^
   tests\crash_worker_stack_fake_harness.c || exit /b 1
 
-"build\crash-core-fake\crash_worker_stack_fake_harness.exe" || exit /b 1
+rem Exercise fresh constrained stacks repeatedly to catch timing-sensitive failures.
+for /l %%I in (1,1,8) do (
+  echo Running constrained-stack harness %%I/8
+  "build\crash-core-fake\crash_worker_stack_fake_harness.exe" || exit /b 1
+)
 echo Built: build\crash-core-fake\crash_worker_stack_fake_harness.exe
 exit /b 0
 

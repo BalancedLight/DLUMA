@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <malloc.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -15,6 +16,8 @@ typedef struct CrashWorkerFixture {
     DWORD exception_code;
     DWORD fault_thread_id;
     DWORD reporter_thread_id;
+    DWORD callback_wait;
+    DWORD callback_error;
     int stock_result;
     char report[1024];
 } CrashWorkerFixture;
@@ -62,28 +65,42 @@ static DWORD WINAPI reporter_thread(void* unused)
         "stock_dump_result=%d\n"
         "report_end=DLUMA_CRASH_REPORT_V1\n",
         g_fixture.stock_result);
-    SetEvent(g_fixture.complete_event);
+    if (!SetEvent(g_fixture.complete_event))
+        return 3U;
     return 0U;
 }
 
 static int capture_stack_overflow(EXCEPTION_POINTERS* exception_pointers)
 {
+    if (!exception_pointers || !exception_pointers->ExceptionRecord ||
+        exception_pointers->ExceptionRecord->ExceptionCode !=
+            EXCEPTION_STACK_OVERFLOW)
+        return EXCEPTION_CONTINUE_SEARCH;
     if (InterlockedCompareExchange(&g_fixture.claimed, 1, 0) == 0) {
         g_fixture.exception_code =
-            exception_pointers && exception_pointers->ExceptionRecord
-                ? exception_pointers->ExceptionRecord->ExceptionCode : 0U;
+            exception_pointers->ExceptionRecord->ExceptionCode;
         g_fixture.fault_thread_id = GetCurrentThreadId();
-        SetEvent(g_fixture.work_event);
+        if (!SetEvent(g_fixture.work_event)) {
+            g_fixture.callback_error = GetLastError();
+            return EXCEPTION_EXECUTE_HANDLER;
+        }
         g_fixture.stock_result = fake_stock_callback();
-        SetEvent(g_fixture.stock_event);
-        WaitForSingleObject(g_fixture.complete_event, 10000U);
+        if (!SetEvent(g_fixture.stock_event)) {
+            g_fixture.callback_error = GetLastError();
+            return EXCEPTION_EXECUTE_HANDLER;
+        }
+        g_fixture.callback_wait =
+            WaitForSingleObject(g_fixture.complete_event, 10000U);
+        if (g_fixture.callback_wait == WAIT_FAILED)
+            g_fixture.callback_error = GetLastError();
+        return EXCEPTION_EXECUTE_HANDLER;
     }
-    return EXCEPTION_EXECUTE_HANDLER;
+    return EXCEPTION_CONTINUE_SEARCH;
 }
 
 __declspec(noinline) static void exhaust_stack(unsigned int depth)
 {
-    volatile unsigned char padding[2048];
+    volatile unsigned char padding[2048] = {0};
     padding[depth & (sizeof(padding) - 1U)] = (unsigned char)depth;
     exhaust_stack(depth + 1U);
     if (padding[0] == 0xFFU)
@@ -92,11 +109,20 @@ __declspec(noinline) static void exhaust_stack(unsigned int depth)
 
 static DWORD WINAPI fault_thread(void* unused)
 {
+    ULONG exception_stack_bytes = 16U * 1024U;
     (void)unused;
+    if (!SetThreadStackGuarantee(&exception_stack_bytes)) {
+        fprintf(stderr, "crash worker stack guarantee failed: error=%lu\n",
+                GetLastError());
+        return 1U;
+    }
     __try {
         exhaust_stack(1U);
     }
     __except (capture_stack_overflow(GetExceptionInformation())) {
+        /* Restore the guard page only after SEH has unwound the stack. */
+        if (!_resetstkoflw())
+            return 2U;
     }
     return 0U;
 }
@@ -107,8 +133,11 @@ int main(void)
     HANDLE fault;
     DWORD fault_wait;
     DWORD reporter_wait;
+    DWORD fault_exit = STILL_ACTIVE;
+    DWORD reporter_exit = STILL_ACTIVE;
     int ok = 1;
     memset(&g_fixture, 0, sizeof(g_fixture));
+    g_fixture.callback_wait = WAIT_FAILED;
     g_fixture.work_event = CreateEventW(0, FALSE, FALSE, 0);
     g_fixture.stock_event = CreateEventW(0, TRUE, FALSE, 0);
     g_fixture.complete_event = CreateEventW(0, TRUE, FALSE, 0);
@@ -120,13 +149,28 @@ int main(void)
     reporter = CreateThread(
         0, 1024U * 1024U, reporter_thread, 0, 0, 0);
     fault = CreateThread(
-        0, 64U * 1024U, fault_thread, 0, 0, 0);
+        0, 128U * 1024U, fault_thread, 0,
+        STACK_SIZE_PARAM_IS_A_RESERVATION, 0);
     ok &= expect(reporter != 0 && fault != 0, "threads created");
     if (!ok) return 1;
     fault_wait = WaitForSingleObject(fault, 15000U);
     reporter_wait = WaitForSingleObject(reporter, 15000U);
     ok &= expect(fault_wait == WAIT_OBJECT_0, "fault thread completed");
     ok &= expect(reporter_wait == WAIT_OBJECT_0, "reporter completed");
+    if (!ok) {
+        fprintf(stderr, "crash worker waits: fault=%lu reporter=%lu\n",
+                fault_wait, reporter_wait);
+        return 1;
+    }
+    ok &= expect(GetExitCodeThread(fault, &fault_exit), "fault exit queried");
+    ok &= expect(
+        GetExitCodeThread(reporter, &reporter_exit), "reporter exit queried");
+    ok &= expect(fault_exit == 0U, "fault thread succeeded");
+    ok &= expect(reporter_exit == 0U, "reporter succeeded");
+    ok &= expect(
+        g_fixture.callback_wait == WAIT_OBJECT_0 &&
+            g_fixture.callback_error == ERROR_SUCCESS,
+        "fault callback received the completed report");
     ok &= expect(
         g_fixture.exception_code == EXCEPTION_STACK_OVERFLOW,
         "stack overflow captured");
@@ -147,7 +191,15 @@ int main(void)
     CloseHandle(g_fixture.complete_event);
     CloseHandle(g_fixture.stock_event);
     CloseHandle(g_fixture.work_event);
-    if (!ok) return 1;
+    if (!ok) {
+        fprintf(stderr,
+                "crash worker incident: exception=0x%08lX "
+                "callback_wait=%lu callback_error=%lu "
+                "fault_exit=%lu reporter_exit=%lu\n",
+                g_fixture.exception_code, g_fixture.callback_wait,
+                g_fixture.callback_error, fault_exit, reporter_exit);
+        return 1;
+    }
     puts("crash worker constrained-stack harness passed");
     return 0;
 }
