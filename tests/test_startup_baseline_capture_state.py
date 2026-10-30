@@ -210,6 +210,25 @@ def test_failed_query_can_complete_a_fresh_latched_frontend_candidate():
 
 def test_on_frame_requires_positive_read_only_evidence_before_dispatch():
     engine = (ROOT / "src" / "dlw_engine.c").read_text(encoding="utf-8")
+    probe_start = engine.index(
+        "static void dluma_engine_readonly_routed_probe("
+    )
+    probe_end = engine.index(
+        "static void dluma_engine_validate_pending_frontend_freshness(",
+        probe_start,
+    )
+    probe = engine[probe_start:probe_end]
+    # Both frontend and standalone startup routes collect read-only evidence.
+    frontend_probe = probe.index("dluma_engine_readonly_frontend_probe(")
+    standalone_gate = probe.index("if (!state || !probe ||")
+    standalone_probe = probe.index(
+        "dluma_engine_query_startup_session_level_identity("
+    )
+    assert frontend_probe < standalone_gate < standalone_probe
+    assert "game_frame_standalone_start_configured" in probe[
+        standalone_gate:standalone_probe
+    ]
+
     hook_start = engine.rindex(
         "static ULONG_PTR __fastcall dluma_game_frame_hook("
     )
@@ -217,13 +236,14 @@ def test_on_frame_requires_positive_read_only_evidence_before_dispatch():
         "static void __fastcall dluma_i_level_destructor_hook", hook_start
     )
     hook = engine[hook_start:hook_end]
-    readonly_probe = hook.index("dluma_engine_readonly_frontend_probe(")
+    readonly_probe = hook.index("dluma_engine_readonly_routed_probe(")
     observe = hook.index("dluma_game_frame_authority_observe_pre(")
     dispatch_marker = hook.index(
         "dluma_game_frame_authority_mark_loader_dispatch_started("
     )
     pump = hook.index("dluma_ui_game_thread_tick(")
     assert readonly_probe < observe < dispatch_marker < pump
+    assert "&observation.pre_original_probe" in hook[readonly_probe:observe]
     assert "game_frame_thread_id" not in hook
     assert "if (!decision.run_loader_dispatch)" in hook
     assert "DLUMA_STARTUP_B0_ONFRAME_SKIP_AUTHORITY_PENDING" in hook
