@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from tools.dluma_mod_package import (
+    COMPATIBLE_SCOPE_CATALOG_SHA256,
     IMMEDIATELY_PREVIOUS_CATALOG_SHA256,
     LOCK_NAME,
     PackageError,
@@ -180,7 +181,11 @@ def test_changed_reviewed_bytes_fail_closed(tmp_path):
         validate_lock(mod_dir)
 
 
-def test_only_public_predecessor_catalog_is_compatible(tmp_path):
+@pytest.mark.parametrize("compatible_catalog", [
+    IMMEDIATELY_PREVIOUS_CATALOG_SHA256,
+    COMPATIBLE_SCOPE_CATALOG_SHA256,
+])
+def test_only_public_predecessor_catalog_is_compatible(tmp_path, compatible_catalog):
     mod_dir = create_mod(tmp_path, language="native")
     manifest_path = mod_dir / "mod.dluma.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -196,10 +201,10 @@ def test_only_public_predecessor_catalog_is_compatible(tmp_path):
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
     lock = write_lock(mod_dir)
-    lock["catalog_sha256"] = IMMEDIATELY_PREVIOUS_CATALOG_SHA256
+    lock["catalog_sha256"] = compatible_catalog
     (mod_dir / LOCK_NAME).write_bytes(canonical_lock_bytes(lock))
     assert validate_lock(mod_dir)["catalog_sha256"] == (
-        IMMEDIATELY_PREVIOUS_CATALOG_SHA256
+        compatible_catalog
     )
 
     lock["catalog_sha256"] = (

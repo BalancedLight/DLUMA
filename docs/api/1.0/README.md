@@ -28,6 +28,12 @@ Approval is evaluated against the complete selected package, including its confi
 
 See [Creating a DLUMA mod](../../MODDING.md) for examples and packaging commands, or [migration](BREAKING_CHANGES.md) for older mods.
 
+## Player tuning
+
+Player-variable overrides support global, project and map mods with `world.write`
+access. They are transient and owned by the calling mod. Player replacement
+invalidates prior handles; reacquire the local player before applying new values.
+
 ## Configuration key bindings
 
 Configuration schemas can declare `type: "keybind"` with an integer default Windows virtual-key code from 1 through 254. The configuration screen displays a key name and captures a replacement when the player edits the binding.

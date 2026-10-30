@@ -7,6 +7,8 @@
 #define DLUMA_MANIFEST_REQUIRED_MASK 0x00000FFFUL
 #define DLUMA_API_IMMEDIATELY_PREVIOUS_CATALOG_SHA256 \
     "D49EDB1807E5E3B0109AF54D049D95E07072F499F480DD878F32AEE810DA220E"
+#define DLUMA_API_COMPATIBLE_SCOPE_CATALOG_SHA256 \
+    "84202AF55B7177081551F21DC0C1F17899000B6FD8D6A63B94BC38A6839701F0"
 
 static int dluma_manifest_compare(const char* left, const char* right)
 {
@@ -1057,11 +1059,12 @@ DlumaStatus dluma_mod_lock_parse(
         (fields & 0x3FULL) != 0x3FULL ||
         (strcmp(output->catalog_sha256, DLUMA_API_CATALOG_SHA256) != 0 &&
          strcmp(output->catalog_sha256,
-                DLUMA_API_IMMEDIATELY_PREVIOUS_CATALOG_SHA256) != 0))
+                DLUMA_API_IMMEDIATELY_PREVIOUS_CATALOG_SHA256) != 0 &&
+         strcmp(output->catalog_sha256,
+                DLUMA_API_COMPATIBLE_SCOPE_CATALOG_SHA256) != 0))
         goto invalid;
     output->uses_previous_catalog =
-        strcmp(output->catalog_sha256,
-               DLUMA_API_IMMEDIATELY_PREVIOUS_CATALOG_SHA256) == 0;
+        strcmp(output->catalog_sha256, DLUMA_API_CATALOG_SHA256) != 0;
     dluma_manifest_diagnostic(
         diagnostic, DLUMA_STATUS_OK, 0U, "lock is valid");
     return DLUMA_STATUS_OK;
@@ -1090,6 +1093,6 @@ int dluma_mod_lock_catalog_compatible(
     const DlumaModManifest* manifest)
 {
     if (!lock || !manifest) return 0;
-    /* The admitted predecessor differs only in catalog documentation. */
+    /* Admitted prior catalogs preserve the public ABI. */
     return 1;
 }

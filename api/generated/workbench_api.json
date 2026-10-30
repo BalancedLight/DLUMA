@@ -1928,6 +1928,7 @@
             "world.write"
           ],
           "scopes": [
+            "global",
             "project",
             "map"
           ],
@@ -1969,6 +1970,7 @@
             "world.write"
           ],
           "scopes": [
+            "global",
             "project",
             "map"
           ],
@@ -3894,5 +3896,5 @@
       ]
     }
   ],
-  "catalog_sha256": "84202AF55B7177081551F21DC0C1F17899000B6FD8D6A63B94BC38A6839701F0"
+  "catalog_sha256": "44F3EE6956A4112DEF065128AAA7F7E4B03AA666B3903CF2557EBC9AD7626376"
 }

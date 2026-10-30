@@ -12,6 +12,8 @@
 
 #define PREVIOUS_COMPATIBLE_CATALOG_SHA256 \
     "D49EDB1807E5E3B0109AF54D049D95E07072F499F480DD878F32AEE810DA220E"
+#define COMPATIBLE_SCOPE_CATALOG_SHA256 \
+    "84202AF55B7177081551F21DC0C1F17899000B6FD8D6A63B94BC38A6839701F0"
 #define REJECTED_PRIVATE_CATALOG_SHA256 \
     "E3AAF26AA9901C38F8FED3290623FBBDEEBA71753D341D5471392FD67C174A7F"
 
@@ -340,6 +342,8 @@ static int test_catalog_compatibility_boundary(void)
     DlumaModManifest manifest;
     DlumaModLock lock;
     DlumaModManifestDiagnostic diagnostic;
+    char scope_lock[sizeof(compatible_lock)];
+    char* catalog;
 
     memset(&manifest, 0, sizeof(manifest));
     manifest.struct_size = sizeof(manifest);
@@ -355,6 +359,19 @@ static int test_catalog_compatibility_boundary(void)
     CHECK(dluma_mod_lock_parse(
         compatible_lock, (unsigned int)strlen(compatible_lock),
         &lock, &diagnostic) == DLUMA_STATUS_OK);
+    CHECK(lock.uses_previous_catalog == 1U);
+    CHECK(dluma_mod_lock_catalog_compatible(&lock, &manifest));
+
+    memcpy(scope_lock, compatible_lock, sizeof(scope_lock));
+    catalog = strstr(scope_lock, PREVIOUS_COMPATIBLE_CATALOG_SHA256);
+    CHECK(catalog != 0);
+    memcpy(catalog, COMPATIBLE_SCOPE_CATALOG_SHA256, 64U);
+    memset(&lock, 0, sizeof(lock));
+    lock.struct_size = sizeof(lock);
+    lock.artifacts = artifacts;
+    lock.artifact_capacity = 4U;
+    CHECK(dluma_mod_lock_parse(scope_lock, (unsigned int)strlen(scope_lock),
+                               &lock, &diagnostic) == DLUMA_STATUS_OK);
     CHECK(lock.uses_previous_catalog == 1U);
     CHECK(dluma_mod_lock_catalog_compatible(&lock, &manifest));
 

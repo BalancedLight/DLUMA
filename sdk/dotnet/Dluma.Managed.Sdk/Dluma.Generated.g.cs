@@ -710,7 +710,7 @@ public static class DlumaApiCatalog
     /// <summary>The public DLUMA API version.</summary>
     public const string Version = "1.0";
     /// <summary>The SHA-256 of the canonical API catalog.</summary>
-    public const string Sha256 = "84202AF55B7177081551F21DC0C1F17899000B6FD8D6A63B94BC38A6839701F0";
+    public const string Sha256 = "44F3EE6956A4112DEF065128AAA7F7E4B03AA666B3903CF2557EBC9AD7626376";
     /// <summary>Every public operation in stable numeric order.</summary>
     public static IReadOnlyList<DlumaOperationDescriptor> Operations { get; } =
     [
@@ -921,7 +921,7 @@ public static class DlumaApiCatalog
             DlumaOperationStatus.Gated,
             DlumaCapabilityId.PlayerRead,
             ["world.write"],
-            ["project", "map"],
+            ["global", "project", "map"],
             "game",
             @"Transactionally applies one bounded transient allowlisted raw PlayerVariables tuning override; invalid or non-finite derived values leave game memory unchanged."),
         new(
@@ -931,7 +931,7 @@ public static class DlumaApiCatalog
             DlumaOperationStatus.Gated,
             DlumaCapabilityId.PlayerRead,
             ["world.write"],
-            ["project", "map"],
+            ["global", "project", "map"],
             "game",
             @"Restores one transient PlayerVariables override owned by the mod."),
         new(

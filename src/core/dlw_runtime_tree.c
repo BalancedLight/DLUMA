@@ -28,7 +28,9 @@ static const WCHAR* const g_dluma_runtime_mutable_root_files[] = {
 
 static const WCHAR* const g_dluma_runtime_mutable_root_directories[] = {
     L"crashes",
-    L"markers"
+    L"markers",
+    L"mod_config",
+    L"mod_data"
 };
 
 typedef struct DlumaRuntimeTreeRecord {

@@ -128,6 +128,29 @@ def test_failed_runtime_copy_preserves_mod_data(tmp_path, monkeypatch):
     assert saved.read_bytes() == b"saved camera offsets"
 
 
+@pytest.mark.parametrize("copy_fails", [False, True])
+def test_deployment_preserves_binary_mod_configuration(tmp_path, monkeypatch, copy_fails):
+    layout = _make_fake_deployment(tmp_path)
+    settings = {}
+    for index, root in enumerate((layout.subscribed, layout.devtools)):
+        path = root / "dluma_runtime" / "mod_config" / "owner" / "setting.dlumac"
+        content = b"DLWCFG1\n\x04\x00\xff" + bytes([index])
+        _write(path, content)
+        settings[path] = content
+        _write(root / "dluma_runtime" / "mod_data" / "owner" / "state.bin", b"state")
+    if copy_fails:
+        def fail_copy(*args, **kwargs):
+            raise OSError("copy failed")
+        monkeypatch.setattr(deployment.shutil, "copytree", fail_copy)
+        with pytest.raises(deployment.DeploymentError):
+            _deploy(layout)
+    else:
+        _deploy(layout)
+    for path, content in settings.items():
+        assert path.read_bytes() == content
+        assert (path.parents[2] / "mod_data" / "owner" / "state.bin").read_bytes() == b"state"
+
+
 def test_shared_deployer_preserves_configuration_and_runtime_diagnostics(
     tmp_path,
 ):
@@ -361,7 +384,7 @@ def test_native_runtime_admission_matches_loader_owned_mutable_root_contract():
     assert array_entries("g_dluma_runtime_mutable_root_files") == expected_files
     assert array_entries(
         "g_dluma_runtime_mutable_root_directories"
-    ) == {"crashes", "markers"}
+    ) == {"crashes", "markers", "mod_config", "mod_data"}
     assert "depth == 0U" in source
     assert "dluma_runtime_tree_mutable_root_entry(" in source
 

@@ -24,6 +24,7 @@ TOP_LEVEL_PACKAGE_FILES = (
     "dluma_discord_presence.dll",
     "dluma_nightly_updater.exe",
 )
+PRESERVED_RUNTIME_USER_DIRECTORIES = ("mod_data", "mod_config")
 PRESERVED_RUNTIME_DIAGNOSTIC_PATHS = (
     "dluma_runtime/dluma.log",
     "dluma_runtime/lua_discovery_report.txt",
@@ -206,8 +207,40 @@ def _require_unlinked_parent_chain(root: Path, path: Path, label: str) -> None:
     current = root
     for part in relative.parts:
         current /= part
-        if current.exists() and _is_linked_path(current):
+        if _is_linked_path(current):
             raise DeploymentError(f"refusing linked {label} path: {current}")
+
+
+def _snapshot_mod_config(root: Path) -> dict[str, tuple[int, str]]:
+    """Hash saved mod settings so deployment can verify their preservation."""
+    config_dir = root / "dluma_runtime" / "mod_config"
+    snapshot: dict[str, tuple[int, str]] = {}
+    try:
+        _require_unlinked_parent_chain(root, config_dir, "mod configuration")
+        if not config_dir.exists():
+            return snapshot
+        if not config_dir.is_dir():
+            raise DeploymentError(f"mod configuration is not a directory: {config_dir}")
+        for path in sorted(config_dir.rglob("*")):
+            if _is_linked_path(path):
+                raise DeploymentError(f"refusing linked mod configuration path: {path}")
+            if path.is_dir():
+                continue
+            if not path.is_file():
+                raise DeploymentError(f"mod configuration is not a regular file: {path}")
+            before = path.stat()
+            digest = sha256_file(path)
+            after = path.stat()
+            if (before.st_size, before.st_mtime_ns, before.st_ino) != (
+                after.st_size, after.st_mtime_ns, after.st_ino
+            ):
+                raise DeploymentError(f"mod configuration changed while being preserved: {path}")
+            snapshot[path.relative_to(config_dir).as_posix()] = (after.st_size, digest)
+    except DeploymentError:
+        raise
+    except OSError as error:
+        raise DeploymentError(f"cannot inspect saved mod configuration under {root}: {error}") from error
+    return snapshot
 
 
 def _snapshot_runtime_diagnostics(
@@ -427,6 +460,10 @@ def _validate_source_artifacts(
         _require_file(package_dir / name, f"package file {name}")
     runtime_dir = package_dir / "dluma_runtime"
     _require_directory(runtime_dir, "package private runtime")
+    for name in PRESERVED_RUNTIME_USER_DIRECTORIES:
+        user_dir = runtime_dir / name
+        if user_dir.exists() or _is_linked_path(user_dir):
+            raise DeploymentError(f"package private runtime must not contain user data: {name}")
     if not any(path.is_file() for path in runtime_dir.rglob("*")):
         raise DeploymentError(
             f"package private runtime contains no files: {runtime_dir}"
@@ -464,6 +501,13 @@ def _deploy_destination(
     preserved_runtime_diagnostics: dict[str, PreservedRuntimeDiagnostic],
 ) -> tuple[str, ...]:
     _require_directory(destination, "live deployment destination")
+    runtime_destination = destination / "dluma_runtime"
+    _require_unlinked_parent_chain(destination, runtime_destination, "runtime")
+    for name in PRESERVED_RUNTIME_USER_DIRECTORIES:
+        user_dir = runtime_destination / name
+        _require_unlinked_parent_chain(destination, user_dir, "runtime user data")
+        if user_dir.exists() and not user_dir.is_dir():
+            raise DeploymentError(f"runtime user data is not a directory: {user_dir}")
     removed: list[str] = []
     for stale_mod in _versioned_loader_mods(destination):
         if stale_mod.name.casefold() == mod_name.casefold():
@@ -476,17 +520,14 @@ def _deploy_destination(
             ) from error
         removed.append(stale_mod.name)
 
-    runtime_destination = destination / "dluma_runtime"
-    mod_data = runtime_destination / "mod_data"
     backup_dir = None
     try:
-        _require_unlinked_parent_chain(destination, runtime_destination, "runtime")
-        if mod_data.exists():
-            _require_unlinked_parent_chain(destination, mod_data, "mod data")
-            if not mod_data.is_dir():
-                raise DeploymentError(f"mod data is not a directory: {mod_data}")
-            backup_dir = Path(tempfile.mkdtemp(prefix=".dluma-mod-data-", dir=destination))
-            os.replace(mod_data, backup_dir / "mod_data")
+        for name in PRESERVED_RUNTIME_USER_DIRECTORIES:
+            user_dir = runtime_destination / name
+            if user_dir.exists():
+                if backup_dir is None:
+                    backup_dir = Path(tempfile.mkdtemp(prefix=".dluma-user-data-", dir=destination))
+                os.replace(user_dir, backup_dir / name)
         if runtime_destination.exists():
             shutil.rmtree(runtime_destination)
         _atomic_copy(package_dir / mod_name, destination / mod_name)
@@ -499,12 +540,17 @@ def _deploy_destination(
         ) from error
     finally:
         if backup_dir is not None:
-            saved_data = backup_dir / "mod_data"
-            if saved_data.exists():
-                runtime_destination.mkdir(parents=True, exist_ok=True)
-                if mod_data.exists():
-                    raise DeploymentError(f"cannot restore mod data; saved at {saved_data}")
-                os.replace(saved_data, mod_data)
+            for name in PRESERVED_RUNTIME_USER_DIRECTORIES:
+                saved_data = backup_dir / name
+                user_dir = runtime_destination / name
+                if saved_data.exists():
+                    try:
+                        runtime_destination.mkdir(parents=True, exist_ok=True)
+                        if user_dir.exists() or _is_linked_path(user_dir):
+                            raise DeploymentError(f"cannot restore {name}; saved at {saved_data}")
+                        os.replace(saved_data, user_dir)
+                    except OSError as error:
+                        raise DeploymentError(f"cannot restore {name}; saved at {saved_data}: {error}") from error
             backup_dir.rmdir()
     _restore_ini_files(destination, expected_ini)
     _restore_runtime_diagnostics(destination, preserved_runtime_diagnostics)
@@ -523,6 +569,7 @@ def verify_deployment(
     expected_runtime_diagnostics: (
         dict[Path, dict[str, PreservedRuntimeDiagnostic]] | None
     ) = None,
+    expected_mod_config: dict[Path, dict[str, tuple[int, str]]] | None = None,
 ) -> tuple[str, str]:
     mod_paths = {
         "built": built_mod,
@@ -581,6 +628,10 @@ def verify_deployment(
                     f"installed runtime diagnostics changed under {root}: "
                     f"before={sorted(before)} after={sorted(after)}"
                 )
+    if expected_mod_config is not None:
+        for root in (subscribed_dir, devtools_dir):
+            if _snapshot_mod_config(root) != expected_mod_config[root]:
+                raise DeploymentError(f"saved mod configuration changed under {root}")
     return next(iter(mod_hashes.values())), next(iter(pak_hashes.values()))
 
 
@@ -615,6 +666,10 @@ def deploy_local_package(
         subscribed_dir: _snapshot_runtime_diagnostics(subscribed_dir),
         devtools_dir: _snapshot_runtime_diagnostics(devtools_dir),
     }
+    mod_config_before = {
+        subscribed_dir: _snapshot_mod_config(subscribed_dir),
+        devtools_dir: _snapshot_mod_config(devtools_dir),
+    }
     subscribed_removed = _deploy_destination(
         package_dir,
         subscribed_dir,
@@ -638,6 +693,7 @@ def deploy_local_package(
         rejected_mod_sha256=rejected_mod_sha256,
         expected_ini=ini_expected,
         expected_runtime_diagnostics=runtime_diagnostics_before,
+        expected_mod_config=mod_config_before,
     )
     return DeploymentResult(
         mod_sha256=mod_hash,

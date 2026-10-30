@@ -346,6 +346,7 @@
         "world.write"
       ],
       "scopes": [
+        "global",
         "project",
         "map"
       ],
@@ -386,6 +387,7 @@
         "world.write"
       ],
       "scopes": [
+        "global",
         "project",
         "map"
       ],

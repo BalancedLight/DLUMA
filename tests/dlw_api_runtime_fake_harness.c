@@ -102,6 +102,8 @@ static DlumaStatus fake_invoke(
         return DLUMA_STATUS_OK;
     }
     case 4002U:
+    case 3010U:
+    case 3011U:
         ((DlumaBoolResult*)result)->value = 1U;
         return DLUMA_STATUS_OK;
     case 9001U:
@@ -245,6 +247,55 @@ static DlumaStatus call_world_find(
     return world.find(world.context, &request, result);
 }
 
+static void test_global_player_tuning_policy(DlumaApiRuntime* base, FakeBackend* fake)
+{
+    const uint32_t languages[] = {
+        DLUMA_MOD_LANGUAGE_LUA, DLUMA_MOD_LANGUAGE_CSHARP, DLUMA_MOD_LANGUAGE_NATIVE
+    };
+    unsigned index;
+    for (index = 0; index < sizeof(languages) / sizeof(languages[0]); ++index) {
+        DlumaModOwner owner = *base->owner;
+        DlumaApiRuntime runtime = *base;
+        DlumaPlayerVariableSetRequest set;
+        DlumaPlayerVariableRequest reset;
+        DlumaBoolResult result;
+        ResultBuffers error;
+        uint32_t before;
+        owner.language = languages[index];
+        owner.access_ids[owner.access_count++] = DLUMA_ACCESS_WORLD_WRITE;
+        runtime.owner = &owner;
+        INIT_REQUEST(set);
+        set.player = (DlumaObjectHandle){owner.owner_id, 0x777U, owner.map_generation, 2U};
+        set.name = (DlumaStringView){"move_forward_max_speed", 22U};
+        set.value = 10.0;
+        INIT_REQUEST(reset);
+        reset.player = set.player;
+        reset.name = set.name;
+        init_error(&error);
+        INIT_RESULT(result, error);
+        check(dluma_api_runtime_invoke(&runtime, 3010U, &set, sizeof(set),
+                  &result, sizeof(result)) == DLUMA_STATUS_OK && result.value,
+              "global_player_tuning_write_with_access");
+        INIT_RESULT(result, error);
+        check(dluma_api_runtime_invoke(&runtime, 3011U, &reset, sizeof(reset),
+                  &result, sizeof(result)) == DLUMA_STATUS_OK && result.value,
+              "global_player_tuning_reset_with_access");
+        before = fake->invoke_count;
+        --owner.access_count;
+        INIT_RESULT(result, error);
+        check(dluma_api_runtime_invoke(&runtime, 3010U, &set, sizeof(set),
+                  &result, sizeof(result)) == DLUMA_STATUS_ACCESS_DENIED && fake->invoke_count == before,
+              "global_player_tuning_requires_write_access");
+        ++owner.access_count;
+        ++fake->thread_id;
+        INIT_RESULT(result, error);
+        check(dluma_api_runtime_invoke(&runtime, 3011U, &reset, sizeof(reset),
+                  &result, sizeof(result)) == DLUMA_STATUS_WRONG_THREAD && fake->invoke_count == before,
+              "global_player_tuning_requires_game_thread");
+        --fake->thread_id;
+    }
+}
+
 int main(void)
 {
     FakeBackend fake = {77U, 0U, 0U, 100U};
@@ -281,6 +332,8 @@ int main(void)
             DLUMA_MOD_LANGUAGE_NATIVE, 3U, &fake,
             &native_owner, &native_caps, &native_runtime),
         "native_owner_initializes");
+
+    test_global_player_tuning_policy(&native_runtime, &fake);
 
     init_error(&error);
     lua_status = call_world_find(
