@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,10 +28,14 @@ def test_crash_core_native_harness() -> None:
             "call tools\\build_crash_core_fake_tests.bat",
         ],
         cwd=ROOT,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         timeout=90,
+    )
+    assert completed.returncode == 0, (
+        f"Crash harness exited {completed.returncode}\n"
+        f"{completed.stdout}{completed.stderr}"
     )
     assert "crash core fake harness passed" in completed.stdout
     assert "crash worker constrained-stack harness passed" in completed.stdout
@@ -460,12 +466,33 @@ def test_editor_exit_intent_native_harness() -> None:
             "call tools\\build_editor_exit_intent_fake_tests.bat",
         ],
         cwd=ROOT,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         timeout=90,
     )
+    assert completed.returncode == 0, (
+        f"Editor exit-intent harness exited {completed.returncode}\n"
+        f"{completed.stdout}{completed.stderr}"
+    )
     assert "Editor exit-intent fake cases passed: 5" in completed.stdout
+
+
+@pytest.mark.parametrize(
+    "harness_test",
+    [test_crash_core_native_harness, test_editor_exit_intent_native_harness],
+)
+def test_native_harness_failures_include_diagnostics(monkeypatch, harness_test):
+    completed = subprocess.CompletedProcess(
+        args=[], returncode=7,
+        stdout="compiler diagnostic\n", stderr="worker diagnostic\n",
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: completed)
+    with pytest.raises(AssertionError) as failure:
+        harness_test()
+    assert "exited 7" in str(failure.value)
+    assert "compiler diagnostic" in str(failure.value)
+    assert "worker diagnostic" in str(failure.value)
 
 
 
