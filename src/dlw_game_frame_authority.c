@@ -40,7 +40,8 @@ int dluma_game_frame_authority_identity_latched(
 {
     return state &&
            (state->game_frame_frontend_identity_latched ||
-            state->game_frame_playtest_handoff_latched);
+            state->game_frame_playtest_handoff_latched ||
+            state->game_frame_standalone_start_latched);
 }
 
 static int dluma_game_frame_startup_probe_valid(
@@ -57,6 +58,11 @@ static int dluma_game_frame_startup_probe_valid(
                dluma_game_frame_text_equal(
                    probe->level_name,
                    state->expected_playtest_level_name);
+    if (state && state->game_frame_standalone_start_configured &&
+        !probe->frontend_identity_valid)
+        return probe->gameplay_player &&
+               dluma_game_frame_text_equal(probe->level_name,
+                   state->expected_standalone_level_name);
     if (!probe->frontend_identity_valid)
         return 0;
     return 1;
@@ -71,6 +77,7 @@ static int dluma_game_frame_probe_matches(
            dluma_game_frame_startup_probe_valid(state, right) &&
            left->level_pointer == right->level_pointer &&
            left->level_vtable == right->level_vtable &&
+           left->gameplay_player == right->gameplay_player &&
            dluma_game_frame_text_equal(
                left->level_name, right->level_name);
 }
@@ -375,6 +382,26 @@ int dluma_game_frame_authority_configure_validated_playtest_handoff(
     return 1;
 }
 
+int dluma_game_frame_authority_configure_standalone_start(
+    DlumaGameFrameAuthorityState* state, const char* expected_level_name)
+{
+    unsigned int length = 0;
+    if (!state || !expected_level_name || !expected_level_name[0] ||
+        state->game_frame_authority_conflict || state->game_frame_authority_timed_out ||
+        state->game_frame_playtest_level_configured ||
+        state->game_frame_loader_dispatch_started ||
+        dluma_game_frame_authority_identity_latched(state))
+        return 0;
+    while (expected_level_name[length]) {
+        if (length + 1U >= DLUMA_GAME_FRAME_AUTHORITY_LEVEL_NAME_CAPACITY) return 0;
+        ++length;
+    }
+    dluma_game_frame_copy_text(state->expected_standalone_level_name,
+        (unsigned int)sizeof(state->expected_standalone_level_name), expected_level_name);
+    state->game_frame_standalone_start_configured = 1;
+    return 1;
+}
+
 void dluma_game_frame_authority_expire_frontend_evidence(
     DlumaGameFrameAuthorityState* state,
     ULONGLONG now_ms)
@@ -534,8 +561,9 @@ DlumaGameFrameAuthorityDecision dluma_game_frame_authority_observe_pre(
         state->repeating_route_count = 1U;
         state->last_route_sequence = observation->sequence;
         state->last_route_ms = observation->monotonic_ms;
-        dluma_game_frame_arm_selection_window(
-            state, observation->monotonic_ms);
+        if (!state->game_frame_standalone_start_configured ||
+            dluma_game_frame_startup_probe_valid(state, &observation->pre_original_probe))
+            dluma_game_frame_arm_selection_window(state, observation->monotonic_ms);
     } else if (!dluma_game_frame_route_matches(
                    state, observation)) {
         if (state->exact_route_game_subobject !=
@@ -613,6 +641,10 @@ DlumaGameFrameAuthorityDecision dluma_game_frame_authority_observe_pre(
             state, observation, decision.result);
         return decision;
     }
+    if (state->game_frame_standalone_start_configured &&
+        !state->game_frame_authority_window_armed &&
+        dluma_game_frame_startup_probe_valid(state, &observation->pre_original_probe))
+        dluma_game_frame_arm_selection_window(state, observation->monotonic_ms);
     if (state->game_frame_authority_timed_out) {
         aggregate->authority_result =
             DLUMA_GAME_FRAME_AUTHORITY_RESULT_AUTHORITY_TIMEOUT;
@@ -672,7 +704,12 @@ DlumaGameFrameAuthorityDecision dluma_game_frame_authority_observe_pre(
                 state,
                 &state->pending_post_frontend,
                 &observation->pre_original_probe);
-        if (!dluma_game_frame_authority_identity_latched(state))
+        if (state->game_frame_standalone_start_configured &&
+            !observation->pre_original_probe.frontend_identity_valid &&
+            state->pending_post_sequence + 1U != observation->sequence)
+            pending_confirmed = 0;
+        if (!dluma_game_frame_authority_identity_latched(state) &&
+            !state->game_frame_standalone_start_configured)
             pending_confirmed =
                 pending_confirmed ||
                 (observation->pre_original_probe.
@@ -691,11 +728,13 @@ DlumaGameFrameAuthorityDecision dluma_game_frame_authority_observe_pre(
      * fail-closed.
      */
     if (dluma_game_frame_authority_identity_latched(state) &&
+        !state->game_frame_standalone_start_latched &&
         pending_confirmed) {
         dluma_game_frame_store_latched_frontend(
             state, &state->pending_post_frontend, 1);
         dluma_game_frame_clear_pending_frontend(state);
     } else if (dluma_game_frame_authority_identity_latched(state) &&
+               !state->game_frame_standalone_start_latched &&
                dluma_game_frame_probe_matches_latched(
                    state, &observation->pre_original_probe)) {
         state->latched_frontend_observed_ms =
@@ -703,6 +742,30 @@ DlumaGameFrameAuthorityDecision dluma_game_frame_authority_observe_pre(
     }
 
     if (!dluma_game_frame_authority_identity_latched(state) &&
+        state->game_frame_standalone_start_configured &&
+        !observation->pre_original_probe.frontend_identity_valid) {
+        if (pending_confirmed)
+            state->standalone_confirmed_callbacks = dluma_game_frame_increment_u64(
+                state->standalone_confirmed_callbacks);
+        else
+            state->standalone_confirmed_callbacks = 0;
+    }
+    if (!dluma_game_frame_authority_identity_latched(state) &&
+        state->game_frame_standalone_start_configured &&
+        state->standalone_confirmed_callbacks >= DLUMA_GAME_FRAME_AUTHORITY_MIN_STABLE_CALLBACKS) {
+        state->game_frame_standalone_start_latched = 1;
+        state->game_frame_authority_frozen = 1;
+        state->game_frame_authority_sequence = observation->sequence;
+        state->game_frame_authority_proof |=
+            DLUMA_GAME_FRAME_AUTHORITY_PROOF_ACTIVE_LEVEL_QUERY |
+            DLUMA_GAME_FRAME_AUTHORITY_PROOF_SUBSEQUENT_ROUTE_CONFIRMATION |
+            DLUMA_GAME_FRAME_AUTHORITY_PROOF_STANDALONE_START_INTENT |
+            DLUMA_GAME_FRAME_AUTHORITY_PROOF_STANDALONE_SESSION_PLAYER;
+        dluma_game_frame_clear_pending_frontend(state);
+        decision.result = DLUMA_GAME_FRAME_AUTHORITY_RESULT_ROUTE_DISPATCH;
+        decision.authority_selected = 1U;
+        decision.run_loader_dispatch = 1U;
+    } else if (!dluma_game_frame_authority_identity_latched(state) &&
         state->game_frame_playtest_level_configured &&
         state->game_frame_playtest_handoff_validated &&
         (state->game_frame_authority_proof &
@@ -718,6 +781,8 @@ DlumaGameFrameAuthorityDecision dluma_game_frame_authority_observe_pre(
         decision.run_loader_dispatch = 1U;
     } else if (!dluma_game_frame_authority_identity_latched(state) &&
         !state->game_frame_playtest_level_configured &&
+        (!state->game_frame_standalone_start_configured ||
+         observation->pre_original_probe.frontend_identity_valid) &&
         state->repeating_route_count >=
             DLUMA_GAME_FRAME_AUTHORITY_MIN_STABLE_CALLBACKS &&
         pending_confirmed) {
@@ -805,6 +870,14 @@ void dluma_game_frame_authority_note_post_original(
         !original_entry_qpc || !original_return_qpc ||
         !dluma_game_frame_startup_probe_valid(state, post_probe))
         return;
+    if (state->game_frame_standalone_start_latched) return;
+    if (state->game_frame_standalone_start_configured &&
+        !post_probe->frontend_identity_valid &&
+        (!trace || !dluma_game_frame_probe_matches(
+            state, &trace->pre_original_probe, post_probe))) {
+        dluma_game_frame_clear_pending_frontend(state);
+        return;
+    }
     if (dluma_game_frame_authority_identity_latched(state)) {
         if (dluma_game_frame_probe_matches_latched(
                 state, post_probe)) {

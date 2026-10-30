@@ -569,6 +569,8 @@ typedef struct DlumaPlayerMediaPlayerProfile {
     DlumaPlayerMediaGetWaveDurationFn get_wave_duration_name;
     DlumaPlayerMediaObjectLevelFn get_object_level;
     DlumaPlayerMediaSessionLevelFn get_session_level;
+    DlumaPlayerMediaObjectLevelFn startup_get_object_level;
+    DlumaPlayerMediaSessionLevelFn startup_get_session_level;
     DlumaPlayerMediaObjectTimeFn get_object_time;
     DlumaPlayerMediaMusicStopFn music_stop;
     DlumaPlayerMediaMusicStartFn music_start;
@@ -605,6 +607,7 @@ typedef struct DlumaPlayerMediaPlayerProfile {
     DlumaPlayerMediaManagerDiagnostic manager_diagnostic;
     ULONGLONG next_live_readiness_probe_ms;
     unsigned char exact_profile;
+    unsigned char startup_session_ready;
     unsigned char local_buggy_ready;
     unsigned char wave_bank_ready;
     unsigned char wave_exports_ready;
@@ -657,6 +660,10 @@ static const char g_dluma_player_media_engine_sha256[] =
     "A18CA1103614947AE7FF956C6852F45123B440563A967D9E1E496C42FA574A3C";
 static const char g_dluma_player_media_gamedll_sha256[] =
     "CBC7DD7923778936341CDFB755474A0C714079D910849DF16FFC5EC88A103B95";
+static const char g_dluma_player_startup_engine_sha256[] =
+    "5B8090BFC3D3A25A24DA1846A3AAFD65C97E0D1E700B5DFEBFC7132737B6BFF6";
+static const char g_dluma_player_startup_gamedll_sha256[] =
+    "8E19C89C316E319E1E88D0C7A6F6A935C4B9C381905CAB48449CEE8FD6CCBA54";
 static const char g_dluma_player_media_filesystem_sha256[] =
     "CB6FF4B0C9AA62C8A35742D463AE3C34FE803767E8E2AC9B33E4604886B9846D";
 static const char g_dluma_player_media_fmod_sha256[] =
@@ -1932,12 +1939,13 @@ static int dluma_player_media_resolve_published_frontend_music_manager(
     return 1;
 }
 
-static int dluma_player_media_resolve_game_session_music_manager(
-    DlumaPlayerMediaPlayerProfile* profile, void* observed_active_level,
-    void** owner_level_out, void** level_di_out, void** manager_out,
-    unsigned int* reason_out, unsigned int* source_out,
-    unsigned int* session_class_out,
-    DlumaPlayerMediaManagerDiagnostic* diagnostic)
+static int dluma_player_media_resolve_game_session_owner(
+    DlumaPlayerMediaPlayerProfile* profile, void* game_subobject,
+    void* observed_active_level,
+    DlumaPlayerMediaSessionLevelFn get_session_level,
+    DlumaPlayerMediaObjectLevelFn get_object_level,
+    void** owner_level_out, void** level_di_out,
+    unsigned int* reason_out, unsigned int* session_class_out)
 {
     BYTE* frame_game_primary;
     BYTE* game_primary;
@@ -1947,31 +1955,24 @@ static int dluma_player_media_resolve_game_session_music_manager(
     void* level_di = 0;
     void* level_igsobject = 0;
     void* level_owner = 0;
-    void* manager_owner = 0;
-    void** manager_field;
-    void* manager;
     int query_delivered = 1;
     if (owner_level_out) *owner_level_out = 0;
     if (level_di_out) *level_di_out = 0;
-    if (manager_out) *manager_out = 0;
-    if (source_out) *source_out = DLUMA_DL_MUSIC_SOURCE_NONE;
     if (session_class_out)
         *session_class_out = DLUMA_DL_SESSION_CLASS_NONE;
-    if (!profile || !owner_level_out || !level_di_out || !manager_out ||
-        !session_class_out ||
-        !profile->game_subobject || !profile->get_session_level ||
-        !profile->get_object_level) {
+    if (!profile || !owner_level_out || !level_di_out || !session_class_out ||
+        !game_subobject || !get_session_level || !get_object_level) {
         if (reason_out)
             *reason_out = DLUMA_DL_LIVE_GAME_FRAME_RECEIVER_INVALID;
         return 0;
     }
-    if ((ULONG_PTR)profile->game_subobject <
+    if ((ULONG_PTR)game_subobject <
         DLUMA_DL_GAMEDI_FRAME_SUBOBJECT_OFFSET) {
         if (reason_out)
             *reason_out = DLUMA_DL_LIVE_GAME_FRAME_RECEIVER_INVALID;
         return 0;
     }
-    frame_game_primary = (BYTE*)profile->game_subobject -
+    frame_game_primary = (BYTE*)game_subobject -
                          DLUMA_DL_GAMEDI_FRAME_SUBOBJECT_OFFSET;
     if (!dluma_is_readable(
             frame_game_primary,
@@ -2052,7 +2053,7 @@ static int dluma_player_media_resolve_game_session_music_manager(
             profile, session, session_class_out, reason_out))
         return 0;
     __try {
-        level_di = profile->get_session_level(session);
+        level_di = get_session_level(session);
     }
     __except(1) {
         query_delivered = 0;
@@ -2074,7 +2075,7 @@ static int dluma_player_media_resolve_game_session_music_manager(
     }
     query_delivered = 1;
     __try {
-        level_owner = profile->get_object_level(level_igsobject);
+        level_owner = get_object_level(level_igsobject);
     }
     __except(1) {
         query_delivered = 0;
@@ -2094,6 +2095,40 @@ static int dluma_player_media_resolve_game_session_music_manager(
                 DLUMA_DL_LIVE_ACTIVE_LEVEL_SESSION_OWNER_MISMATCH;
         return 0;
     }
+    *owner_level_out = level_owner;
+    *level_di_out = level_di;
+    if (reason_out) *reason_out = DLUMA_DL_LIVE_READY;
+    return 1;
+}
+
+static int dluma_player_media_resolve_game_session_music_manager(
+    DlumaPlayerMediaPlayerProfile* profile, void* observed_active_level,
+    void** owner_level_out, void** level_di_out, void** manager_out,
+    unsigned int* reason_out, unsigned int* source_out,
+    unsigned int* session_class_out,
+    DlumaPlayerMediaManagerDiagnostic* diagnostic)
+{
+    void* level_di = 0;
+    void* level_owner = 0;
+    void* manager_owner = 0;
+    void** manager_field;
+    void* manager;
+    int query_delivered = 1;
+    if (owner_level_out) *owner_level_out = 0;
+    if (level_di_out) *level_di_out = 0;
+    if (manager_out) *manager_out = 0;
+    if (source_out) *source_out = DLUMA_DL_MUSIC_SOURCE_NONE;
+    if (session_class_out) *session_class_out = DLUMA_DL_SESSION_CLASS_NONE;
+    if (!profile || !owner_level_out || !level_di_out || !manager_out ||
+        !session_class_out) {
+        if (reason_out) *reason_out = DLUMA_DL_LIVE_GAME_FRAME_RECEIVER_INVALID;
+        return 0;
+    }
+    if (!dluma_player_media_resolve_game_session_owner(
+            profile, profile->game_subobject, observed_active_level,
+            profile->get_session_level, profile->get_object_level,
+            &level_owner, &level_di, reason_out, session_class_out))
+        return 0;
     manager_field = (void**)((BYTE*)level_di +
                              DLUMA_DL_LEVELDI_MUSIC_MANAGER_OFFSET);
     if (!dluma_is_readable(manager_field, sizeof(*manager_field))) {
@@ -3618,6 +3653,86 @@ static int dluma_player_media_bind_music_manager_detailed(
     return 1;
 }
 
+/* Startup level observation is independent of audio and its optional FMOD
+ * bindings. Both supported module pairs are checked before these pointers are
+ * published; the live route is checked again for each observation. */
+static int dluma_player_media_bind_startup_session(
+    DlumaPlayerMediaPlayerProfile* profile)
+{
+    DWORD timestamp = 0, engine_size = 0, game_size = 0;
+    void* get_level = 0;
+    unsigned int i;
+    int normal_pair, tools_pair;
+    if (!profile || !profile->player || !profile->engine || !profile->gamedll ||
+        !dluma_player_media_module_sha256(profile->player, 8ULL * 1024ULL * 1024ULL,
+            g_dluma_player_media_player_sha256))
+        return 0;
+    normal_pair = dluma_player_media_module_sha256(profile->engine, 32ULL * 1024ULL * 1024ULL,
+                      g_dluma_player_media_engine_sha256) &&
+                  dluma_player_media_module_sha256(profile->gamedll, 64ULL * 1024ULL * 1024ULL,
+                      g_dluma_player_media_gamedll_sha256);
+    tools_pair = !normal_pair &&
+                 dluma_player_media_module_sha256(profile->engine, 32ULL * 1024ULL * 1024ULL,
+                     g_dluma_player_startup_engine_sha256) &&
+                 dluma_player_media_module_sha256(profile->gamedll, 64ULL * 1024ULL * 1024ULL,
+                     g_dluma_player_startup_gamedll_sha256);
+    if ((!normal_pair && !tools_pair) ||
+        !dluma_player_media_pe_identity(profile->engine, &timestamp, &engine_size) ||
+        timestamp != DLUMA_DL_ENGINE_TIMESTAMP || engine_size != DLUMA_DL_ENGINE_IMAGE_SIZE ||
+        !dluma_player_media_pe_identity(profile->gamedll, &timestamp, &game_size) ||
+        timestamp != DLUMA_DL_GAMEDLL_TIMESTAMP || game_size != DLUMA_DL_GAMEDLL_IMAGE_SIZE)
+        return 0;
+    profile->engine_size = engine_size;
+    profile->gamedll_size = game_size;
+    if (!dluma_player_media_prefix_matches(profile->gamedll, game_size,
+            DLUMA_DL_DRIVING_CONDITION_RVA, g_dluma_dl_driving_condition_prefix,
+            DLUMA_ARRAY_COUNT(g_dluma_dl_driving_condition_prefix)) ||
+        !dluma_player_media_rip_relative_matches(profile->gamedll, game_size,
+            DLUMA_DL_DRIVING_CONDITION_RVA + 4U, 3U, 7U, DLUMA_DL_GAMEDI_GLOBAL_RVA) ||
+        !dluma_player_media_validate_rtti_vtable(profile->gamedll, game_size,
+            DLUMA_DL_GAMEDI_PRIMARY_VTABLE_RVA, DLUMA_DL_GAMEDI_PRIMARY_COL_RVA,
+            0U, DLUMA_DL_GAMEDI_TYPE_RVA, ".?AVGameDI@@") ||
+        !dluma_player_media_validate_rtti_vtable(profile->gamedll, game_size,
+            DLUMA_DL_GAMEDI_FRAME_VTABLE_RVA, DLUMA_DL_GAMEDI_FRAME_COL_RVA,
+            DLUMA_DL_GAMEDI_FRAME_SUBOBJECT_OFFSET, DLUMA_DL_GAMEDI_TYPE_RVA, ".?AVGameDI@@") ||
+        !dluma_player_media_validate_rtti_vtable(profile->gamedll, game_size,
+            DLUMA_DL_LEVELDI_VTABLE_RVA, DLUMA_DL_LEVELDI_COL_RVA, 0U,
+            DLUMA_DL_LEVELDI_TYPE_RVA, ".?AVLevelDI@@") ||
+        !dluma_player_media_validate_igsobject_route_metadata(profile->gamedll, game_size,
+            DLUMA_DL_LEVELDI_IGSOBJECT_VTABLE_RVA, DLUMA_DL_LEVELDI_IGSOBJECT_COL_RVA,
+            DLUMA_DL_LEVELDI_IGSOBJECT_OFFSET, DLUMA_DL_LEVELDI_TYPE_RVA, ".?AVLevelDI@@",
+            DLUMA_DL_LEVELDI_HIERARCHY_RVA, 5U, 13U, DLUMA_DL_LEVELDI_BASE_ARRAY_RVA,
+            4U, DLUMA_DL_LEVELDI_IGSOBJECT_BASE_DESCRIPTOR_RVA,
+            (LONG)DLUMA_DL_LEVELDI_IGSOBJECT_OFFSET) ||
+        !dluma_player_media_validate_rtti_vtable(profile->gamedll, game_size,
+            DLUMA_DL_PLAYERDI_PRIMARY_VTABLE_RVA, DLUMA_DL_PLAYERDI_PRIMARY_COL_RVA,
+            0U, DLUMA_DL_PLAYERDI_TYPE_RVA, ".?AVPlayerDI@@") ||
+        !dluma_player_media_validate_rtti_vtable(profile->gamedll, game_size,
+            DLUMA_DL_PLAYERDI_ACTOR_VTABLE_RVA, DLUMA_DL_PLAYERDI_ACTOR_COL_RVA,
+            DLUMA_DL_PLAYERDI_ACTOR_SUBOBJECT_OFFSET, DLUMA_DL_PLAYERDI_TYPE_RVA,
+            ".?AVPlayerDI@@") ||
+        !dluma_player_media_prefix_matches(profile->gamedll, game_size,
+            DLUMA_DL_SESSION_LEVEL_RVA, g_dluma_dl_session_level_prefix,
+            DLUMA_ARRAY_COUNT(g_dluma_dl_session_level_prefix)) ||
+        !dluma_player_media_engine_export(profile, g_dluma_dl_get_object_level_export,
+            DLUMA_DL_IGSOBJECT_GET_LEVEL_RVA, g_dluma_dl_get_object_level_prefix,
+            DLUMA_ARRAY_COUNT(g_dluma_dl_get_object_level_prefix), &get_level))
+        return 0;
+    for (i = 0; i < DLUMA_ARRAY_COUNT(g_dluma_player_media_session_classes); ++i) {
+        const DlumaPlayerMediaSessionClassProfile* session =
+            &g_dluma_player_media_session_classes[i];
+        if (!dluma_player_media_validate_session_profile_metadata(
+                profile->gamedll, game_size, session) ||
+            !dluma_player_media_vtable_slot_matches(profile->gamedll, game_size,
+                session->vtable_rva, DLUMA_DL_SESSION_LEVEL_SLOT, DLUMA_DL_SESSION_LEVEL_RVA))
+            return 0;
+    }
+    profile->startup_get_object_level = (DlumaPlayerMediaObjectLevelFn)get_level;
+    profile->startup_get_session_level = (DlumaPlayerMediaSessionLevelFn)(
+        (BYTE*)profile->gamedll + DLUMA_DL_SESSION_LEVEL_RVA);
+    return 1;
+}
+
 static int dluma_player_media_validate_playerdi_metadata(
     DlumaPlayerMediaPlayerProfile* profile)
 {
@@ -4738,6 +4853,9 @@ void dluma_player_media_adapter_bind(
         profile->music_filter_binding_ready =
             (unsigned char)dluma_player_media_bind_music_filter(profile);
     }
+    profile->startup_session_ready =
+        (unsigned char)(original_gamedll && original_gamedll == profile->gamedll &&
+            dluma_player_media_bind_startup_session(profile));
     profile->music_fade_ready = profile->music_manager_ready;
     profile->music_wet_mix_ready = 0U;
     if (profile->exact_profile && !g_dluma_media_destroy_state_slot &&
@@ -4960,6 +5078,82 @@ int dluma_player_media_adapter_clear_frontend_main_menu_module(
         "INFO", "player_media_frontend_main_menu_module",
         "cleared_before_background_unload");
     return 1;
+}
+
+int dluma_player_media_adapter_query_session_owner_for_frame(
+    void* game_subobject, void* observed_active_level,
+    void** level_interface_out)
+{
+    DlumaPlayerMediaPlayerProfile* profile = &g_dluma_player_media_player;
+    void* first_level = 0;
+    void* second_level = 0;
+    void* first_level_di = 0;
+    void* second_level_di = 0;
+    unsigned int first_class = DLUMA_DL_SESSION_CLASS_NONE;
+    unsigned int second_class = DLUMA_DL_SESSION_CLASS_NONE;
+    unsigned int reason = DLUMA_DL_LIVE_PROFILE_INVALID;
+    if (level_interface_out) *level_interface_out = 0;
+    if (!level_interface_out || !profile->startup_session_ready || !game_subobject)
+        return 0;
+    if (!dluma_player_media_resolve_game_session_owner(
+            profile, game_subobject, observed_active_level,
+            profile->startup_get_session_level, profile->startup_get_object_level,
+            &first_level, &first_level_di, &reason, &first_class) ||
+        !dluma_player_media_resolve_game_session_owner(
+            profile, game_subobject, observed_active_level,
+            profile->startup_get_session_level, profile->startup_get_object_level,
+            &second_level, &second_level_di, &reason, &second_class) ||
+        !first_level || first_level != second_level ||
+        !first_level_di || first_level_di != second_level_di ||
+        first_class == DLUMA_DL_SESSION_CLASS_NONE || first_class != second_class)
+        return 0;
+    *level_interface_out = first_level;
+    return 1;
+}
+
+int dluma_player_media_adapter_query_local_player_for_frame(
+    void* game_subobject, void* expected_level, void** player_out)
+{
+    DlumaPlayerMediaPlayerProfile* profile = &g_dluma_player_media_player;
+    void** root_slot;
+    void* root;
+    void* player;
+    void* player_level = 0;
+    void* current_level = 0;
+    int valid = 0;
+    if (player_out) *player_out = 0;
+    if (!player_out || !profile->startup_session_ready || !game_subobject ||
+        !expected_level || !profile->startup_get_object_level)
+        return 0;
+    __try {
+        root_slot = (void**)((BYTE*)profile->gamedll + DLUMA_DL_LOCAL_ROOT_SLOT_RVA);
+        if (!dluma_is_readable(root_slot, sizeof(*root_slot))) __leave;
+        root = *root_slot;
+        if (!root || !dluma_is_readable((BYTE*)root + 0x780U, sizeof(void*))) __leave;
+        player = *(void**)((BYTE*)root + 0x780U);
+        if (!player || !dluma_is_readable(player, 0x30U) ||
+            *(void**)player != (BYTE*)profile->gamedll + DLUMA_DL_PLAYERDI_PRIMARY_VTABLE_RVA ||
+            *(void**)((BYTE*)player + 0x28U) !=
+                (BYTE*)profile->gamedll + DLUMA_DL_PLAYERDI_ACTOR_VTABLE_RVA ||
+            !dluma_player_media_validate_live_rtti_object(
+                profile->gamedll, profile->gamedll_size, player,
+                DLUMA_DL_PLAYERDI_TYPE_RVA, ".?AVPlayerDI@@")) __leave;
+        player_level = profile->startup_get_object_level((BYTE*)player + 0x28U);
+        if (player_level != expected_level || *root_slot != root ||
+            *(void**)((BYTE*)root + 0x780U) != player ||
+            *(void**)player != (BYTE*)profile->gamedll + DLUMA_DL_PLAYERDI_PRIMARY_VTABLE_RVA ||
+            *(void**)((BYTE*)player + 0x28U) !=
+                (BYTE*)profile->gamedll + DLUMA_DL_PLAYERDI_ACTOR_VTABLE_RVA ||
+            !dluma_player_media_adapter_query_session_owner_for_frame(
+                game_subobject, 0, &current_level) || current_level != expected_level)
+            __leave;
+        *player_out = player;
+        valid = 1;
+    } __except (1) {
+        valid = 0;
+    }
+    if (!valid) *player_out = 0;
+    return valid;
 }
 
 int dluma_player_media_adapter_get_session_level(

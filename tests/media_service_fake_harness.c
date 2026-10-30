@@ -19,6 +19,7 @@ static int g_force_cleanup = 1;
 static int g_vehicle_available = 1;
 static unsigned int g_stop_calls;
 static unsigned int g_music_release_calls;
+static unsigned int g_music_maintain_calls;
 static unsigned int g_archive_mount_calls;
 static unsigned int g_bank_open_calls;
 static int g_bank_open_result;
@@ -159,6 +160,8 @@ int dluma_player_media_adapter_music_acquire(
 int dluma_player_media_adapter_music_state(
     DlumaMediaToken token, DlumaMediaMusicState* state)
 { (void)token; state->phase = DLUMA_MEDIA_MUSIC_OWNED; return DLUMA_MEDIA_RESULT_SUCCESS; }
+int dluma_player_media_adapter_music_maintain(DlumaMediaToken token)
+{ (void)token; ++g_music_maintain_calls; return DLUMA_MEDIA_RESULT_SUCCESS; }
 int dluma_player_media_adapter_music_filter(
     DlumaMediaToken token, float wet, float cutoff)
 { (void)token; (void)wet; (void)cutoff; return DLUMA_MEDIA_RESULT_SUCCESS; }
@@ -305,6 +308,9 @@ static int test_music_contention_and_revoke(void)
     memset(&result, 0, sizeof(result));
     CHECK(dluma_media_service_invoke(0, &first, 6010U, &request, &result) == DLUMA_STATUS_OK);
     token = result.token; CHECK(token != 0U);
+    g_music_maintain_calls = 0U;
+    dluma_media_service_tick(0, 0.0f);
+    CHECK(g_music_maintain_calls == 1U);
     CHECK(dluma_media_service_invoke(0, &second, 6010U, &request, &result) == DLUMA_STATUS_LIMIT_EXCEEDED);
     memset(&state_request, 0, sizeof(state_request)); state_request.token = token;
     CHECK(dluma_media_service_invoke(0, &first, 6011U, &state_request, &state_result) == DLUMA_STATUS_OK);
@@ -312,6 +318,8 @@ static int test_music_contention_and_revoke(void)
     memset(&filter, 0, sizeof(filter)); filter.token = token; filter.wet_mix = 1.0f; filter.cutoff_hz = 20.0f;
     CHECK(dluma_media_service_invoke(0, &first, 6012U, &filter, &bool_result) == DLUMA_STATUS_UNAVAILABLE);
     CHECK(dluma_media_service_revoke_owner(first.owner_id, first.generation));
+    dluma_media_service_tick(0, 0.0f);
+    CHECK(g_music_maintain_calls == 1U);
     CHECK(g_music_release_calls == 1U);
     CHECK(dluma_media_service_invoke(0, &first, 6011U, &state_request, &state_result) == DLUMA_STATUS_STALE_HANDLE);
     return 1;

@@ -721,6 +721,78 @@ static DlumaStatus DLUMA_API_CALL dluma_generated_operation_12003(
         result, (uint32_t)sizeof(DlumaBoolResult));
 }
 
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_13001(
+    void* context,
+    const DlumaHudSurfaceCreateRequest* request,
+    DlumaTokenResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        13001U,
+        request, (uint32_t)sizeof(DlumaHudSurfaceCreateRequest),
+        result, (uint32_t)sizeof(DlumaTokenResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_13002(
+    void* context,
+    const DlumaHudSurfaceUpdateRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        13002U,
+        request, (uint32_t)sizeof(DlumaHudSurfaceUpdateRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_13003(
+    void* context,
+    const DlumaHudSurfaceLayoutRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        13003U,
+        request, (uint32_t)sizeof(DlumaHudSurfaceLayoutRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_13004(
+    void* context,
+    const DlumaHudSurfaceVisibilityRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        13004U,
+        request, (uint32_t)sizeof(DlumaHudSurfaceVisibilityRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_13005(
+    void* context,
+    const DlumaHudSurfaceSuppressRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        13005U,
+        request, (uint32_t)sizeof(DlumaHudSurfaceSuppressRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_13006(
+    void* context,
+    const DlumaTokenRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        13006U,
+        request, (uint32_t)sizeof(DlumaTokenRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
 static int dluma_generated_fill_core_service(
     DlumaApiRuntime* runtime, void* output, uint32_t output_size)
 {
@@ -925,6 +997,24 @@ static int dluma_generated_fill_quest_phases_service(
         output, output_size, &table, (uint32_t)sizeof(table));
 }
 
+static int dluma_generated_fill_ui_surface_service(
+    DlumaApiRuntime* runtime, void* output, uint32_t output_size)
+{
+    DlumaUiSurfaceV1 table;
+    memset(&table, 0, sizeof(table));
+    table.struct_size = (uint32_t)sizeof(table);
+    table.version = 1U;
+    table.context = runtime;
+    table.create = dluma_generated_operation_13001;
+    table.update = dluma_generated_operation_13002;
+    table.layout = dluma_generated_operation_13003;
+    table.visibility = dluma_generated_operation_13004;
+    table.suppress = dluma_generated_operation_13005;
+    table.release = dluma_generated_operation_13006;
+    return dluma_api_copy_service_table(
+        output, output_size, &table, (uint32_t)sizeof(table));
+}
+
 static DlumaStatus dluma_generated_fill_service(
     DlumaApiRuntime* runtime,
     DlumaStringView service_id,
@@ -992,6 +1082,11 @@ static DlumaStatus dluma_generated_fill_service(
     if (dluma_api_string_equals_literal(
             service_id, "dluma.quest_phases.v1"))
         return dluma_generated_fill_quest_phases_service(
+            runtime, output, output_size)
+            ? DLUMA_STATUS_OK : DLUMA_STATUS_INSUFFICIENT_BUFFER;
+    if (dluma_api_string_equals_literal(
+            service_id, "dluma.ui.surface.v1"))
+        return dluma_generated_fill_ui_surface_service(
             runtime, output, output_size)
             ? DLUMA_STATUS_OK : DLUMA_STATUS_INSUFFICIENT_BUFFER;
     return DLUMA_STATUS_NOT_FOUND;

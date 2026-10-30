@@ -9,7 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "build" / "package" / "Release" / "dluma_lua54.dll"
-ABI = 0x00040000
+ABI = 0x00050000
 SCOPE_MAP = 3
 SCOPE_GLOBAL = 1
 EVENT_LOAD = 1
@@ -249,8 +249,8 @@ class ConfigChangedEvent(ctypes.Structure):
         ("value_type", ctypes.c_uint32),
         ("reserved", ctypes.c_uint32),
         ("key", ctypes.c_char * 65),
-        ("old_value", ctypes.c_char * 513),
-        ("value", ctypes.c_char * 513),
+        ("old_value", ctypes.c_char * 4097),
+        ("value", ctypes.c_char * 4097),
     ]
 
 
@@ -1543,6 +1543,7 @@ def test_private_helper_reports_exact_lua_548_and_bounded_abi():
         assert harness.api.begin_pump
         old_api = Api()
         assert harness.get_api(0x00020000, ctypes.byref(old_api), ctypes.sizeof(old_api)) == 0
+        assert harness.get_api(0x00040000, ctypes.byref(old_api), ctypes.sizeof(old_api)) == 0
         short_api = Api()
         assert harness.get_api(
             ABI,

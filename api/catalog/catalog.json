@@ -19,7 +19,8 @@
     "configuration",
     "storage",
     "companion_content",
-    "quest_phases"
+    "quest_phases",
+    "ui_surface"
   ],
   "status_values": [
     "implemented",

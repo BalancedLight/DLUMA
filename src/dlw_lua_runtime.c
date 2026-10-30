@@ -3523,7 +3523,7 @@ int dluma_lua_runtime_start(void)
         !g_dluma_lua_runtime.api.destroy_script ||
         !g_dluma_lua_runtime.api.begin_pump) {
         dluma_log_pair("ERROR", "lua_runtime_rejected_path", path_utf8);
-        dluma_log_line("ERROR", "Lua helper ABI or exact release did not match Lua 5.4.8.");
+        dluma_log_line("ERROR", "Lua helper is incompatible; install the complete matching DLUMA package.");
         FreeLibrary(g_dluma_lua_runtime.helper_module);
         memset(&g_dluma_lua_runtime, 0, sizeof(g_dluma_lua_runtime));
         return 0;

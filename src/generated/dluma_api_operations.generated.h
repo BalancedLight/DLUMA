@@ -84,6 +84,12 @@ static const DlumaOperationPolicy g_dluma_generated_operation_policies[] = {
     {12001U, 61U, 14U, 7U, 1U, 2U, "quests.phase_handlers", "quest.phase.handle"},
     {12002U, 61U, 15U, 7U, 1U, 2U, "quests.phase_handlers", "quest.phase.observe"},
     {12003U, 61U, 0U, 7U, 1U, 2U, "quests.phase_handlers", ""},
+    {13001U, 43U, 8U, 7U, 1U, 2U, "ui.surface", "ui.overlay"},
+    {13002U, 43U, 8U, 7U, 1U, 2U, "ui.surface", "ui.overlay"},
+    {13003U, 43U, 8U, 7U, 1U, 2U, "ui.surface", "ui.overlay"},
+    {13004U, 43U, 8U, 7U, 1U, 2U, "ui.surface", "ui.overlay"},
+    {13005U, 43U, 8U, 7U, 1U, 2U, "ui.surface", "ui.overlay"},
+    {13006U, 43U, 8U, 7U, 1U, 2U, "ui.surface", "ui.overlay"},
 };
 
 #define DLUMA_GENERATED_OPERATION_POLICY_COUNT \

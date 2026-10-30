@@ -135,6 +135,11 @@
       "id": 100,
       "name": "companion.content",
       "description": "Approval-bound companion content snapshots are available."
+    },
+    {
+      "id": 43,
+      "name": "ui.surface",
+      "description": "Owner-bound RGBA HUD surfaces are available for the current game build."
     }
   ]
 }

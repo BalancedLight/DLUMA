@@ -16,6 +16,7 @@ internal sealed class NativeModContext : IModContext
         Player = new PlayerApi(this);
         Events = new EventsApi(this);
         Ui = new UiApi(this);
+        UiSurface = new UiSurfaceApi(this);
         Audio = new AudioApi(this);
         Quests = new QuestsApi(this);
         Actions = new ActionsApi(this);
@@ -39,6 +40,8 @@ internal sealed class NativeModContext : IModContext
     public IEventsApi Events { get; }
 
     public IUiApi Ui { get; }
+
+    public IUiSurfaceApi UiSurface { get; }
 
     public IAudioApi Audio { get; }
 
@@ -697,6 +700,103 @@ internal sealed unsafe class UiApi(NativeModContext context) : IUiApi
         StructSize = (uint)sizeof(NativeBoolResult),
         StructVersion = NativeConstants.StructVersion,
     };
+}
+
+internal sealed unsafe class UiSurfaceApi(NativeModContext context) : IUiSurfaceApi
+{
+    public DlumaTokenResult Create(DlumaHudSurfaceCreateRequest request)
+    {
+        var active = context.RequireActive(13001);
+        if (!active.Succeeded) return new(active, 0);
+        var nativeRequest = new NativeHudSurfaceCreateRequest
+        {
+            StructSize = (uint)sizeof(NativeHudSurfaceCreateRequest),
+            StructVersion = NativeConstants.StructVersion,
+            Width = request.Width, Height = request.Height,
+        };
+        var result = new NativeTokenResult
+        {
+            StructSize = (uint)sizeof(NativeTokenResult),
+            StructVersion = NativeConstants.StructVersion,
+        };
+        var call = context.Bridge.Invoke(13001, ref nativeRequest, ref result);
+        return new(call, result.Token);
+    }
+
+    public DlumaBoolResult Update(DlumaHudSurfaceUpdateRequest request)
+    {
+        var active = context.RequireActive(13002);
+        if (!active.Succeeded) return new(active, false);
+        ArgumentNullException.ThrowIfNull(request.Pixels);
+        fixed (byte* pixels = request.Pixels)
+        {
+            var nativeRequest = new NativeHudSurfaceUpdateRequest
+            {
+                StructSize = (uint)sizeof(NativeHudSurfaceUpdateRequest),
+                StructVersion = NativeConstants.StructVersion,
+                Token = request.Token, Stride = request.Stride,
+                Pixels = new NativeByteView { Data = pixels, Size = (ulong)request.Pixels.Length },
+            };
+            return Invoke(13002, ref nativeRequest);
+        }
+    }
+
+    public DlumaBoolResult Layout(DlumaHudSurfaceLayoutRequest request)
+    {
+        var value = new NativeHudSurfaceLayoutRequest
+        {
+            StructSize = (uint)sizeof(NativeHudSurfaceLayoutRequest),
+            StructVersion = NativeConstants.StructVersion,
+            Token = request.Token, X = request.X, Y = request.Y,
+            Width = request.Width, Height = request.Height,
+        };
+        return Invoke(13003, ref value);
+    }
+
+    public DlumaBoolResult Visibility(DlumaHudSurfaceVisibilityRequest request)
+    {
+        var value = new NativeHudSurfaceVisibilityRequest
+        {
+            StructSize = (uint)sizeof(NativeHudSurfaceVisibilityRequest),
+            StructVersion = NativeConstants.StructVersion,
+            Token = request.Token, Visible = request.Visible ? 1u : 0u,
+        };
+        return Invoke(13004, ref value);
+    }
+
+    public DlumaBoolResult Suppress(DlumaHudSurfaceSuppressRequest request)
+    {
+        var value = new NativeHudSurfaceSuppressRequest
+        {
+            StructSize = (uint)sizeof(NativeHudSurfaceSuppressRequest),
+            StructVersion = NativeConstants.StructVersion,
+            Token = request.Token, Mask = request.Mask,
+        };
+        return Invoke(13005, ref value);
+    }
+
+    public DlumaBoolResult Release(DlumaTokenRequest request)
+    {
+        var value = new NativeTokenRequest
+        {
+            StructSize = (uint)sizeof(NativeTokenRequest),
+            StructVersion = NativeConstants.StructVersion, Token = request.Token,
+        };
+        return Invoke(13006, ref value);
+    }
+
+    private DlumaBoolResult Invoke<T>(uint operation, ref T request) where T : unmanaged
+    {
+        var active = context.RequireActive(operation);
+        if (!active.Succeeded) return new(active, false);
+        var result = new NativeBoolResult
+        {
+            StructSize = (uint)sizeof(NativeBoolResult),
+            StructVersion = NativeConstants.StructVersion,
+        };
+        var call = context.Bridge.Invoke(operation, ref request, ref result);
+        return new(call, result.Value != 0);
+    }
 }
 
 internal sealed unsafe class AudioApi(NativeModContext context) : IAudioApi

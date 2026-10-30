@@ -22,6 +22,8 @@
 #define DLUMA_PLAYER_STATE_VTABLE_RVA 0x017E2FF8UL
 #define DLUMA_PLAYER_STATE_VARIABLES_OFFSET 0x00D0UL
 #define DLUMA_PLAYER_FLOAT_VARIABLE_VTABLE_RVA 0x017EB5F0UL
+#define DLUMA_PLAYER_BOOL_VARIABLE_VTABLE_RVA 0x017EB5A0UL
+#define DLUMA_PLAYER_STATE_VARIABLES_DIRTY_OFFSET 0x0122UL
 #define DLUMA_PLAYER_GET_FVALUE_RVA 0x00BD2100UL
 
 #define DLUMA_PLAYER_STATE_VFUNC0_RVA 0x010BA850UL
@@ -39,7 +41,14 @@ static const DlumaPlayerVariableDefinition g_dluma_player_definitions[] = {
     { "low_health_effect_threshold", 103u, 0.0f, 100000.0f },
     { "stamina_warning_level", 209u, 0.0f, 10000.0f },
     { "max_stamina", 496u, 0.0f, 10000.0f },
+    { "move_backward_max_speed", 619u, 0.0f, 100.0f },
+    { "move_backward_min_speed", 620u, 0.0f, 100.0f },
+    { "move_forward_max_speed", 621u, 0.0f, 100.0f },
+    { "move_forward_min_speed", 622u, 0.0f, 100.0f },
+    { "move_strafe_max_speed", 623u, 0.0f, 100.0f },
+    { "move_strafe_min_speed", 624u, 0.0f, 100.0f },
     { "move_sprint_speed", 625u, 0.1f, 100.0f },
+    { "move_sprint_stamina_consumption", 689u, 0.0f, 10000.0f },
     { "max_health", 702u, 1.0f, 100000.0f },
     { "base_max_health", 706u, 1.0f, 100000.0f },
     { "health_critical_level", 707u, 0.0f, 100000.0f },
@@ -50,7 +59,9 @@ static const DlumaPlayerVariableDefinition g_dluma_player_definitions[] = {
     { "camera_car_fov", 780u, 20.0f, 170.0f },
     { "fov_sprint_modifier", 817u, -0.95f, 10.0f },
     { "fov_amortizer_modifier", 818u, -0.95f, 10.0f },
-    { "kick_stamina_usage", 823u, 0.0f, 10000.0f }
+    { "kick_stamina_usage", 823u, 0.0f, 10000.0f },
+    { "infinite_fitness", 969u, 0.0f, 1.0f },
+    { "infinite_stamina", 970u, 0.0f, 1.0f }
 };
 
 static HMODULE g_dluma_player_gamedll;
@@ -355,6 +366,24 @@ int dluma_player_variables_binding_read(
             sizeof(*variable_table)))
         return 0;
     variable_record = variable_table[definition->engine_id];
+    if (definition->engine_id == 969u || definition->engine_id == 970u) {
+        unsigned char bits;
+        if (!variable_record ||
+            !dluma_player_memory_readable(variable_record, sizeof(void*) + 1u) ||
+            *(uintptr_t*)variable_record !=
+                (uintptr_t)g_dluma_player_gamedll + DLUMA_PLAYER_BOOL_VARIABLE_VTABLE_RVA)
+            return 0;
+        bits = *((unsigned char*)variable_record + 8);
+        snapshot->player_state = player_state;
+        snapshot->variables = variables;
+        snapshot->variable_record = variable_record;
+        snapshot->definition = definition;
+        snapshot->value = (float)(bits & 1u);
+        snapshot->base = (float)((bits >> 1) & 1u);
+        snapshot->add = 0.0f;
+        snapshot->multiplier = 0.0f;
+        return 1;
+    }
     if (!variable_record ||
         !dluma_player_memory_readable(
             variable_record,
@@ -387,6 +416,30 @@ int dluma_player_variables_binding_write_base(
     float derived;
     float multiplier;
     float* variable;
+    if (snapshot && snapshot->definition &&
+        (snapshot->definition->engine_id == 969u || snapshot->definition->engine_id == 970u)) {
+        unsigned char* bits;
+        unsigned char* dirty;
+        void* current_state = 0;
+        if (!snapshot->variable_record || !snapshot->player_state ||
+            (base != 0.0f && base != 1.0f) ||
+            !dluma_player_variables_binding_local_state(&current_state) ||
+            current_state != snapshot->player_state ||
+            !dluma_player_memory_readable(snapshot->variable_record, sizeof(void*) + 1u) ||
+            *(uintptr_t*)snapshot->variable_record !=
+                (uintptr_t)g_dluma_player_gamedll + DLUMA_PLAYER_BOOL_VARIABLE_VTABLE_RVA)
+            return 0;
+        bits = (unsigned char*)snapshot->variable_record + 8;
+        dirty = (unsigned char*)snapshot->player_state + DLUMA_PLAYER_STATE_VARIABLES_DIRTY_OFFSET;
+        if (!dluma_player_memory_writable(bits, 1) || !dluma_player_memory_writable(dirty, 1))
+            return 0;
+        /* Leave the effective bit set when restoring false; the pending
+         * recomputation decides whether another active buff still owns it. */
+        *bits = (unsigned char)((*bits & 0xfdu) | (base == 1.0f ? 3u : 0u));
+        /* PlayerState's next update reapplies current buffs to the base. */
+        *dirty |= 1u;
+        return 1;
+    }
     if (!snapshot || !snapshot->variable_record ||
         !dluma_player_float_finite(base) ||
         !dluma_player_memory_writable(

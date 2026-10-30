@@ -321,6 +321,8 @@ __declspec(dllimport) HMODULE WINAPI LoadLibraryW(LPCWSTR lpLibFileName);
 __declspec(dllimport) HMODULE WINAPI LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
 __declspec(dllimport) BOOL WINAPI FreeLibrary(HMODULE hLibModule);
 __declspec(dllimport) DWORD WINAPI GetModuleFileNameW(HMODULE hModule, LPWSTR lpFilename, DWORD nSize);
+__declspec(dllimport) LPWSTR WINAPI GetCommandLineW(void);
+__declspec(dllimport) HANDLE WINAPI LocalFree(HANDLE hMem);
 __declspec(dllimport) DWORD WINAPI GetFullPathNameW(LPCWSTR lpFileName, DWORD nBufferLength, LPWSTR lpBuffer, LPWSTR* lpFilePart);
 __declspec(dllimport) DWORD WINAPI GetCurrentDirectoryW(DWORD nBufferLength, LPWSTR lpBuffer);
 __declspec(dllimport) DWORD WINAPI GetEnvironmentVariableW(LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize);

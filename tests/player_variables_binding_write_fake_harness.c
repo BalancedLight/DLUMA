@@ -60,6 +60,42 @@ static int test_record_at_readable_boundary(void)
     return 0;
 }
 
+static int test_boolean_override(void)
+{
+    unsigned char* module = (unsigned char*)VirtualAlloc(0,
+        DLUMA_PLAYER_LOCAL_STATE_GLOBAL_RVA + sizeof(void*),
+        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    unsigned char state[DLUMA_PLAYER_STATE_VARIABLES_DIRTY_OFFSET + 1u] = {0};
+    unsigned char record[16] = {0};
+    void* table[1042] = {0};
+    void** variables = table;
+    DlumaPlayerVariableSnapshot snapshot;
+    const DlumaPlayerVariableDefinition* definition =
+        dluma_player_variables_binding_definition_named("infinite_fitness");
+    CHECK(module && definition);
+    *(uintptr_t*)state = (uintptr_t)module + DLUMA_PLAYER_STATE_VTABLE_RVA;
+    *(void**)(state + DLUMA_PLAYER_STATE_VARIABLES_OFFSET) = &variables;
+    *(void**)(module + DLUMA_PLAYER_LOCAL_STATE_GLOBAL_RVA) = state;
+    *(uintptr_t*)record = (uintptr_t)module + DLUMA_PLAYER_BOOL_VARIABLE_VTABLE_RVA;
+    record[8] = 0xA1u; /* Existing buff, false base, unrelated bits. */
+    table[definition->engine_id] = record;
+    g_dluma_player_static_validation = 1;
+    g_dluma_player_gamedll = (HMODULE)module;
+    memset(&snapshot, 0, sizeof(snapshot));
+    CHECK(dluma_player_variables_binding_read(definition, &snapshot));
+    CHECK(snapshot.base == 0.0f && snapshot.value == 1.0f);
+    CHECK(!dluma_player_variables_binding_write_base(&snapshot, 0.5f));
+    CHECK(record[8] == 0xA1u);
+    CHECK(dluma_player_variables_binding_write_base(&snapshot, 1.0f));
+    CHECK(record[8] == 0xA3u && (state[DLUMA_PLAYER_STATE_VARIABLES_DIRTY_OFFSET] & 1u));
+    CHECK(dluma_player_variables_binding_write_base(&snapshot, 0.0f));
+    CHECK(record[8] == 0xA1u); /* Buff state remains until recomputation. */
+    g_dluma_player_static_validation = 0;
+    g_dluma_player_gamedll = 0;
+    CHECK(VirtualFree(module, 0, MEM_RELEASE));
+    return 0;
+}
+
 int main(void)
 {
     DlumaPlayerVariableSnapshot snapshot;
@@ -92,6 +128,7 @@ int main(void)
     CHECK(record[3] == 19.0f);
 
     CHECK(test_record_at_readable_boundary() == 0);
+    CHECK(test_boolean_override() == 0);
     puts("player variables transactional write: ok");
     return 0;
 }

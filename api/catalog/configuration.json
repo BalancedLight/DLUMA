@@ -24,7 +24,7 @@
       "result": "DlumaScalarResult",
       "limits": {
         "key_bytes": 64,
-        "value_bytes": 512
+        "value_bytes": 4096
       },
       "errors": [
         "invalid_argument",

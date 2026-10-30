@@ -4,7 +4,11 @@
 #include "dlw_frontend_level.h"
 #include "dlw_discord_presence.h"
 #include "dlw_player_media_adapter.h"
+#include "dlw_path_security.h"
+#include "dlw_project_owner_identity.h"
+#include "dlw_dual_host_runtime.h"
 #include "game/dlw_media_service.h"
+#include "game/dlw_hud_surface_service.h"
 #include <intrin.h>
 
 #pragma intrinsic(_ReturnAddress)
@@ -38,6 +42,156 @@ static ULONG_PTR __fastcall dluma_game_frame_hook(
     void* game_subobject, void* gesture_manager, float delta_seconds);
 static int dluma_get_pe_identity(
     HMODULE module, DWORD* timestamp, DWORD* image_size);
+
+typedef WCHAR** (WINAPI *DlumaCommandLineToArgvFn)(const WCHAR*, int*);
+
+/* Read one whole script command. Lines with comments or other commands do
+ * not count as startup intent. The script may contain other engine commands. */
+static int dluma_engine_startup_command(
+    const char* line, size_t length, const char* name,
+    char* output, size_t capacity)
+{
+    size_t n = strlen(name), i = 0, used = 0, j;
+    while (i < length && (line[i] == ' ' || line[i] == '\t')) ++i;
+    if (length - i < n + 4U) return 0;
+    for (j = 0; j < n; ++j) {
+        char a = line[i + j], b = name[j];
+        if (a >= 'A' && a <= 'Z') a = (char)(a - 'A' + 'a');
+        if (b >= 'A' && b <= 'Z') b = (char)(b - 'A' + 'a');
+        if (a != b) return 0;
+    }
+    i += n;
+    if (line[i++] != '(' || line[i++] != '"') return 0;
+    while (i < length && line[i] != '"') {
+        char c = line[i++];
+        if (c == '\\') {
+            if (i >= length || (line[i] != '\\' && line[i] != '"')) return -1;
+            c = line[i++];
+        }
+        if ((unsigned char)c < 0x20 || used + 1U >= capacity) return -1;
+        output[used++] = c;
+    }
+    if (!used || i >= length || line[i++] != '"' || i >= length || line[i++] != ')')
+        return -1;
+    while (i < length && (line[i] == ' ' || line[i] == '\t' || line[i] == '\r')) ++i;
+    if (i < length && (i + 1U >= length || line[i] != '/' || line[i + 1] != '/')) return -1;
+    output[used] = 0;
+    return 1;
+}
+
+/* Only an explicit local -debugconf file with a matching physical Workshop
+ * map is startup intent. It is not an Editor handoff or a level observation. */
+static int dluma_engine_read_standalone_autostart(
+    char* map_out, unsigned int map_capacity)
+{
+    HMODULE shell = 0;
+    DlumaCommandLineToArgvFn parse = 0;
+    WCHAR** argv = 0;
+    WCHAR module_path[DLUMA_MAX_WPATH], data_path[DLUMA_MAX_WPATH];
+    WCHAR script_path[DLUMA_MAX_WPATH], final_path[DLUMA_MAX_WPATH];
+    WCHAR selected[DLUMA_MAX_WPATH];
+    DlumaDirectoryIdentity module_identity, project_identity;
+    HANDLE file = INVALID_HANDLE_VALUE;
+    BY_HANDLE_FILE_INFORMATION info;
+    LARGE_INTEGER size;
+    char* bytes = 0;
+    char map[DLUMA_GAME_FRAME_AUTHORITY_LEVEL_NAME_CAPACITY] = {0};
+    char value[DLUMA_MAX_WPATH * 2U];
+    int argc = 0, found = 0, map_count = 0, matching_projects = 0, ok = 0;
+    DWORD read = 0, count;
+    size_t i, start;
+    if (!map_out || !map_capacity) return 0;
+    map_out[0] = 0;
+    shell = LoadLibraryW(L"shell32.dll");
+    if (!shell) goto done;
+    parse = (DlumaCommandLineToArgvFn)GetProcAddress(shell, "CommandLineToArgvW");
+    if (!parse || !(argv = parse(GetCommandLineW(), &argc))) goto done;
+    selected[0] = 0;
+    for (i = 1; i < (size_t)argc; ++i) {
+        const WCHAR* arg = argv[i];
+        {
+            static const WCHAR prefix[] = L"-debugconf=";
+            size_t p;
+            for (p = 0; p < 11U && arg[p]; ++p) {
+                WCHAR c = arg[p];
+                if (c >= L'A' && c <= L'Z') c = (WCHAR)(c - L'A' + L'a');
+                if (c != prefix[p]) break;
+            }
+            if (p != 11U) continue;
+        }
+        if (found++) goto done;
+        arg += 11;
+        if (!*arg || wcslen(arg) >= DLUMA_ARRAY_COUNT(selected)) goto done;
+        for (start = 0; arg[start]; ++start) {
+            WCHAR c = arg[start];
+            if ((c == L'.' && arg[start + 1U] == L'.') ||
+                !((c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') ||
+                  (c >= L'0' && c <= L'9') || c == L'_' || c == L'-' || c == L'.'))
+                goto done;
+        }
+        if (start < 5 || dluma_wstricmp(arg + start - 4, L".scr") != 0) goto done;
+        dluma_wstr_copy(selected, DLUMA_ARRAY_COUNT(selected), arg);
+    }
+    if (found != 1) goto done;
+    count = GetModuleFileNameW(0, module_path, DLUMA_ARRAY_COUNT(module_path));
+    if (!count || count >= DLUMA_ARRAY_COUNT(module_path)) goto done;
+    while (count && module_path[count - 1U] != L'\\' && module_path[count - 1U] != L'/') --count;
+    if (!count) goto done;
+    module_path[count - 1U] = 0;
+    if (!dluma_open_directory_identity(module_path, &module_identity) ||
+        !dluma_checked_path_join(data_path, DLUMA_ARRAY_COUNT(data_path), module_path, L"DW\\Data") ||
+        !dluma_checked_path_join(script_path, DLUMA_ARRAY_COUNT(script_path), data_path, selected))
+        goto done;
+    file = CreateFileW(script_path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, 0);
+    if (file == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(file, &info) ||
+        (info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
+        info.nNumberOfLinks != 1U || !GetFileSizeEx(file, &size) || size.QuadPart <= 0 ||
+        size.QuadPart > 65536 || !dluma_get_final_path_checked(file, final_path, DLUMA_ARRAY_COUNT(final_path)) ||
+        !dluma_final_path_equal_or_under(final_path, module_identity.final_path))
+        goto done;
+    bytes = (char*)dluma_alloc((SIZE_T)size.QuadPart + 1U);
+    if (!bytes || !ReadFile(file, bytes, (DWORD)size.QuadPart, &read, 0) || read != (DWORD)size.QuadPart)
+        goto done;
+    bytes[read] = 0;
+    for (start = 0; start < read;) {
+        size_t end = start;
+        int parsed;
+        while (end < read && bytes[end] != '\n') ++end;
+        parsed = dluma_engine_startup_command(bytes + start, end - start, "AutoStart", value, sizeof(value));
+        if (parsed < 0) goto done;
+        if (parsed) {
+            if (++map_count != 1 || !dluma_valid_map_segment(value)) goto done;
+            dluma_normalize_map_name(value, map, DLUMA_ARRAY_COUNT(map));
+            if (!map[0]) goto done;
+        }
+        start = end + (end < read ? 1U : 0U);
+    }
+    if (map_count != 1) goto done;
+    for (start = 0; start < read;) {
+        size_t end = start;
+        int parsed;
+        while (end < read && bytes[end] != '\n') ++end;
+        parsed = dluma_engine_startup_command(bytes + start, end - start, "WorkshopItem", value, sizeof(value));
+        if (parsed < 0) goto done;
+        if (parsed && dluma_utf8_to_wide(value, selected, DLUMA_ARRAY_COUNT(selected)) &&
+            ((selected[0] && selected[1] == L':' && (selected[2] == L'\\' || selected[2] == L'/')) ||
+             (selected[0] == L'\\' && selected[1] == L'\\')) &&
+            dluma_open_directory_identity(selected, &project_identity) &&
+            dluma_validate_map_anchor_under_project(selected, map, &project_identity))
+            ++matching_projects;
+        start = end + (end < read ? 1U : 0U);
+    }
+    if (matching_projects != 1 || strlen(map) + 1U > map_capacity) goto done;
+    dluma_str_copy(map_out, map_capacity, map);
+    ok = 1;
+done:
+    if (bytes) dluma_free(bytes);
+    if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+    if (argv) LocalFree(argv);
+    if (shell) FreeLibrary(shell);
+    return ok;
+}
 
 #define DLUMA_DEVTOOLS_GAMEDLL_TIMESTAMP 0x623397AAUL
 #define DLUMA_DEVTOOLS_GAMEDLL_IMAGE_SIZE 0x02082000UL
@@ -588,6 +742,34 @@ DlumaEngineLevelQueryResult dluma_engine_readonly_frontend_probe(
     return result;
 }
 
+static void dluma_engine_readonly_routed_probe(
+    DlumaEngineState* state, void* game_subobject, unsigned int route_proof,
+    DlumaGameFrameFrontendProbe* probe)
+{
+    void* active_level = 0;
+    void* level = 0;
+    void* player = 0;
+    ULONG_PTR level_vtable = 0;
+    char name[DLUMA_GAME_FRAME_AUTHORITY_LEVEL_NAME_CAPACITY];
+    (void)dluma_engine_readonly_frontend_probe(state, probe);
+    if (!state || !probe ||
+        !state->game_frame_authority.game_frame_standalone_start_configured ||
+        probe->frontend_identity_valid)
+        return;
+    if (probe->result == DLUMA_GAME_FRAME_LEVEL_QUERY_SUCCESS)
+        active_level = (void*)probe->level_pointer;
+    if (!dluma_engine_query_startup_session_level_identity(
+            state, game_subobject, route_proof, active_level,
+            name, DLUMA_ARRAY_COUNT(name), &level, &level_vtable, &player))
+        return;
+    probe->level_pointer = (ULONG_PTR)level;
+    probe->level_vtable = level_vtable;
+    probe->gameplay_player = (ULONG_PTR)player;
+    probe->frontend_identity_valid = 0;
+    probe->result = DLUMA_GAME_FRAME_LEVEL_QUERY_SUCCESS;
+    dluma_str_copy(probe->level_name, DLUMA_ARRAY_COUNT(probe->level_name), name);
+}
+
 static void dluma_engine_validate_pending_frontend_freshness(
     DlumaEngineState* state,
     DlumaGameFrameFrontendProbe* current_probe)
@@ -754,8 +936,9 @@ static ULONG_PTR __fastcall dluma_game_frame_hook(
         observation.recursive_depth <= 1U;
     if (structurally_valid_serialized &&
         !state->game_frame_stopping) {
-        (void)dluma_engine_readonly_frontend_probe(
-            state, &observation.pre_original_probe);
+        dluma_engine_readonly_routed_probe(
+            state, game_subobject, observation.route_proof,
+            &observation.pre_original_probe);
         dluma_engine_validate_pending_frontend_freshness(
             state, &observation.pre_original_probe);
 
@@ -860,6 +1043,7 @@ static ULONG_PTR __fastcall dluma_game_frame_hook(
                     current_thread, 0) == 0) {
                 dluma_media_service_tick(
                     game_subobject, delta_seconds);
+                dluma_hud_surface_pump();
                 if (dluma_atomic_compare_exchange(
                         &g_dluma_game_frame_first_tick_logged,
                         1, 0) == 0)
@@ -868,7 +1052,10 @@ static ULONG_PTR __fastcall dluma_game_frame_hook(
                         state->game_frame_authority.
                                 game_frame_playtest_handoff_latched
                             ? "GameDI::OnFrame loader dispatch latched from a validated Editor playtest handoff on the first exact serialized route; worker migration is permitted."
-                            : "GameDI::OnFrame loader dispatch latched from positive frontend evidence on one exact serialized route; worker migration is permitted.");
+                            : state->game_frame_authority.
+                                  game_frame_standalone_start_latched
+                                ? "GameDI::OnFrame loader dispatch latched from validated standalone startup session and player evidence; worker migration is permitted."
+                                : "GameDI::OnFrame loader dispatch latched from positive frontend evidence on one exact serialized route; worker migration is permitted.");
                 dluma_localization_game_thread_tick();
                 dluma_ui_game_thread_tick(
                     game_subobject, callback_sequence);
@@ -908,8 +1095,8 @@ static ULONG_PTR __fastcall dluma_game_frame_hook(
             dluma_engine_query_performance_counter();
         if (structurally_valid_serialized &&
             !state->game_frame_stopping)
-            (void)dluma_engine_readonly_frontend_probe(
-                state, &post_probe);
+            dluma_engine_readonly_routed_probe(
+                state, game_subobject, observation.route_proof, &post_probe);
     }
     /*
      * Techland's original frame work may change or release the shared cursor
@@ -1131,6 +1318,14 @@ static int dluma_install_game_frame_hook(DlumaEngineState* state)
         &state->game_frame_authority,
         GetTickCount64(),
         DLUMA_GAME_FRAME_AUTHORITY_STARTUP_TIMEOUT_MS);
+    if (!dluma_dual_host_runtime_is_playtest()) {
+        char standalone_map[DLUMA_GAME_FRAME_AUTHORITY_LEVEL_NAME_CAPACITY];
+        if (dluma_engine_read_standalone_autostart(
+                standalone_map, DLUMA_ARRAY_COUNT(standalone_map)) &&
+            dluma_game_frame_authority_configure_standalone_start(
+                &state->game_frame_authority, standalone_map))
+            dluma_log_pair("INFO", "standalone_autostart_expected_level", standalone_map);
+    }
     state->game_frame_authority.exact_route_hook_slot =
         (ULONG_PTR)slot;
     state->game_frame_hook_call_count = 0;
@@ -1393,6 +1588,59 @@ DlumaEngineLevelQueryResult dluma_engine_query_level_identity(
     if (level_interface) state->last_level_interface = level_interface;
     return dluma_engine_read_level_identity(
         state, level_interface, map_out, map_cap, level_out, level_vtable_out);
+}
+
+int dluma_engine_query_startup_session_level_identity(
+    DlumaEngineState* state, void* game_subobject, unsigned int route_proof,
+    void* observed_active_level, char* map_out, unsigned int map_cap,
+    void** level_out, ULONG_PTR* level_vtable_out, void** player_out)
+{
+    void* level = 0;
+    void* current = 0;
+    void* player = 0;
+    void* current_player = 0;
+    const unsigned int required = DLUMA_GAME_FRAME_AUTHORITY_STATIC_PROOF |
+        DLUMA_GAME_FRAME_AUTHORITY_PROOF_SERIALIZED_ROUTE;
+    int valid = 0;
+    if (!map_out || !map_cap || !level_out || !level_vtable_out || !player_out) return 0;
+    map_out[0] = 0;
+    *level_out = 0;
+    *level_vtable_out = 0;
+    *player_out = 0;
+    if (!state || !state->ready || !game_subobject ||
+        (route_proof & required) != required ||
+        dluma_atomic_compare_exchange(
+            &state->game_frame_callback_active_thread_id, 0, 0) !=
+            (LONG)GetCurrentThreadId())
+        return 0;
+    __try {
+        if (dluma_player_media_adapter_query_session_owner_for_frame(
+                game_subobject, observed_active_level, &level) &&
+            dluma_engine_read_level_identity(
+                state, level, map_out, map_cap, level_out, level_vtable_out) ==
+                DLUMA_ENGINE_LEVEL_QUERY_SUCCESS &&
+            !dluma_frontend_level_name_is_frontend(map_out) &&
+            dluma_player_media_adapter_query_local_player_for_frame(
+                game_subobject, level, &player) &&
+            dluma_player_media_adapter_query_session_owner_for_frame(
+                game_subobject, observed_active_level, &current) &&
+            current == level && dluma_is_readable(level, sizeof(void*)) &&
+            *(ULONG_PTR*)level == *level_vtable_out &&
+            dluma_player_media_adapter_query_local_player_for_frame(
+                game_subobject, level, &current_player) && current_player == player) {
+            *player_out = player;
+            valid = 1;
+        }
+    } __except (1) {
+        valid = 0;
+    }
+    if (!valid) {
+        map_out[0] = 0;
+        *level_out = 0;
+        *level_vtable_out = 0;
+        *player_out = 0;
+    }
+    return valid;
 }
 
 int dluma_engine_query_session_level_identity(

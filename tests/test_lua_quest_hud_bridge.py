@@ -13,7 +13,7 @@ GAMEPLAY = (ROOT / "src/dlw_native_gameplay.c").read_text(encoding="utf-8")
 
 
 def test_01_private_abi_appends_quest_hud_callbacks_and_capability():
-    assert "#define DLUMA_LUA54_ABI_VERSION 0x00040000u" in API
+    assert "#define DLUMA_LUA54_ABI_VERSION 0x00050000u" in API
     assert "DLUMA_LUA54_CAP_UI_QUEST_HUD = 1u << 19" in API
     assert "#define DLUMA_LUA54_MAX_QUEST_HUD_OBJECTIVES 4u" in API
     assert "#define DLUMA_LUA54_MAX_QUEST_HUD_OVERRIDE_TEXT 512u" in API

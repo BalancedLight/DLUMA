@@ -22,6 +22,7 @@ SOURCES = (
     (ROOT / 'PakAssets/XUI/DLUMA_Main_PC_workshop.xui', 'data/menu/scr/DLM_Main_PC_workshop.xui'),
     (ROOT / 'PakAssets/XUI/DLUMA_MenuExtras.xui', 'data/menu/scr/MenuExtras.xui'),
     (ROOT / 'PakAssets/XUI/MenuDLUMAMods.xui', 'data/menu/scr/MenuDLUMAMods.xui'),
+    (ROOT / 'PakAssets/XUI/DLUMA_SurfaceCanvas.xui', 'data/menu/scr/DLUMA_SurfaceCanvas.xui'),
     (ROOT / 'PakAssets/XUI/MenuDLUMALogs.xui', 'data/menu/scr/MenuDLUMALogs.xui'),
     (ROOT / 'PakAssets/XUI/MenuDLUMAModDetails.xui', 'data/menu/scr/MenuDLUMAModDetails.xui'),
     (ROOT / 'PakAssets/XUI/MenuDLUMAModConfig.xui', 'data/menu/scr/MenuDLUMAModConfig.xui'),
@@ -441,7 +442,7 @@ def validate() -> None:
     if (
         '<Visual>ListBoxOptionsV</Visual>' not in config_text
         or '<UIEditBox>' not in config_text
-        or '<MaxChars>128</MaxChars>' not in config_text
+        or '<MaxChars>2048</MaxChars>' not in config_text
     ):
         raise ValueError('Mod Config must use native option rows and a bounded text editor')
     if '<Id>MenuDLUMACustomMainMenu</Id>' not in custom_menu_text:

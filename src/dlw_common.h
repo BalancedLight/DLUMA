@@ -883,6 +883,11 @@ DlumaEngineLevelQueryResult dluma_engine_query_level_identity(
 int dluma_engine_query_session_level_identity(
     DlumaEngineState *state, char *map_out, unsigned int map_cap,
     void **level_out, ULONG_PTR *level_vtable_out);
+/* Read-only startup observation; caller must own the exact serialized frame. */
+int dluma_engine_query_startup_session_level_identity(
+    DlumaEngineState *state, void *game_subobject, unsigned int route_proof,
+    void *observed_active_level, char *map_out, unsigned int map_cap,
+    void **level_out, ULONG_PTR *level_vtable_out, void **player_out);
 DlumaEngineLevelQueryResult dluma_engine_readonly_frontend_probe(
     DlumaEngineState *state, DlumaGameFrameFrontendProbe *probe_out);
 int dluma_engine_copy_fresh_latched_frontend(

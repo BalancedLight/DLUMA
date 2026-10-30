@@ -110,6 +110,13 @@ int dluma_player_media_adapter_clear_frontend_main_menu_module(
     void* main_menu_module);
 int dluma_player_media_adapter_get_session_level(
     void** level_interface_out);
+/* Read-only session owner query for an exact, serialized frame callback.
+ * Does not publish a media owner or require an active music manager. */
+int dluma_player_media_adapter_query_session_owner_for_frame(
+    void* game_subobject, void* observed_active_level,
+    void** level_interface_out);
+int dluma_player_media_adapter_query_local_player_for_frame(
+    void* game_subobject, void* expected_level, void** player_out);
 unsigned int dluma_player_media_adapter_capabilities(void);
 int dluma_player_media_adapter_get_vehicle_state(
     DlumaVehicleAdapterState* state);

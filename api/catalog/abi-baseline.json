@@ -84,6 +84,14 @@
       "quest_phases.provider.register",
       "quest_phases.observer.register",
       "quest_phases.unregister"
+    ],
+    "dluma.ui.surface.v1": [
+      "ui_surface.create",
+      "ui_surface.update",
+      "ui_surface.layout",
+      "ui_surface.visibility",
+      "ui_surface.suppress",
+      "ui_surface.release"
     ]
   }
 }

@@ -18,6 +18,7 @@
 | 40 | `ui.subtitles` | 2 | gated |
 | 41 | `ui.quest_hud` | 2 | gated |
 | 42 | `ui.overlay` | 1 | planned |
+| 43 | `ui.surface` | 6 | gated |
 | 50 | `audio.radio_dialog` | 1 | gated |
 | 51 | `audio.registered_cues` | 0 | reserved |
 | 52 | `audio.stem` | 7 | gated |

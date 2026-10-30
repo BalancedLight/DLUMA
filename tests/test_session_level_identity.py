@@ -9,6 +9,8 @@ def test_session_identity_rejects_invalid_and_changed_owners(tmp_path):
     engine = (ROOT / "src/dlw_engine.c").read_text(encoding="utf-8")
     reader = engine[engine.index("static DlumaEngineLevelQueryResult dluma_engine_read_level_identity("):
                     engine.index("DlumaEngineLevelQueryResult dluma_engine_query_level_identity(")]
+    startup = engine[engine.index("int dluma_engine_query_startup_session_level_identity("):
+                     engine.index("int dluma_engine_query_session_level_identity(")]
     session = engine[engine.index("int dluma_engine_query_session_level_identity("):
                      engine.index("int dluma_engine_query_level(")]
     source = tmp_path / "identity.c"
@@ -20,7 +22,9 @@ def test_session_identity_rejects_invalid_and_changed_owners(tmp_path):
 #define DLUMA_ARRAY_COUNT(x) (sizeof(x)/sizeof((x)[0]))
 typedef enum { DLUMA_ENGINE_LEVEL_QUERY_INVALID, DLUMA_ENGINE_LEVEL_QUERY_NULL,
     DLUMA_ENGINE_LEVEL_QUERY_SUCCESS } DlumaEngineLevelQueryResult;
-typedef struct { int ready; const char* (*get_level_name)(void*); } DlumaEngineState;
+typedef struct { int ready; const char* (*get_level_name)(void*); volatile LONG game_frame_callback_active_thread_id; } DlumaEngineState;
+#define DLUMA_GAME_FRAME_AUTHORITY_STATIC_PROOF 0x1u
+#define DLUMA_GAME_FRAME_AUTHORITY_PROOF_SERIALIZED_ROUTE 0x2u
 static int authorized = 1, available = 1, changed, calls, throw_name;
 static ULONG_PTR vtable[2] = {1,1};
 static ULONG_PTR fake_level[1], replacement[1];
@@ -30,17 +34,25 @@ static void dluma_str_copy(char* out, unsigned int cap, const char* in) { strncp
 static void dluma_normalize_map_name(const char* in, char* out, unsigned int cap) { dluma_str_copy(out, cap, in); }
 static int dluma_frontend_level_name_is_frontend(const char* s) { return !strcmp(s, "menu"); }
 static int dluma_engine_game_frame_dispatch_active_on_current_thread(DlumaEngineState* s) { return s && authorized; }
+static LONG dluma_atomic_compare_exchange(volatile LONG* p, LONG x, LONG y) { return InterlockedCompareExchange(p,x,y); }
+static int dluma_player_media_adapter_query_session_owner_for_frame(void* frame, void* active, void** out) {
+    if (!frame || (active && active != fake_level)) return 0;
+    ++calls; *out = available ? (changed && calls > 1 ? replacement : fake_level) : 0; return available;
+}
+static int dluma_player_media_adapter_query_local_player_for_frame(void* frame, void* level, void** out) {
+    if (!frame || level != fake_level) return 0; *out = &vtable; return 1;
+}
 static int dluma_player_media_adapter_get_session_level(void** out) {
     ++calls; *out = available ? (changed && calls > 1 ? replacement : fake_level) : 0; return available;
 }
 static const char* get_name(void* p) {
     (void)p; if (throw_name) RaiseException(0xE0000001, 0, 0, 0); return map;
 }
-''' + reader + session + r'''
+''' + reader + startup + session + r'''
 #define CHECK(x) do { if (!(x)) { printf("FAIL %d: %s\n",__LINE__,#x); return 1; } } while(0)
 int main(void) {
-    DlumaEngineState state = {1, get_name}; char name[128];
-    void* observed = 0; ULONG_PTR observed_vtable = 0;
+    DlumaEngineState state = {1, get_name, 0}; char name[128];
+    void* observed = 0; void* player = 0; ULONG_PTR observed_vtable = 0;
     fake_level[0] = (ULONG_PTR)vtable; replacement[0] = (ULONG_PTR)vtable;
     CHECK(dluma_engine_query_session_level_identity(&state,name,sizeof(name),&observed,&observed_vtable));
     CHECK(observed == fake_level && observed_vtable == (ULONG_PTR)vtable && !strcmp(name,"test_map"));
@@ -61,6 +73,13 @@ int main(void) {
     CHECK(!dluma_engine_query_session_level_identity(&state,name,sizeof(name),&observed,&observed_vtable));
     map = "test_map";
     CHECK(dluma_engine_query_session_level_identity(&state,name,sizeof(name),&observed,&observed_vtable));
+    state.game_frame_callback_active_thread_id = (LONG)GetCurrentThreadId(); calls = 0;
+    CHECK(!dluma_engine_query_startup_session_level_identity(&state,&state,1,0,name,sizeof(name),&observed,&observed_vtable,&player) && !calls);
+    CHECK(dluma_engine_query_startup_session_level_identity(&state,&state,3,0,name,sizeof(name),&observed,&observed_vtable,&player));
+    calls = 0; changed = 1;
+    CHECK(!dluma_engine_query_startup_session_level_identity(&state,&state,3,0,name,sizeof(name),&observed,&observed_vtable,&player));
+    changed = 0; state.game_frame_callback_active_thread_id = 0; calls = 0;
+    CHECK(!dluma_engine_query_startup_session_level_identity(&state,&state,3,0,name,sizeof(name),&observed,&observed_vtable,&player) && !calls);
     puts("session level identity: ok"); return 0;
 }
 ''', encoding="utf-8")

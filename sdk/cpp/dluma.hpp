@@ -12,6 +12,9 @@ namespace dluma {
 inline DlumaStringView string_view(std::string_view value) noexcept {
     return {value.data(), static_cast<std::uint64_t>(value.size())};
 }
+inline DlumaByteView byte_view(const unsigned char* data, std::uint64_t size) noexcept {
+    return {data, size};
+}
 
 template <typename Table>
 class service_ref {
@@ -383,6 +386,41 @@ public:
     }
 };
 
+class ui_surface_service final : public service_ref<DlumaUiSurfaceV1> {
+public:
+    using service_ref<DlumaUiSurfaceV1>::service_ref;
+    DlumaStatus create(const DlumaHudSurfaceCreateRequest& request,
+                     DlumaTokenResult& result) const noexcept {
+        if (!table_ || !table_->create) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->create(table_->context, &request, &result);
+    }
+    DlumaStatus update(const DlumaHudSurfaceUpdateRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->update) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->update(table_->context, &request, &result);
+    }
+    DlumaStatus layout(const DlumaHudSurfaceLayoutRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->layout) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->layout(table_->context, &request, &result);
+    }
+    DlumaStatus visibility(const DlumaHudSurfaceVisibilityRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->visibility) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->visibility(table_->context, &request, &result);
+    }
+    DlumaStatus suppress(const DlumaHudSurfaceSuppressRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->suppress) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->suppress(table_->context, &request, &result);
+    }
+    DlumaStatus release(const DlumaTokenRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->release) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->release(table_->context, &request, &result);
+    }
+};
+
 class context final {
 public:
     explicit constexpr context(const DlumaApiV1* api) noexcept : api_(api) {}
@@ -486,6 +524,14 @@ public:
         return quest_phases_service(&storage_quest_phases_);
     }
 
+    ui_surface_service ui_surface() const noexcept {
+        DlumaUiSurfaceV1 table{};
+        table.struct_size = sizeof(table);
+        if (!load(DLUMA_SERVICE_UI_SURFACE_V1, table)) return {};
+        storage_ui_surface_ = table;
+        return ui_surface_service(&storage_ui_surface_);
+    }
+
 private:
     template <typename Table>
     bool load(const char* id, Table& table) const noexcept {
@@ -507,6 +553,7 @@ private:
     mutable DlumaStorageV1 storage_storage_{};
     mutable DlumaCompanionContentV1 storage_companion_content_{};
     mutable DlumaQuestPhasesV1 storage_quest_phases_{};
+    mutable DlumaUiSurfaceV1 storage_ui_surface_{};
 };
 
 } // namespace dluma

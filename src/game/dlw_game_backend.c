@@ -2,6 +2,7 @@
 #include "dlw_player_service.h"
 #include "dlw_media_service.h"
 #include "dlw_quest_phase_service.h"
+#include "dlw_hud_surface_service.h"
 
 #include "../dlw_common.h"
 #include "../dlw_lua54_api.h"
@@ -86,6 +87,7 @@ void dluma_game_backend_prepare_capabilities(
     dluma_player_service_prepare_capabilities(registry);
     dluma_media_service_prepare_capabilities(registry);
     dluma_quest_phase_service_prepare_capabilities(registry);
+    dluma_hud_surface_prepare_capabilities(registry);
     dluma_game_backend_set_capability(
         registry, DLUMA_CAPABILITY_UI_OVERLAY, 0, 0, "planned");
     dluma_game_backend_set_capability(
@@ -461,6 +463,13 @@ static DlumaStatus dluma_game_backend_invoke(
     (void)request_size;
     (void)result_size;
     switch (operation_id) {
+    case 13001U:
+    case 13002U:
+    case 13003U:
+    case 13004U:
+    case 13005U:
+    case 13006U:
+        return dluma_hud_surface_invoke(owner, operation_id, request, result);
     case 1001U: {
         const DlumaLogRequest* log = (const DlumaLogRequest*)request;
         char level[17];

@@ -22,6 +22,7 @@ typedef struct DlumaPlayerServiceHandle {
     uint32_t generation;
     uint64_t owner_id;
     uint64_t handle_id;
+    void* player_state;
 } DlumaPlayerServiceHandle;
 
 typedef struct DlumaPlayerServiceOverride {
@@ -43,6 +44,11 @@ static DlumaPlayerServiceHandle
     g_dluma_player_service_handles[DLUMA_PLAYER_SERVICE_MAX_HANDLES];
 static DlumaPlayerServiceOverride
     g_dluma_player_service_overrides[DLUMA_PLAYER_SERVICE_MAX_OVERRIDES];
+
+static int dluma_player_service_reset_definition_locked(
+    const DlumaPlayerVariableDefinition* definition,
+    uint64_t owner_id,
+    int discard_on_failure);
 
 static void dluma_player_service_lock(void)
 {
@@ -151,10 +157,10 @@ static DlumaStatus dluma_player_service_local(
     DlumaPlayerServiceHandle* available = 0;
     DlumaStatus status;
     void* player_state;
+    int retire = 0;
     if (!owner || !result) return DLUMA_STATUS_INVALID_ARGUMENT;
     if (!dluma_player_variables_binding_local_state(&player_state))
         return DLUMA_STATUS_UNAVAILABLE;
-    (void)player_state;
     status = dluma_player_service_write_buffer(
         &result->name, "local_player");
     if (status != DLUMA_STATUS_OK) return status;
@@ -163,6 +169,47 @@ static DlumaStatus dluma_player_service_local(
     if (status != DLUMA_STATUS_OK) return status;
 
     dluma_player_service_lock();
+    /* A player handle identifies both a map generation and its PlayerState.
+     * Retire the owner's prior overrides before issuing a replacement. */
+    for (index = 0; index < DLUMA_PLAYER_SERVICE_MAX_HANDLES; ++index) {
+        DlumaPlayerServiceHandle* entry = &g_dluma_player_service_handles[index];
+        if (entry->active && entry->owner_id == owner->owner_id &&
+            (entry->generation != owner->map_generation || entry->player_state != player_state)) {
+            retire = 1;
+            break;
+        }
+    }
+    if (!retire) {
+        for (index = 0; index < DLUMA_PLAYER_SERVICE_MAX_OVERRIDES; ++index) {
+            DlumaPlayerServiceOverride* entry = &g_dluma_player_service_overrides[index];
+            if (entry->active && entry->owner_id == owner->owner_id &&
+                (entry->map_generation != owner->map_generation || entry->player_state != player_state)) {
+                retire = 1;
+                break;
+            }
+        }
+    }
+    if (retire) {
+        for (index = 0; index < DLUMA_PLAYER_SERVICE_MAX_OVERRIDES; ++index) {
+            DlumaPlayerServiceOverride* entry = &g_dluma_player_service_overrides[index];
+            const DlumaPlayerVariableDefinition* definition;
+            if (!entry->active || entry->owner_id != owner->owner_id) continue;
+            definition = dluma_player_variables_binding_definition_id(entry->engine_id);
+            if (!definition || !dluma_player_service_reset_definition_locked(
+                    definition, owner->owner_id, 0)) {
+                dluma_player_service_unlock();
+                return DLUMA_STATUS_UNAVAILABLE;
+            }
+        }
+        for (index = 0; index < DLUMA_PLAYER_SERVICE_MAX_HANDLES; ++index) {
+            DlumaPlayerServiceHandle* entry = &g_dluma_player_service_handles[index];
+            if (entry->active && entry->owner_id == owner->owner_id) {
+                int counted = entry->generation == owner->map_generation;
+                memset(entry, 0, sizeof(*entry));
+                if (counted && owner->active_handles) --owner->active_handles;
+            }
+        }
+    }
     for (index = 0;
          index < DLUMA_PLAYER_SERVICE_MAX_HANDLES;
          ++index) {
@@ -170,7 +217,8 @@ static DlumaStatus dluma_player_service_local(
             &g_dluma_player_service_handles[index];
         if (entry->active &&
             entry->owner_id == owner->owner_id &&
-            entry->generation == owner->map_generation) {
+            entry->generation == owner->map_generation &&
+            entry->player_state == player_state) {
             result->handle.owner_id = owner->owner_id;
             result->handle.handle_id = entry->handle_id;
             result->handle.generation = owner->map_generation;
@@ -190,6 +238,7 @@ static DlumaStatus dluma_player_service_local(
     available->active = 1U;
     available->owner_id = owner->owner_id;
     available->generation = owner->map_generation;
+    available->player_state = player_state;
     available->handle_id = dluma_player_service_next_handle_id();
     result->handle.owner_id = owner->owner_id;
     result->handle.handle_id = available->handle_id;
@@ -222,6 +271,13 @@ static DlumaStatus dluma_player_service_validate_handle_locked(
             return DLUMA_STATUS_FOREIGN_HANDLE;
         if (entry->generation != owner->map_generation)
             return DLUMA_STATUS_STALE_HANDLE;
+        {
+            void* current_state = 0;
+            if (!dluma_player_variables_binding_local_state(&current_state))
+                return DLUMA_STATUS_UNAVAILABLE;
+            if (entry->player_state != current_state)
+                return DLUMA_STATUS_STALE_HANDLE;
+        }
         return DLUMA_STATUS_OK;
     }
     return DLUMA_STATUS_STALE_HANDLE;
@@ -410,10 +466,26 @@ static int dluma_player_service_reset_definition_locked(
         }
     }
     if (!found) return 1;
-    if (original)
-        restored = dluma_player_service_restore_original_locked(
-            definition, player_state,
-            winner ? winner->requested_base : original->original_base);
+    if (original) {
+        if (!winner && (definition->engine_id == 969u || definition->engine_id == 970u)) {
+            DlumaPlayerVariableSnapshot current;
+            memset(&current, 0, sizeof(current));
+            if (!dluma_player_variables_binding_read(definition, &current) ||
+                current.player_state != player_state)
+                restored = 0;
+            else if (current.base != original->requested_base) {
+                /* A later game change owns this base value now. */
+                restored = 1;
+            } else {
+                restored = dluma_player_service_restore_original_locked(
+                    definition, player_state, original->original_base);
+            }
+        } else {
+            restored = dluma_player_service_restore_original_locked(
+                definition, player_state,
+                winner ? winner->requested_base : original->original_base);
+        }
+    }
     /* Keep the caller's record until restoration succeeds so an explicit
      * reset can be retried. Final revocation still discards obsolete owners. */
     if (!restored && !discard_on_failure) return 0;
@@ -452,6 +524,9 @@ static DlumaStatus dluma_player_service_variable_set(
         request->value > FLT_MAX || request->value < -FLT_MAX ||
         request->value < definition->minimum ||
         request->value > definition->maximum)
+        return DLUMA_STATUS_INVALID_ARGUMENT;
+    if ((definition->engine_id == 969u || definition->engine_id == 970u) &&
+        request->value != 0.0 && request->value != 1.0)
         return DLUMA_STATUS_INVALID_ARGUMENT;
     requested = (float)request->value;
     memset(&snapshot, 0, sizeof(snapshot));

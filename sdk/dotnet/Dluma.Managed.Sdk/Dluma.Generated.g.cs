@@ -38,6 +38,8 @@ public enum DlumaCapabilityId : uint
     UiQuestHud = 41,
     /// <summary>Loader overlay widgets are available.</summary>
     UiOverlay = 42,
+    /// <summary>Owner-bound RGBA HUD surfaces are available for the current game build.</summary>
+    UiSurface = 43,
     /// <summary>Named radio-dialog playback is available.</summary>
     AudioRadioDialog = 50,
     /// <summary>Registered 2D and positional cue playback is available.</summary>
@@ -413,6 +415,40 @@ public readonly record struct DlumaQuestPhaseRegistrationRequest(
     ulong CallbackId
 );
 
+/// <summary>Creates an RGBA8 HUD surface.</summary>
+public readonly record struct DlumaHudSurfaceCreateRequest(
+    uint Width,
+    uint Height
+);
+
+/// <summary>Copies RGBA8 pixels into an owned HUD surface.</summary>
+public readonly record struct DlumaHudSurfaceUpdateRequest(
+    ulong Token,
+    uint Stride,
+    byte[] Pixels
+);
+
+/// <summary>Sets HUD rectangle in 1280 by 720 coordinates.</summary>
+public readonly record struct DlumaHudSurfaceLayoutRequest(
+    ulong Token,
+    float X,
+    float Y,
+    float Width,
+    float Height
+);
+
+/// <summary>Sets HUD surface visibility.</summary>
+public readonly record struct DlumaHudSurfaceVisibilityRequest(
+    ulong Token,
+    bool Visible
+);
+
+/// <summary>Sets the owned stock HUD suppression mask.</summary>
+public readonly record struct DlumaHudSurfaceSuppressRequest(
+    ulong Token,
+    uint Mask
+);
+
 /// <summary>Managed facade for dluma.core.v1.</summary>
 public interface ICoreApi
 {
@@ -594,6 +630,23 @@ public interface ICompanionContentApi
     DlumaCompanionEntryReadResult EntryRead(DlumaCompanionEntryReadRequest request);
 }
 
+/// <summary>Managed facade for dluma.ui.surface.v1.</summary>
+public interface IUiSurfaceApi
+{
+    /// <summary>Creates an owner-bound map-generation HUD surface.</summary>
+    DlumaTokenResult Create(DlumaHudSurfaceCreateRequest request);
+    /// <summary>Copies a complete RGBA8 frame synchronously.</summary>
+    DlumaBoolResult Update(DlumaHudSurfaceUpdateRequest request);
+    /// <summary>Sets a HUD rectangle in 1280 by 720 coordinates.</summary>
+    DlumaBoolResult Layout(DlumaHudSurfaceLayoutRequest request);
+    /// <summary>Shows or hides the owned HUD surface.</summary>
+    DlumaBoolResult Visibility(DlumaHudSurfaceVisibilityRequest request);
+    /// <summary>Sets the owner-controlled stock combat HUD suppression mask.</summary>
+    DlumaBoolResult Suppress(DlumaHudSurfaceSuppressRequest request);
+    /// <summary>Releases an owned HUD surface and restores suppressed controls.</summary>
+    DlumaBoolResult Release(DlumaTokenRequest request);
+}
+
 /// <summary>Idiomatic owner-attributed logging over dluma.core.v1.</summary>
 public interface IDlumaLogger
 {
@@ -635,6 +688,8 @@ public interface IModContext
     IStorageApi Storage { get; }
     /// <summary>Gets the dluma.companion_content.v1 facade.</summary>
     ICompanionContentApi CompanionContent { get; }
+    /// <summary>Gets the dluma.ui.surface.v1 facade.</summary>
+    IUiSurfaceApi UiSurface { get; }
 }
 
 /// <summary>A generated catalog operation descriptor.</summary>
@@ -655,7 +710,7 @@ public static class DlumaApiCatalog
     /// <summary>The public DLUMA API version.</summary>
     public const string Version = "1.0";
     /// <summary>The SHA-256 of the canonical API catalog.</summary>
-    public const string Sha256 = "D24FB8E99DCC15D803DC6C3C275F80C71218AA254E8ECF6431633A2E90EEC65A";
+    public const string Sha256 = "84202AF55B7177081551F21DC0C1F17899000B6FD8D6A63B94BC38A6839701F0";
     /// <summary>Every public operation in stable numeric order.</summary>
     public static IReadOnlyList<DlumaOperationDescriptor> Operations { get; } =
     [
@@ -1259,5 +1314,65 @@ public static class DlumaApiCatalog
             ["global", "project", "map"],
             "game",
             @"Idempotently unregisters one quest phase token owned by the calling mod."),
+        new(
+            13001u,
+            "ui_surface.create",
+            "ui_surface",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.UiSurface,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Creates an owner-bound map-generation HUD surface."),
+        new(
+            13002u,
+            "ui_surface.update",
+            "ui_surface",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.UiSurface,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Copies a complete RGBA8 frame synchronously."),
+        new(
+            13003u,
+            "ui_surface.layout",
+            "ui_surface",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.UiSurface,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Sets a HUD rectangle in 1280 by 720 coordinates."),
+        new(
+            13004u,
+            "ui_surface.visibility",
+            "ui_surface",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.UiSurface,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Shows or hides the owned HUD surface."),
+        new(
+            13005u,
+            "ui_surface.suppress",
+            "ui_surface",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.UiSurface,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Sets the owner-controlled stock combat HUD suppression mask."),
+        new(
+            13006u,
+            "ui_surface.release",
+            "ui_surface",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.UiSurface,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Releases an owned HUD surface and restores suppressed controls."),
     ];
 }

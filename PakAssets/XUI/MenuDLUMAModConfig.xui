@@ -337,7 +337,7 @@
                         <NavDown>B_ConfigSave</NavDown>
                         <NavTabForward>B_ConfigSave</NavTabForward>
                         <NavTabBackward>B_ConfigCancel</NavTabBackward>
-                        <MaxChars>128</MaxChars>
+                        <MaxChars>2048</MaxChars>
                     </Properties>
                 </UIEditBox>
                 <UINaviButton>

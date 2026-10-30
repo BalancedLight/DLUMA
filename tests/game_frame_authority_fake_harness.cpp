@@ -770,6 +770,42 @@ bool TestTopologyTraceIsBounded() noexcept
     return true;
 }
 
+bool TestStandaloneStartupRequiresStablePlayerAndLevel() noexcept
+{
+    FakeRuntime runtime = NewRuntime();
+    CHECK(dluma_game_frame_authority_configure_standalone_start(&runtime.authority, "example"));
+    (void)DriveCallback(&runtime, kThreads[0], 1000U, NullProbe(1000U), NullProbe(1000U));
+    CHECK(dluma_game_frame_authority_status(&runtime.authority, 50000U) ==
+          DLUMA_GAME_FRAME_AUTHORITY_STATUS_PENDING);
+    for (unsigned int index = 0; index < 10U; ++index) {
+        const auto now = 50000U + index * 16U;
+        auto pre = FrontendProbe(now);
+        pre.frontend_identity_valid = 0;
+        pre.gameplay_player = 0x4444U;
+        std::strcpy(pre.level_name, "example");
+        auto post = pre;
+        if (index == 2U) post.gameplay_player = 0x5555U;
+        (void)DriveCallback(&runtime, kThreads[index % 8U], now, pre, post);
+        if (index < 9U) CHECK(!runtime.authority.game_frame_standalone_start_latched);
+    }
+    CHECK(!runtime.authority.game_frame_frontend_identity_latched);
+    CHECK(!runtime.authority.game_frame_playtest_handoff_latched);
+    for (unsigned int index = 0; index < 3U && !runtime.authority.game_frame_standalone_start_latched; ++index) {
+        const auto now = 50160U + index * 16U;
+        auto probe = FrontendProbe(now);
+        probe.frontend_identity_valid = 0;
+        probe.gameplay_player = 0x4444U;
+        std::strcpy(probe.level_name, "example");
+        (void)DriveCallback(&runtime, kThreads[index], now, probe, probe);
+    }
+    CHECK(runtime.authority.game_frame_standalone_start_latched);
+    CHECK(runtime.authority.game_frame_authority_proof &
+          DLUMA_GAME_FRAME_AUTHORITY_PROOF_STANDALONE_SESSION_PLAYER);
+    CHECK(!(runtime.authority.game_frame_authority_proof &
+          DLUMA_GAME_FRAME_AUTHORITY_PROOF_FRONTEND_IDENTITY));
+    return true;
+}
+
 }  // namespace
 
 int main()
@@ -791,6 +827,7 @@ int main()
         TestFrontendPointersRefreshAndExpireWithinBound() &&
         TestTimerProbeIsDiagnosticAndSeparate() &&
         TestShutdownAcceptsRouteOrWindowOwnerOnly() &&
+        TestStandaloneStartupRequiresStablePlayerAndLevel() &&
         TestTopologyTraceIsBounded();
     if (!passed) return 1;
     std::puts("game frame authority fake harness passed");

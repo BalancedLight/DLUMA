@@ -34,8 +34,8 @@ def test_schema_v1_limits_and_all_four_setting_kinds_are_bounded():
         "#define DLUMA_LUA_CONFIG_MAX_SETTINGS_PER_CATEGORY 9U",
         "#define DLUMA_LUA_CONFIG_MAX_SETTINGS 48U",
         "#define DLUMA_LUA_CONFIG_MAX_ENUM_OPTIONS 16U",
-        "#define DLUMA_LUA_CONFIG_MAX_TEXT_CHARACTERS 128U",
-        "#define DLUMA_LUA_CONFIG_MAX_TEXT_BYTES 512U",
+        "#define DLUMA_LUA_CONFIG_MAX_TEXT_CHARACTERS 1024U",
+        "#define DLUMA_LUA_CONFIG_MAX_TEXT_BYTES 4096U",
     ):
         assert contract in header
     for kind in ("boolean", "integer", "enum", "text"):
@@ -252,7 +252,7 @@ def test_public_api_version_docs_and_intellisense_move_together():
         / "src"
         / "api.js"
     )
-    assert "#define DLUMA_LUA54_ABI_VERSION 0x00040000u" in api
+    assert "#define DLUMA_LUA54_ABI_VERSION 0x00050000u" in api
     assert "DlumaLua54ConfigGetFn config_get;" in api
     assert "int (*begin_pump)(void* script);" in api
     assert 'lua_pushliteral(state, "1.0")' in helper

@@ -1,7 +1,7 @@
 {
   "api_name": "DLUMA API",
   "api_version": "1.0",
-  "catalog_sha256": "D24FB8E99DCC15D803DC6C3C275F80C71218AA254E8ECF6431633A2E90EEC65A",
+  "catalog_sha256": "84202AF55B7177081551F21DC0C1F17899000B6FD8D6A63B94BC38A6839701F0",
   "operations": [
     {
       "id": "core.log",
@@ -1179,6 +1179,126 @@
       ],
       "thread": "game",
       "documentation": "Idempotently unregisters one quest phase token owned by the calling mod."
+    },
+    {
+      "id": "ui_surface.create",
+      "numeric_id": 13001,
+      "domain": "ui_surface",
+      "name": "dluma.ui_surface.create",
+      "request": "DlumaHudSurfaceCreateRequest",
+      "result": "DlumaTokenResult",
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Creates an owner-bound map-generation HUD surface."
+    },
+    {
+      "id": "ui_surface.update",
+      "numeric_id": 13002,
+      "domain": "ui_surface",
+      "name": "dluma.ui_surface.update",
+      "request": "DlumaHudSurfaceUpdateRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Copies a complete RGBA8 frame synchronously."
+    },
+    {
+      "id": "ui_surface.layout",
+      "numeric_id": 13003,
+      "domain": "ui_surface",
+      "name": "dluma.ui_surface.layout",
+      "request": "DlumaHudSurfaceLayoutRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Sets a HUD rectangle in 1280 by 720 coordinates."
+    },
+    {
+      "id": "ui_surface.visibility",
+      "numeric_id": 13004,
+      "domain": "ui_surface",
+      "name": "dluma.ui_surface.visibility",
+      "request": "DlumaHudSurfaceVisibilityRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Shows or hides the owned HUD surface."
+    },
+    {
+      "id": "ui_surface.suppress",
+      "numeric_id": 13005,
+      "domain": "ui_surface",
+      "name": "dluma.ui_surface.suppress",
+      "request": "DlumaHudSurfaceSuppressRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Sets the owner-controlled stock combat HUD suppression mask."
+    },
+    {
+      "id": "ui_surface.release",
+      "numeric_id": 13006,
+      "domain": "ui_surface",
+      "name": "dluma.ui_surface.release",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaBoolResult",
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "documentation": "Releases an owned HUD surface and restores suppressed controls."
     }
   ]
 }

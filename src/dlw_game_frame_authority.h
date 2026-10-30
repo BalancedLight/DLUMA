@@ -30,7 +30,9 @@ typedef enum DlumaGameFrameAuthorityProof {
     DLUMA_GAME_FRAME_AUTHORITY_PROOF_ACTIVE_LEVEL_QUERY = 1U << 9,
     DLUMA_GAME_FRAME_AUTHORITY_PROOF_FRONTEND_IDENTITY = 1U << 10,
     DLUMA_GAME_FRAME_AUTHORITY_PROOF_SUBSEQUENT_ROUTE_CONFIRMATION = 1U << 11,
-    DLUMA_GAME_FRAME_AUTHORITY_PROOF_VALIDATED_PLAYTEST_HANDOFF = 1U << 12
+    DLUMA_GAME_FRAME_AUTHORITY_PROOF_VALIDATED_PLAYTEST_HANDOFF = 1U << 12,
+    DLUMA_GAME_FRAME_AUTHORITY_PROOF_STANDALONE_START_INTENT = 1U << 13,
+    DLUMA_GAME_FRAME_AUTHORITY_PROOF_STANDALONE_SESSION_PLAYER = 1U << 14
 } DlumaGameFrameAuthorityProof;
 
 #define DLUMA_GAME_FRAME_AUTHORITY_STATIC_PROOF                         \
@@ -104,6 +106,7 @@ typedef struct DlumaGameFrameFrontendProbe {
     DlumaGameFrameLevelQueryDiagnostic result;
     ULONG_PTR level_pointer;
     ULONG_PTR level_vtable;
+    ULONG_PTR gameplay_player;
     ULONGLONG qpc;
     ULONGLONG monotonic_ms;
     unsigned int frontend_identity_valid;
@@ -229,6 +232,11 @@ typedef struct DlumaGameFrameAuthorityState {
     volatile LONG game_frame_playtest_level_configured;
     volatile LONG game_frame_playtest_handoff_validated;
     volatile LONG game_frame_playtest_handoff_latched;
+    volatile LONG game_frame_standalone_start_configured;
+    volatile LONG game_frame_standalone_start_latched;
+    ULONGLONG standalone_confirmed_callbacks;
+    char expected_standalone_level_name[
+        DLUMA_GAME_FRAME_AUTHORITY_LEVEL_NAME_CAPACITY];
     volatile LONG game_frame_project_admitted;
     volatile LONG game_frame_registry_mutation_started;
     char expected_playtest_level_name[
@@ -284,6 +292,10 @@ void dluma_game_frame_authority_initialize(
 int dluma_game_frame_authority_configure_validated_playtest_handoff(
     DlumaGameFrameAuthorityState* state,
     const char* expected_level_name);
+
+/* Configure only after validating an explicit physical AutoStart request. */
+int dluma_game_frame_authority_configure_standalone_start(
+    DlumaGameFrameAuthorityState* state, const char* expected_level_name);
 
 int dluma_game_frame_authority_identity_latched(
     const DlumaGameFrameAuthorityState* state);

@@ -3,6 +3,7 @@
 #include "dlw_media_service.h"
 #include "dlw_quest_phase_service.h"
 #include "dlw_quest_hud_service.h"
+#include "dlw_hud_surface_service.h"
 
 #include "../dlw_native_gameplay.h"
 #include "../dlw_quest_hud.h"
@@ -1572,6 +1573,7 @@ void dluma_game_host_context_revoke(
         (void)dluma_quest_phase_service_detach(
             state->owner->owner_id);
     dluma_game_host_quest_hud_clear(state);
+    if (state->owner) dluma_hud_surface_revoke_owner(state->owner->owner_id);
     if (state->owner)
         media_drained = dluma_media_service_revoke_owner(
             state->owner->owner_id,
@@ -1623,6 +1625,7 @@ void dluma_game_host_context_advance_scope(
     int media_drained;
     if (!state) return;
     dluma_game_host_quest_hud_clear(state);
+    if (state->owner) dluma_hud_surface_revoke_owner(state->owner->owner_id);
     media_drained = state->owner
         ? dluma_media_service_revoke_owner(
               state->owner->owner_id,
@@ -1676,6 +1679,7 @@ int dluma_game_host_context_suspend_map_for_exit(DlumaGameHostContext* context)
     state->map_exit_suspended=1U;
     dluma_mod_owner_begin_revoke(state->owner);
     dluma_game_host_quest_hud_clear(state);
+    dluma_hud_surface_revoke_owner(state->owner->owner_id);
     if (!dluma_media_service_revoke_owner(state->owner->owner_id,0U)) complete=0;
     for (index=0;index<state->subscription_capacity;++index) {
         DlumaGameHostSubscription* sub=&state->subscriptions[index];
@@ -1727,6 +1731,7 @@ void dluma_game_host_context_rebind_map(
     uint32_t index;
     if (!state || !state->owner) return;
     dluma_game_host_quest_hud_clear(state);
+    dluma_hud_surface_revoke_owner(state->owner->owner_id);
     /* Rebind is called after the owner generation advances.  Revoke media
      * across that owner's generations so a stale cue or music token cannot
      * leave engine audio running without a callable owner handle. */

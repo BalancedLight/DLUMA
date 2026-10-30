@@ -33,7 +33,7 @@
           "type": "string"
         },
         "type": {
-          "pattern": "^(u32|u64|i32|f32|f64|bool|string_view|string_buffer|byte_buffer|object_handle|vec3|scalar|Dluma[A-Za-z0-9]+)$",
+          "pattern": "^(u32|u64|i32|f32|f64|bool|string_view|string_buffer|byte_view|byte_buffer|object_handle|vec3|scalar|Dluma[A-Za-z0-9]+)$",
           "type": "string"
         },
         "pointer": {

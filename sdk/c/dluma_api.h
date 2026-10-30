@@ -21,7 +21,7 @@ extern "C" {
 #define DLUMA_API_VERSION_MAJOR 1u
 #define DLUMA_API_VERSION_MINOR 0u
 #define DLUMA_API_ABI_VERSION 0x00010000u
-#define DLUMA_API_CATALOG_SHA256 "D24FB8E99DCC15D803DC6C3C275F80C71218AA254E8ECF6431633A2E90EEC65A"
+#define DLUMA_API_CATALOG_SHA256 "84202AF55B7177081551F21DC0C1F17899000B6FD8D6A63B94BC38A6839701F0"
 #define DLUMA_NATIVE_MOD_ABI_V2 0x00020000u
 
 typedef enum DlumaStatus {
@@ -72,6 +72,11 @@ typedef struct DlumaStringBuffer {
     uint64_t capacity;
     uint64_t required;
 } DlumaStringBuffer;
+
+typedef struct DlumaByteView {
+    const unsigned char* data;
+    uint64_t size;
+} DlumaByteView;
 
 typedef struct DlumaByteBuffer {
     unsigned char* data;
@@ -135,6 +140,7 @@ typedef enum DlumaCapabilityId {
     DLUMA_CAPABILITY_UI_SUBTITLES = 40,
     DLUMA_CAPABILITY_UI_QUEST_HUD = 41,
     DLUMA_CAPABILITY_UI_OVERLAY = 42,
+    DLUMA_CAPABILITY_UI_SURFACE = 43,
     DLUMA_CAPABILITY_AUDIO_RADIO_DIALOG = 50,
     DLUMA_CAPABILITY_AUDIO_REGISTERED_CUES = 51,
     DLUMA_CAPABILITY_AUDIO_STEM = 52,
@@ -562,6 +568,45 @@ typedef struct DlumaQuestPhaseRegistrationRequest {
     uint64_t callback_id;
 } DlumaQuestPhaseRegistrationRequest;
 
+typedef struct DlumaHudSurfaceCreateRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    uint32_t width;
+    uint32_t height;
+} DlumaHudSurfaceCreateRequest;
+
+typedef struct DlumaHudSurfaceUpdateRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    uint64_t token;
+    uint32_t stride;
+    DlumaByteView pixels;
+} DlumaHudSurfaceUpdateRequest;
+
+typedef struct DlumaHudSurfaceLayoutRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    uint64_t token;
+    float x;
+    float y;
+    float width;
+    float height;
+} DlumaHudSurfaceLayoutRequest;
+
+typedef struct DlumaHudSurfaceVisibilityRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    uint64_t token;
+    uint32_t visible;
+} DlumaHudSurfaceVisibilityRequest;
+
+typedef struct DlumaHudSurfaceSuppressRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    uint64_t token;
+    uint32_t mask;
+} DlumaHudSurfaceSuppressRequest;
+
 #define DLUMA_SERVICE_CORE_V1 "dluma.core.v1"
 typedef struct DlumaCoreV1 {
     uint32_t struct_size;
@@ -885,6 +930,37 @@ typedef struct DlumaQuestPhasesV1 {
         const DlumaTokenRequest* request,
         DlumaBoolResult* result);
 } DlumaQuestPhasesV1;
+
+#define DLUMA_SERVICE_UI_SURFACE_V1 "dluma.ui.surface.v1"
+typedef struct DlumaUiSurfaceV1 {
+    uint32_t struct_size;
+    uint32_t version;
+    void* context;
+    DlumaStatus (DLUMA_API_CALL *create)(
+        void* context,
+        const DlumaHudSurfaceCreateRequest* request,
+        DlumaTokenResult* result);
+    DlumaStatus (DLUMA_API_CALL *update)(
+        void* context,
+        const DlumaHudSurfaceUpdateRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *layout)(
+        void* context,
+        const DlumaHudSurfaceLayoutRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *visibility)(
+        void* context,
+        const DlumaHudSurfaceVisibilityRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *suppress)(
+        void* context,
+        const DlumaHudSurfaceSuppressRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *release)(
+        void* context,
+        const DlumaTokenRequest* request,
+        DlumaBoolResult* result);
+} DlumaUiSurfaceV1;
 
 typedef DlumaStatus (DLUMA_API_CALL *DlumaGetServiceFn)(
     void* context,

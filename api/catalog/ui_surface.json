@@ -1,0 +1,262 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "ui_surface",
+  "service": {
+    "id": "dluma.ui.surface.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "ui_surface.create",
+      "ordinal": 1,
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudSurfaceCreateRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "max_width": 2048,
+        "max_height": 2048,
+        "surface_slots": 4
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle",
+        "quota_exceeded"
+      ],
+      "documentation": "Creates an owner-bound map-generation HUD surface.",
+      "adapters": {
+        "core": "dluma_game_hud_surface_create",
+        "lua": "dluma.ui_surface.create",
+        "csharp": "IModContext.UiSurface.Create",
+        "c": "DlumaUiSurfaceV1.create",
+        "cpp": "context.ui_surface().create"
+      },
+      "tests": [
+        "hud_surface_create_contract"
+      ]
+    },
+    {
+      "id": "ui_surface.update",
+      "ordinal": 2,
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudSurfaceUpdateRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "max_width": 2048,
+        "max_height": 2048,
+        "surface_slots": 4
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle",
+        "quota_exceeded"
+      ],
+      "documentation": "Copies a complete RGBA8 frame synchronously.",
+      "adapters": {
+        "core": "dluma_game_hud_surface_update",
+        "lua": "dluma.ui_surface.update",
+        "csharp": "IModContext.UiSurface.Update",
+        "c": "DlumaUiSurfaceV1.update",
+        "cpp": "context.ui_surface().update"
+      },
+      "tests": [
+        "hud_surface_update_contract"
+      ]
+    },
+    {
+      "id": "ui_surface.layout",
+      "ordinal": 3,
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudSurfaceLayoutRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "max_width": 2048,
+        "max_height": 2048,
+        "surface_slots": 4
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle",
+        "quota_exceeded"
+      ],
+      "documentation": "Sets a HUD rectangle in 1280 by 720 coordinates.",
+      "adapters": {
+        "core": "dluma_game_hud_surface_layout",
+        "lua": "dluma.ui_surface.layout",
+        "csharp": "IModContext.UiSurface.Layout",
+        "c": "DlumaUiSurfaceV1.layout",
+        "cpp": "context.ui_surface().layout"
+      },
+      "tests": [
+        "hud_surface_layout_contract"
+      ]
+    },
+    {
+      "id": "ui_surface.visibility",
+      "ordinal": 4,
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudSurfaceVisibilityRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "max_width": 2048,
+        "max_height": 2048,
+        "surface_slots": 4
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle",
+        "quota_exceeded"
+      ],
+      "documentation": "Shows or hides the owned HUD surface.",
+      "adapters": {
+        "core": "dluma_game_hud_surface_visibility",
+        "lua": "dluma.ui_surface.visibility",
+        "csharp": "IModContext.UiSurface.Visibility",
+        "c": "DlumaUiSurfaceV1.visibility",
+        "cpp": "context.ui_surface().visibility"
+      },
+      "tests": [
+        "hud_surface_visibility_contract"
+      ]
+    },
+    {
+      "id": "ui_surface.suppress",
+      "ordinal": 5,
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudSurfaceSuppressRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "max_width": 2048,
+        "max_height": 2048,
+        "surface_slots": 4
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle",
+        "quota_exceeded"
+      ],
+      "documentation": "Sets the owner-controlled stock combat HUD suppression mask.",
+      "adapters": {
+        "core": "dluma_game_hud_surface_suppress",
+        "lua": "dluma.ui_surface.suppress",
+        "csharp": "IModContext.UiSurface.Suppress",
+        "c": "DlumaUiSurfaceV1.suppress",
+        "cpp": "context.ui_surface().suppress"
+      },
+      "tests": [
+        "hud_surface_suppress_contract"
+      ]
+    },
+    {
+      "id": "ui_surface.release",
+      "ordinal": 6,
+      "status": "gated",
+      "capability": "ui.surface",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "max_width": 2048,
+        "max_height": 2048,
+        "surface_slots": 4
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "stale_handle",
+        "foreign_handle",
+        "quota_exceeded"
+      ],
+      "documentation": "Releases an owned HUD surface and restores suppressed controls.",
+      "adapters": {
+        "core": "dluma_game_hud_surface_release",
+        "lua": "dluma.ui_surface.release",
+        "csharp": "IModContext.UiSurface.Release",
+        "c": "DlumaUiSurfaceV1.release",
+        "cpp": "context.ui_surface().release"
+      },
+      "tests": [
+        "hud_surface_release_contract"
+      ]
+    }
+  ]
+}

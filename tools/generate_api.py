@@ -32,6 +32,7 @@ C_TYPE_MAP = {
     "bool": "uint32_t",
     "string_view": "DlumaStringView",
     "string_buffer": "DlumaStringBuffer",
+    "byte_view": "DlumaByteView",
     "byte_buffer": "DlumaByteBuffer",
     "object_handle": "DlumaObjectHandle",
     "vec3": "DlumaVec3",
@@ -47,6 +48,7 @@ CS_TYPE_MAP = {
     "bool": "bool",
     "string_view": "string",
     "string_buffer": "string",
+    "byte_view": "byte[]",
     "byte_buffer": "byte[]",
     "object_handle": "DlumaObjectHandle",
     "vec3": "DlumaVec3",
@@ -210,6 +212,8 @@ def load_catalog() -> dict[str, Any]:
             raise CatalogError(f"{path.name}: domain does not match catalog index")
         service = domain.get("service", {})
         expected_service = f"dluma.{domain_name}.v1"
+        if domain_name == "ui_surface":
+            expected_service = "dluma.ui.surface.v1"
         if service.get("id") != expected_service:
             raise CatalogError(
                 f"{path.name}: service must be {expected_service}, got {service.get('id')}"
@@ -402,6 +406,11 @@ def render_c_header(catalog: dict[str, Any]) -> str:
         "    uint64_t capacity;",
         "    uint64_t required;",
         "} DlumaStringBuffer;",
+        "",
+        "typedef struct DlumaByteView {",
+        "    const unsigned char* data;",
+        "    uint64_t size;",
+        "} DlumaByteView;",
         "",
         "typedef struct DlumaByteBuffer {",
         "    unsigned char* data;",
@@ -622,6 +631,9 @@ def render_cpp_header(catalog: dict[str, Any]) -> str:
         "",
         "inline DlumaStringView string_view(std::string_view value) noexcept {",
         "    return {value.data(), static_cast<std::uint64_t>(value.size())};",
+        "}",
+        "inline DlumaByteView byte_view(const unsigned char* data, std::uint64_t size) noexcept {",
+        "    return {data, size};",
         "}",
         "",
         "template <typename Table>",

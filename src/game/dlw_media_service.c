@@ -709,6 +709,14 @@ void dluma_media_service_tick(
     dluma_player_media_adapter_tick(
         game_subobject, level,
         GetTickCount64(), delta_seconds);
+    /* The adapter owns the snapshot until release. Keep the same lease when
+     * game scripts restart music; state() reports a failed reassertion to the
+     * owner, which can stop its own audio and release or retry. Transitions
+     * deliberately retire the lease through the existing cleanup path. */
+    if (g_dluma_media.music.active && !g_dluma_media.transitioning &&
+        !g_dluma_media.stopping)
+        (void)dluma_player_media_adapter_music_maintain(
+            g_dluma_media.music.adapter_token);
     if (level && level != g_dluma_media.transition_outgoing_level &&
         g_dluma_media.transitioning && !g_dluma_media.retained &&
         !g_dluma_media.transition_cleanup_failed &&

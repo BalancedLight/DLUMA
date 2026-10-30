@@ -3789,6 +3789,104 @@ static void dluma_helper_init_audio_string(
     view->size = (uint64_t)length;
 }
 
+static int dluma_helper_hud_result(
+    lua_State* state, uint32_t operation, const void* request,
+    uint32_t request_size, int token_result)
+{
+    DlumaHelperScript* script = dluma_helper_from_upvalue(state, 1);
+    DlumaLua54Error error;
+    DlumaTokenResult token;
+    DlumaBoolResult boolean;
+    void* output;
+    uint32_t output_size;
+    if (!script || !script->host.api_invoke)
+        return dluma_helper_public_api_unavailable(state, "ui.surface", "ui.overlay");
+    memset(&error, 0, sizeof(error));
+    error.struct_size = (uint32_t)sizeof(error);
+    memset(&token, 0, sizeof(token));
+    memset(&boolean, 0, sizeof(boolean));
+    token.struct_size = (uint32_t)sizeof(token);
+    token.struct_version = 1U;
+    boolean.struct_size = (uint32_t)sizeof(boolean);
+    boolean.struct_version = 1U;
+    output = token_result ? (void*)&token : (void*)&boolean;
+    output_size = token_result ? (uint32_t)sizeof(token) : (uint32_t)sizeof(boolean);
+    if (!script->host.api_invoke(script->host_user, operation, request,
+                                 request_size, output, output_size, &error))
+        return dluma_helper_push_host_error(state, &error, "hud_surface_failed",
+            "the HUD surface operation failed", "ui.surface", "ui.overlay", NULL);
+    if (token_result) lua_pushinteger(state, (lua_Integer)token.token);
+    else lua_pushboolean(state, boolean.value != 0U);
+    return 1;
+}
+
+static uint32_t dluma_helper_hud_u32(lua_State* state, int index)
+{
+    lua_Integer value = luaL_checkinteger(state, index);
+    if (value < 0 || (uint64_t)value > UINT32_MAX)
+        luaL_argerror(state, index, "expected an unsigned 32-bit integer");
+    return (uint32_t)value;
+}
+
+static int dluma_helper_hud_create(lua_State* state)
+{
+    DlumaHudSurfaceCreateRequest r;
+    memset(&r, 0, sizeof(r)); r.struct_size = (uint32_t)sizeof(r); r.struct_version = 1U;
+    r.width = dluma_helper_hud_u32(state, 1); r.height = dluma_helper_hud_u32(state, 2);
+    return dluma_helper_hud_result(state, 13001U, &r, (uint32_t)sizeof(r), 1);
+}
+
+static int dluma_helper_hud_update(lua_State* state)
+{
+    DlumaHudSurfaceUpdateRequest r;
+    size_t length;
+    const char* bytes;
+    memset(&r, 0, sizeof(r)); r.struct_size = (uint32_t)sizeof(r); r.struct_version = 1U;
+    r.token = (uint64_t)luaL_checkinteger(state, 1);
+    r.stride = dluma_helper_hud_u32(state, 2);
+    luaL_checktype(state, 3, LUA_TSTRING);
+    bytes = lua_tolstring(state, 3, &length);
+    if (length > 2048U * 2048U * 4U)
+        return luaL_argerror(state, 3, "pixel buffer is too large");
+    r.pixels.data = (const unsigned char*)bytes; r.pixels.size = (uint64_t)length;
+    return dluma_helper_hud_result(state, 13002U, &r, (uint32_t)sizeof(r), 0);
+}
+
+static int dluma_helper_hud_layout(lua_State* state)
+{
+    DlumaHudSurfaceLayoutRequest r;
+    memset(&r, 0, sizeof(r)); r.struct_size = (uint32_t)sizeof(r); r.struct_version = 1U;
+    r.token = (uint64_t)luaL_checkinteger(state, 1);
+    r.x = (float)luaL_checknumber(state, 2); r.y = (float)luaL_checknumber(state, 3);
+    r.width = (float)luaL_checknumber(state, 4); r.height = (float)luaL_checknumber(state, 5);
+    return dluma_helper_hud_result(state, 13003U, &r, (uint32_t)sizeof(r), 0);
+}
+
+static int dluma_helper_hud_visibility(lua_State* state)
+{
+    DlumaHudSurfaceVisibilityRequest r;
+    memset(&r, 0, sizeof(r)); r.struct_size = (uint32_t)sizeof(r); r.struct_version = 1U;
+    r.token = (uint64_t)luaL_checkinteger(state, 1);
+    luaL_checktype(state, 2, LUA_TBOOLEAN); r.visible = lua_toboolean(state, 2) ? 1U : 0U;
+    return dluma_helper_hud_result(state, 13004U, &r, (uint32_t)sizeof(r), 0);
+}
+
+static int dluma_helper_hud_suppress(lua_State* state)
+{
+    DlumaHudSurfaceSuppressRequest r;
+    memset(&r, 0, sizeof(r)); r.struct_size = (uint32_t)sizeof(r); r.struct_version = 1U;
+    r.token = (uint64_t)luaL_checkinteger(state, 1); r.mask = dluma_helper_hud_u32(state, 2);
+    return dluma_helper_hud_result(state, 13005U, &r, (uint32_t)sizeof(r), 0);
+}
+
+static int dluma_helper_hud_release(lua_State* state)
+{
+    DlumaTokenRequest r;
+    memset(&r, 0, sizeof(r)); r.struct_size = (uint32_t)sizeof(r); r.struct_version = 1U;
+    r.token = (uint64_t)luaL_checkinteger(state, 1);
+    return dluma_helper_hud_result(state, 13006U, &r, (uint32_t)sizeof(r), 0);
+}
+
 static int dluma_helper_audio_bank_open(lua_State* state)
 {
     DlumaAudioBankOpenRequest request;
@@ -4884,6 +4982,15 @@ static int dluma_helper_build_api(DlumaHelperScript* script)
         "ui.quest_hud", "ui.overlay",
         dluma_helper_ui_override_quest_hud);
     dluma_helper_set_namespace(state, root, "ui");
+
+    lua_newtable(state);
+    dluma_helper_set_function(state, -1, "create", script, dluma_helper_hud_create);
+    dluma_helper_set_function(state, -1, "update", script, dluma_helper_hud_update);
+    dluma_helper_set_function(state, -1, "layout", script, dluma_helper_hud_layout);
+    dluma_helper_set_function(state, -1, "visibility", script, dluma_helper_hud_visibility);
+    dluma_helper_set_function(state, -1, "suppress", script, dluma_helper_hud_suppress);
+    dluma_helper_set_function(state, -1, "release", script, dluma_helper_hud_release);
+    dluma_helper_set_namespace(state, root, "ui_surface");
 
     lua_newtable(state);
     dluma_helper_set_stub(state, -1, "play", script,

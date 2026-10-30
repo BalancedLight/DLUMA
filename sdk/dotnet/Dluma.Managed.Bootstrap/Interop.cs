@@ -24,6 +24,52 @@ internal unsafe struct NativeStringBuffer
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeByteView
+{
+    internal byte* Data;
+    internal ulong Size;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHudSurfaceCreateRequest
+{
+    internal uint StructSize, StructVersion, Width, Height;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHudSurfaceUpdateRequest
+{
+    internal uint StructSize, StructVersion;
+    internal ulong Token;
+    internal uint Stride;
+    internal NativeByteView Pixels;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHudSurfaceLayoutRequest
+{
+    internal uint StructSize, StructVersion;
+    internal ulong Token;
+    internal float X, Y, Width, Height;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHudSurfaceVisibilityRequest
+{
+    internal uint StructSize, StructVersion;
+    internal ulong Token;
+    internal uint Visible;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHudSurfaceSuppressRequest
+{
+    internal uint StructSize, StructVersion;
+    internal ulong Token;
+    internal uint Mask;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal unsafe struct NativeByteBuffer
 {
     internal byte* Data;

@@ -1243,7 +1243,7 @@ def test_player_media_uses_exact_windows_active_level_music_owner():
     assert "dluma_player_media_resolve_owned_singleton_music_manager(" in resolver
     assert "dluma_player_media_resolve_published_frontend_music_manager(" not in resolver
     session_route = ADAPTER.split(
-        "static int dluma_player_media_resolve_game_session_music_manager", 1
+        "static int dluma_player_media_resolve_game_session_owner", 1
     )[1].split(
         "static int dluma_player_media_resolve_owned_singleton_music_manager", 1
     )[0]
@@ -1256,9 +1256,9 @@ def test_player_media_uses_exact_windows_active_level_music_owner():
         "dluma_player_media_validate_live_session_object(",
         "session_class_out",
         "game_primary = (BYTE*)*game_global_slot",
-        "profile->get_session_level(session)",
+        "get_session_level(session)",
         "dluma_player_media_leveldi_igsobject(",
-        "profile->get_object_level(level_igsobject)",
+        "get_object_level(level_igsobject)",
         "profile->get_object_level(manager)",
         "manager_owner != level_owner",
         "level_owner != observed_active_level",

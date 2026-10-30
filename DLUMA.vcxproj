@@ -213,6 +213,8 @@
     <ClCompile Include="src\bindings\dlw_player_variables_binding.c" />
     <ClCompile Include="src\game\dlw_game_backend.c" />
     <ClCompile Include="src\game\dlw_game_host_context.c" />
+    <ClCompile Include="src\game\dlw_hud_surface_service.c" />
+    <ClCompile Include="src\game\dlw_ui_surface_backend.c" />
     <ClCompile Include="src\game\dlw_player_service.c" />
     <ClCompile Include="src\hosts\dlw_managed_host.c" />
     <ClCompile Include="src\dlw_native_mod_config.c" />
