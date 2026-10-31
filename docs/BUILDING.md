@@ -25,7 +25,7 @@ The package includes:
 
 ```text
 build/package/Release/
-  DLUMA (0.5.0).mod
+  DLUMA (0.5.1).mod
   dluma.pak
   dluma_lua54.dll
   dluma_discord_presence.dll
@@ -59,7 +59,7 @@ After building Release, prepare the distributable archive and checksums:
 python tools/prepare_release.py --package-dir build/package/Release --output-dir release
 ```
 
-The output includes `DLUMA-0.5.0.zip` and `SHA256SUMS`. README files are omitted from the archive; licenses and third-party notices remain included. Release builds also create or refresh `release/workshop/content/mods/`. Existing upload metadata is preserved. See [Workshop publishing](WORKSHOP.md) for upload metadata and the publishing process.
+The output includes `DLUMA-0.5.1.zip` and `SHA256SUMS`. README files are omitted from the archive; licenses and third-party notices remain included. Release builds also create or refresh `release/workshop/content/mods/`. Existing upload metadata is preserved. See [Workshop publishing](WORKSHOP.md) for upload metadata and the publishing process.
 
 ## Check a change
 
@@ -68,8 +68,8 @@ Run the checks relevant to the components you changed:
 ```bat
 python tools/generate_api.py --check
 python tools/validate_localization.py
-python tools/verify_pe.py --json "bin/x64/Release/DLUMA (0.5.0).mod"
-python tools/verify_package_manifest.py --package-dir build/package/Release --mod-name "DLUMA (0.5.0).mod"
+python tools/verify_pe.py --json "bin/x64/Release/DLUMA (0.5.1).mod"
+python tools/verify_package_manifest.py --package-dir build/package/Release --mod-name "DLUMA (0.5.1).mod"
 dotnet build sdk/dotnet/Dluma.Managed.slnx -c Release
 ```
 

@@ -4,10 +4,19 @@ DLUMA runs in Dying Light Player and integrates with Developer Tools. Use the co
 
 ## Install and start
 
-1. Subscribe to the DLUMA item in Dying Light's Steam Workshop and let Steam finish downloading it, or install a complete release package using its included instructions.
+1. Subscribe to the DLUMA item in Dying Light's Steam Workshop and let Steam finish downloading it, or extract the complete release archive into a DLUMA project's `mods` folder.
 2. Start the DLUMA Workshop project in Player. For local development, install the package into the local project's `mods` directory as described in [Building DLUMA](BUILDING.md).
 3. Read the first-launch message. **Yes** continues; **No** exits Player. Acceptance is remembered for your Windows account.
 4. Open **Mods** from the main menu to review discovered mods.
+
+For a manual update, close Player first. Move the previous version's
+`DLUMA (version).mod` and `dluma_runtime` folder to a backup outside the
+project's `mods` folder, then extract the new archive into `mods`. From the
+backup, copy the `mod_config`, `mod_data`, `markers`, and `crashes` folders if
+present. Also copy `global_mods.ini`, `native_mods.ini`,
+`custom_main_menu_activation.ini`, and `startup_recovery.ini` if present.
+Place them inside the new `dluma_runtime` folder. Keep the backup until you
+have checked the update. Leave `dluma.ini` and unrelated mods in place.
 
 ## Enable and configure mods
 

@@ -7,7 +7,7 @@
 #include "dlw_project_launch_admission.h"
 #include "dlw_orderly_close_core.h"
 
-#define DLUMA_VERSION "0.5.0"
+#define DLUMA_VERSION "0.5.1"
 #define DLUMA_MAX_WPATH 1024
 #define DLUMA_WORKSHOP_PREVIEW_DDS_GENERATION 4U
 #define DLUMA_WORKSHOP_PREVIEW_EDGE 512U

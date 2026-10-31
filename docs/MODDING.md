@@ -45,7 +45,7 @@ Use a stable ID for your mod. Keep source, build output, and package inputs sepa
 - C# references `Dluma.Managed.Sdk` and implements `IDlumaMod`.
 - Lua starts with `local mod = dluma.mod()`.
 
-The application version and API version are separate. DLUMA 0.5.0 provides API 1.0. Use the [API reference](api/1.0/API_REFERENCE.md) and [capability matrix](api/1.0/CAPABILITY_MATRIX.md) to choose operations and handle capabilities that are unavailable on the active game build.
+The application version and API version are separate. DLUMA 0.5.1 provides API 1.0. Use the [API reference](api/1.0/API_REFERENCE.md) and [capability matrix](api/1.0/CAPABILITY_MATRIX.md) to choose operations and handle capabilities that are unavailable on the active game build.
 
 ## Validate and package
 

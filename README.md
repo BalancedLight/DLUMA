@@ -2,11 +2,11 @@
 
 DLUMA is a mod loader and creator toolkit for Dying Light Player and Developer Tools on Windows. It adds a Mods menu, shared mod configuration, and a common API for Lua, C#, C, and C++ mods.
 
-Version **0.5.0** is an early release. Bugs, crashes, and unfinished features are expected. Dying Light and other installed mods can also affect your experience.
+Version **0.5.1** is an early release. Bugs, crashes, and unfinished features are expected. Dying Light and other installed mods can also affect your experience.
 
 ## Playing with DLUMA
 
-Install the complete DLUMA package through Steam Workshop or follow the instructions included with the release. Start the Player with the DLUMA Workshop project, then open **Mods** from the main menu to review and configure installed mods.
+Install the complete DLUMA package through Steam Workshop, or extract the release archive into a DLUMA project's `mods` folder. Start the Player with the DLUMA Workshop project, then open **Mods** from the main menu to review and configure installed mods. See [installation and updates](docs/USING_DLUMA.md) for the manual update steps.
 
 To enable new and updated global mods automatically at startup, turn on **Automatically enable mods** in Options and accept the security warning. This is off by default. Mods you disable yourself stay disabled, and newly discovered mods still appear in the main-menu ticker.
 
