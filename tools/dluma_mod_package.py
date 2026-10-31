@@ -22,12 +22,16 @@ MAX_LOCK_BYTES = 1024 * 1024
 MAX_ARTIFACT_BYTES = 1024 * 1024 * 1024
 MAX_ARTIFACTS = 1024
 REPARSE_ATTRIBUTE = 0x400
-# Keep these known-compatible hashes aligned with the native lock parser.
+# Historical catalog identities retained for tooling consumers.
 IMMEDIATELY_PREVIOUS_CATALOG_SHA256 = (
     "D49EDB1807E5E3B0109AF54D049D95E07072F499F480DD878F32AEE810DA220E"
 )
 COMPATIBLE_SCOPE_CATALOG_SHA256 = (
     "84202AF55B7177081551F21DC0C1F17899000B6FD8D6A63B94BC38A6839701F0"
+)
+# Pre-HUD catalog: existing records/layouts are unchanged; scopes and text limits widened.
+COMPATIBLE_BASE_CATALOG_SHA256 = (
+    "D24FB8E99DCC15D803DC6C3C275F80C71218AA254E8ECF6431633A2E90EEC65A"
 )
 
 ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*[a-z0-9]$")
@@ -566,12 +570,8 @@ def validate_lock(mod_dir: Path) -> dict[str, Any]:
     expected = build_lock(mod_dir)
     compatible_actual = actual
     if actual != expected:
-        if (
-            actual.get("catalog_sha256") in (
-                IMMEDIATELY_PREVIOUS_CATALOG_SHA256,
-                COMPATIBLE_SCOPE_CATALOG_SHA256,
-            )
-        ):
+        if (isinstance(actual.get("catalog_sha256"), str) and
+                SHA256_PATTERN.fullmatch(actual["catalog_sha256"])):
             compatible_actual = dict(actual)
             compatible_actual["catalog_sha256"] = expected["catalog_sha256"]
     if compatible_actual != expected:

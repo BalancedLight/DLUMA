@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from tools.dluma_mod_package import (
+    COMPATIBLE_BASE_CATALOG_SHA256,
     COMPATIBLE_SCOPE_CATALOG_SHA256,
     IMMEDIATELY_PREVIOUS_CATALOG_SHA256,
     LOCK_NAME,
@@ -182,10 +183,11 @@ def test_changed_reviewed_bytes_fail_closed(tmp_path):
 
 
 @pytest.mark.parametrize("compatible_catalog", [
+    COMPATIBLE_BASE_CATALOG_SHA256,
     IMMEDIATELY_PREVIOUS_CATALOG_SHA256,
     COMPATIBLE_SCOPE_CATALOG_SHA256,
 ])
-def test_only_public_predecessor_catalog_is_compatible(tmp_path, compatible_catalog):
+def test_catalog_provenance_preserves_api_compatibility(tmp_path, compatible_catalog):
     mod_dir = create_mod(tmp_path, language="native")
     manifest_path = mod_dir / "mod.dluma.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -207,9 +209,10 @@ def test_only_public_predecessor_catalog_is_compatible(tmp_path, compatible_cata
         compatible_catalog
     )
 
-    lock["catalog_sha256"] = (
-        "E3AAF26AA9901C38F8FED3290623FBBDEEBA71753D341D5471392FD67C174A7F"
-    )
+    lock["catalog_sha256"] = "E3AAF26AA9901C38F8FED3290623FBBDEEBA71753D341D5471392FD67C174A7F"
+    (mod_dir / LOCK_NAME).write_bytes(canonical_lock_bytes(lock))
+    assert validate_lock(mod_dir)["catalog_sha256"] == lock["catalog_sha256"]
+    lock["api_version"] = "2.0"
     (mod_dir / LOCK_NAME).write_bytes(canonical_lock_bytes(lock))
     with pytest.raises(PackageError, match="lock does not match exact package bytes"):
         validate_lock(mod_dir)

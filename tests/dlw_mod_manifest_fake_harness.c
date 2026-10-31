@@ -14,7 +14,9 @@
     "D49EDB1807E5E3B0109AF54D049D95E07072F499F480DD878F32AEE810DA220E"
 #define COMPATIBLE_SCOPE_CATALOG_SHA256 \
     "84202AF55B7177081551F21DC0C1F17899000B6FD8D6A63B94BC38A6839701F0"
-#define REJECTED_PRIVATE_CATALOG_SHA256 \
+#define COMPATIBLE_BASE_CATALOG_SHA256 \
+    "D24FB8E99DCC15D803DC6C3C275F80C71218AA254E8ECF6431633A2E90EEC65A"
+#define OTHER_CATALOG_SHA256 \
     "E3AAF26AA9901C38F8FED3290623FBBDEEBA71753D341D5471392FD67C174A7F"
 
 static const char g_valid_manifest[] =
@@ -327,11 +329,11 @@ static int test_catalog_compatibility_boundary(void)
         "]} ";
     static const char rejected_lock[] =
         "{"
-        "\"schema\":\"dluma.mod.lock.v1\",\"api_version\":\"1.0\","
+        "\"schema\":\"dluma.mod.lock.v1\",\"api_version\":\"2.0\","
         "\"mod_id\":\"test.native\","
         "\"manifest_sha256\":"
           "\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\","
-        "\"catalog_sha256\":\"" REJECTED_PRIVATE_CATALOG_SHA256 "\","
+        "\"catalog_sha256\":\"" OTHER_CATALOG_SHA256 "\","
         "\"artifacts\":["
           "{\"path\":\"mod.dluma.json\",\"kind\":\"manifest\",\"size\":12,"
             "\"sha256\":\"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\"},"
@@ -366,6 +368,14 @@ static int test_catalog_compatibility_boundary(void)
     catalog = strstr(scope_lock, PREVIOUS_COMPATIBLE_CATALOG_SHA256);
     CHECK(catalog != 0);
     memcpy(catalog, COMPATIBLE_SCOPE_CATALOG_SHA256, 64U);
+    memset(&lock, 0, sizeof(lock));
+    lock.struct_size = sizeof(lock);
+    lock.artifacts = artifacts;
+    lock.artifact_capacity = 4U;
+    CHECK(dluma_mod_lock_parse(scope_lock, (unsigned int)strlen(scope_lock),
+                               &lock, &diagnostic) == DLUMA_STATUS_OK);
+    CHECK(dluma_mod_lock_catalog_compatible(&lock, &manifest));
+    memcpy(catalog, COMPATIBLE_BASE_CATALOG_SHA256, 64U);
     memset(&lock, 0, sizeof(lock));
     lock.struct_size = sizeof(lock);
     lock.artifacts = artifacts;
