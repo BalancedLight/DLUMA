@@ -43,68 +43,17 @@ jobs:
           global-json-file: global.json
           architecture: x64
 
-      - name: Install packaged .NET runtimes
+      - name: Prepare packaged .NET runtime
         shell: pwsh
         run: |
-          $dotnetExe = (Get-Command dotnet -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-          $dotnetRoot = Split-Path -Parent $dotnetExe
-          $installer = Join-Path $env:RUNNER_TEMP "dotnet-install.ps1"
-          Invoke-WebRequest "https://dot.net/v1/dotnet-install.ps1" -OutFile $installer
-          & $installer -Runtime dotnet -Version 10.0.13 -Architecture x64 -InstallDir $dotnetRoot -NoPath
-          if (-not $?) { throw "Installing the pinned .NET runtime failed." }
-          & $installer -Runtime windowsdesktop -Version 10.0.13 -Architecture x64 -InstallDir $dotnetRoot -NoPath
-          if (-not $?) { throw "Installing the pinned Windows Desktop runtime failed." }
-
-      - name: Verify pinned .NET runtime
-        shell: pwsh
-        run: |
-          $dotnetExe = (Get-Command dotnet -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-          $dotnetRoot = Split-Path -Parent $dotnetExe
-          $sdkVersion = (& $dotnetExe --version).Trim()
+          python tools/build_managed_runtime.py --prepare-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $expectedSdk = (Get-Content global.json -Raw | ConvertFrom-Json).sdk.version
-
-          $actualSdk = [version]$sdkVersion
-          $minimumSdk = [version]$expectedSdk
-          $sameFeatureBand = $actualSdk.Major -eq $minimumSdk.Major -and
-              $actualSdk.Minor -eq $minimumSdk.Minor -and
-              [math]::Floor($actualSdk.Build / 100) -eq [math]::Floor($minimumSdk.Build / 100)
-          if (-not $sameFeatureBand -or $actualSdk -lt $minimumSdk) {
-              throw "Expected .NET SDK $expectedSdk or a later patch in the same feature band, found $sdkVersion at $dotnetRoot."
-          }
-
-          $hostfxr = Join-Path $dotnetRoot "host\fxr\10.0.13\hostfxr.dll"
-          $runtimeDirectory = Join-Path $dotnetRoot "shared\Microsoft.NETCore.App\10.0.13"
-          $desktopRuntimeDirectory = Join-Path $dotnetRoot "shared\Microsoft.WindowsDesktop.App\10.0.13"
-
-          if (-not (Test-Path -LiteralPath $hostfxr -PathType Leaf)) {
-              throw "Pinned .NET hostfxr is missing: $hostfxr"
-          }
-
-          if (-not (Test-Path -LiteralPath $runtimeDirectory -PathType Container)) {
-              throw "Pinned Microsoft.NETCore.App runtime is missing: $runtimeDirectory"
-          }
-
-          if (-not (Test-Path -LiteralPath $desktopRuntimeDirectory -PathType Container)) {
-              throw "Pinned Microsoft.WindowsDesktop.App runtime is missing: $desktopRuntimeDirectory"
-          }
-
-          $runtimeList = (& $dotnetExe --list-runtimes | Out-String)
-          if ($runtimeList -notmatch "Microsoft\.NETCore\.App 10\.0\.13(?:\s|$)") {
-              throw "Microsoft.NETCore.App 10.0.13 is not registered with $dotnetExe."
-          }
-          if ($runtimeList -notmatch "Microsoft\.WindowsDesktop\.App 10\.0\.13(?:\s|$)") {
-              throw "Microsoft.WindowsDesktop.App 10.0.13 is not registered with $dotnetExe."
-          }
-
-          "DOTNET_ROOT_X64=$dotnetRoot" |
-              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "DOTNET_ROOT=$dotnetRoot" |
-              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-          Write-Host "dotnet root: $dotnetRoot"
-          & $dotnetExe --info
-          & $dotnetExe --list-runtimes
+          $runtimeRoot = (& python -c "from tools.build_managed_runtime import resolve_dotnet_root; print(resolve_dotnet_root(None))").Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "DOTNET_ROOT_X64=$runtimeRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "DOTNET_ROOT=$runtimeRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          dotnet --info
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Restore visual quest editor from lock files
         shell: pwsh

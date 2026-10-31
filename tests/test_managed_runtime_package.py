@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tools import build_managed_runtime
+from tools import dotnet_runtime_source
 
 
 RUNTIME_VERSION = "10.0.13"
@@ -93,6 +94,30 @@ def _assemble(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     )
     build_managed_runtime.write_runtime(output, sources, manifest)
     return output, manifest
+
+
+def test_runtime_cache_survives_installed_runtime_removal(tmp_path: Path) -> None:
+    installed, _, _, _ = _fake_inputs(tmp_path)
+    cache_parent = tmp_path / "cache"
+    cached = dotnet_runtime_source.prepare_runtime(RUNTIME_VERSION, [installed], cache_parent)
+    installed.rename(tmp_path / "removed-sdk")
+    assert dotnet_runtime_source.prepare_runtime(RUNTIME_VERSION, [], cache_parent) == cached
+    assert dotnet_runtime_source.complete(cached, RUNTIME_VERSION)
+
+
+def test_runtime_cache_restores_missing_runtime_once(tmp_path: Path, monkeypatch) -> None:
+    installed, _, _, _ = _fake_inputs(tmp_path)
+    restored = []
+
+    def download(destination: Path, version: str) -> None:
+        import shutil
+        restored.append(version)
+        shutil.copytree(installed, destination, dirs_exist_ok=True)
+
+    monkeypatch.setattr(dotnet_runtime_source, "download_runtime", download)
+    first = dotnet_runtime_source.prepare_runtime(RUNTIME_VERSION, [], tmp_path / "cache")
+    assert dotnet_runtime_source.prepare_runtime(RUNTIME_VERSION, [], tmp_path / "cache") == first
+    assert restored == [RUNTIME_VERSION]
 
 
 def test_private_runtime_manifest_is_deterministic_and_exact(tmp_path: Path) -> None:

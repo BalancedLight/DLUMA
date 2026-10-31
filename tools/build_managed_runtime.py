@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
+if __package__:
+    from .dotnet_runtime_source import complete, prepare_runtime
+else:
+    from dotnet_runtime_source import complete, prepare_runtime
+
 
 RUNTIME_SCHEMA = "dluma.runtime-tree.v1"
 RUNTIME_VERSION = "10.0.13"
@@ -46,10 +51,13 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
-def resolve_dotnet_root(value: Path | None) -> Path:
+def resolve_dotnet_root(value: Path | None, runtime_version: str = RUNTIME_VERSION) -> Path:
     candidates: list[Path] = []
     if value is not None:
-        candidates.append(value)
+        explicit = value.expanduser().resolve()
+        if not complete(explicit, runtime_version):
+            raise ValueError(f"Explicit .NET source lacks runtime {runtime_version}: {explicit}")
+        return explicit
     for name in ("DOTNET_ROOT_X64", "DOTNET_ROOT"):
         raw = os.environ.get(name)
         if raw:
@@ -59,12 +67,8 @@ def resolve_dotnet_root(value: Path | None) -> Path:
         candidates.append(Path(program_files) / "dotnet")
     candidates.append(Path(r"C:\Program Files\dotnet"))
 
-    for candidate in candidates:
-        resolved = candidate.expanduser().resolve()
-        if resolved.is_dir():
-            return resolved
-    rendered = ", ".join(str(candidate) for candidate in candidates)
-    raise ValueError(f"could not locate a .NET installation; checked: {rendered}")
+    cache = Path(__file__).resolve().parents[1] / "build" / "dotnet-runtime"
+    return prepare_runtime(runtime_version, [p.expanduser().resolve() for p in candidates], cache)
 
 
 def require_regular_file(path: Path, description: str) -> Path:
@@ -447,9 +451,10 @@ def verify_runtime(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--managed-output", required=True, type=Path)
-    parser.add_argument("--quest-graph-output", required=True, type=Path)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--managed-output", type=Path)
+    parser.add_argument("--quest-graph-output", type=Path)
+    parser.add_argument("--prepare-runtime", action="store_true")
     parser.add_argument("--dotnet-root", type=Path)
     parser.add_argument(
         "--catalog-hash",
@@ -462,7 +467,12 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        dotnet_root = resolve_dotnet_root(args.dotnet_root)
+        dotnet_root = resolve_dotnet_root(args.dotnet_root, args.runtime_version)
+        if args.prepare_runtime:
+            print(f"Packaged runtime ready: {dotnet_root}")
+            return 0
+        if not all((args.output_dir, args.managed_output, args.quest_graph_output)):
+            parser.error("--output-dir, --managed-output and --quest-graph-output are required")
         sources = collect_sources(
             dotnet_root,
             args.managed_output,

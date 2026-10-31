@@ -4,10 +4,21 @@ The supported release build uses MSVC and produces a complete Workshop package. 
 
 - Visual Studio C++ tools with the **v145** toolset, MSBuild, MASM, and a Windows SDK.
 - Python 3.11 or newer available as `python`.
-- .NET SDK **10.0.400** or a later patch in the same feature band, as selected by `global.json`.
-- .NET and Windows Desktop runtime **10.0.13** available to the runtime packager. Use `DOTNET_ROOT_X64` or `DOTNET_ROOT` when your .NET installation is outside the normal location.
+- .NET SDK **10.0.400** or a newer stable .NET 10 SDK feature band, as selected by `global.json`.
 
 The visual quest editor restores the pinned Nodify package through NuGet. A clean build may need network access for that restore.
+
+The runtime packager maintains its own versioned cache under `build/dotnet-runtime`.
+It copies the pinned .NET and Windows Desktop runtimes from a complete installed
+version, or downloads Microsoft's archives and verifies their SHA-512 checksums.
+Visual Studio updates do not need to retain that runtime patch. Subsequent builds
+reuse the cache without downloading it. GitHub Actions uses the same preparation:
+
+```bat
+python tools/build_managed_runtime.py --prepare-runtime
+```
+
+An explicit `--dotnet-root` remains available for controlled offline sources.
 
 ## Build the complete package
 
