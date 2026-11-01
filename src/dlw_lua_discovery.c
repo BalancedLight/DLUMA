@@ -1128,6 +1128,7 @@ static int dluma_lua_manifest_config_setting(
     int saw_kind = 0;
     int saw_default = 0;
     int saw_minimum = 0;
+    int saw_legacy_default = 0;
     int saw_maximum = 0;
     int saw_step = 0;
     int saw_max_length = 0;
@@ -1182,6 +1183,11 @@ static int dluma_lua_manifest_config_setting(
                     DLUMA_ARRAY_COUNT(default_text)))
                 return 0;
             saw_default = 1;
+        } else if (dluma_stricmp(key, "legacy_default") == 0) {
+            if (saw_legacy_default ||
+                !dluma_lua_manifest_i32(parser, &setting->legacy_default_integer))
+                return 0;
+            saw_legacy_default = 1;
         } else if (dluma_stricmp(key, "min") == 0) {
             if (saw_minimum ||
                 !dluma_lua_manifest_i32(parser, &setting->minimum))
@@ -1232,6 +1238,10 @@ static int dluma_lua_manifest_config_setting(
         dluma_lua_config_diagnostic(metadata, "invalid_setting");
         return 0;
     }
+    if (saw_legacy_default && dluma_stricmp(kind, "integer") != 0) {
+        dluma_lua_config_diagnostic(metadata, "invalid_default");
+        return 0;
+    }
     if (dluma_stricmp(kind, "boolean") == 0) {
         if (default_literal_kind != 1 ||
             saw_minimum || saw_maximum || saw_step ||
@@ -1263,6 +1273,13 @@ static int dluma_lua_manifest_config_setting(
             dluma_lua_config_diagnostic(metadata, "invalid_default");
             return 0;
         }
+        if (saw_legacy_default &&
+            setting->legacy_default_integer >= setting->minimum &&
+            setting->legacy_default_integer <= setting->maximum) {
+            dluma_lua_config_diagnostic(metadata, "invalid_default");
+            return 0;
+        }
+        setting->has_legacy_default = (unsigned char)saw_legacy_default;
         setting->kind = DLUMA_LUA_CONFIG_INTEGER;
         setting->default_integer = default_integer;
     } else if (dluma_stricmp(kind, "keybind") == 0) {

@@ -530,6 +530,11 @@ static int dluma_native_config_parse_setting(
                 }
             }
             fields |= 0x010U;
+        } else if (dluma_native_config_text_equal(key, "legacyDefault")) {
+            if ((fields & 0x400U) ||
+                !dluma_native_config_i32(json, &setting->legacy_default_integer))
+                return 0;
+            fields |= 0x400U;
         } else if (dluma_native_config_text_equal(key, "min")) {
             if ((fields & 0x020U) ||
                 !dluma_native_config_i32(json, &setting->minimum))
@@ -579,6 +584,9 @@ static int dluma_native_config_parse_setting(
             "invalid_setting");
         return 0;
     }
+    if ((fields & 0x400U) &&
+        !dluma_native_config_text_equal(type, "integer"))
+        goto invalid_default;
     if (dluma_native_config_text_equal(type, "boolean")) {
         if (default_kind != DLUMA_NATIVE_CONFIG_DEFAULT_BOOLEAN ||
             (fields & (0x020U | 0x040U | 0x080U |
@@ -605,6 +613,11 @@ static int dluma_native_config_parse_setting(
         if ((ULONGLONG)span % setting->step ||
             (ULONGLONG)default_offset % setting->step)
             goto invalid_default;
+        if ((fields & 0x400U) &&
+            setting->legacy_default_integer >= setting->minimum &&
+            setting->legacy_default_integer <= setting->maximum)
+            goto invalid_default;
+        setting->has_legacy_default = (unsigned char)((fields & 0x400U) != 0);
         setting->kind = DLUMA_LUA_CONFIG_INTEGER;
         setting->default_integer = default_integer;
     } else if (dluma_native_config_text_equal(type, "keybind")) {

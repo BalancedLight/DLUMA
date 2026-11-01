@@ -58,6 +58,7 @@ typedef struct DlumaLuaConfigSetting {
     char description[DLUMA_LUA_CONFIG_DESCRIPTION_CAPACITY];
     char default_text[DLUMA_LUA_CONFIG_VALUE_CAPACITY];
     int default_integer;
+    int legacy_default_integer;
     int minimum;
     int maximum;
     unsigned int step;
@@ -65,7 +66,8 @@ typedef struct DlumaLuaConfigSetting {
     unsigned int option_count;
     unsigned char kind;
     unsigned char editor;
-    unsigned char reserved[2];
+    unsigned char has_legacy_default;
+    unsigned char reserved[1];
     DlumaLuaConfigEnumOption options[DLUMA_LUA_CONFIG_MAX_ENUM_OPTIONS];
 } DlumaLuaConfigSetting;
 

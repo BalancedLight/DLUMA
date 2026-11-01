@@ -36,4 +36,6 @@ def validate() -> None:
 
 
 if __name__ == '__main__':
-    OUTPUT.write_text(generated_header(), encoding='ascii', newline='\n')
+    content = generated_header()
+    if not OUTPUT.exists() or OUTPUT.read_text(encoding='ascii') != content:
+        OUTPUT.write_text(content, encoding='ascii', newline='\n')

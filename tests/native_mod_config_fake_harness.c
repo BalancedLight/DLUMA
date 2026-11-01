@@ -289,6 +289,19 @@ static int test_config_manifest_paths_are_canonical(void)
 int main(void)
 {
     unsigned int passed = 0U;
+    {
+        static const char schema_json[] =
+            "{\"schemaVersion\":1,\"categories\":[{\"id\":\"general\","
+            "\"name\":\"General\",\"settings\":[{\"key\":\"track\","
+            "\"name\":\"Track\",\"description\":\"Track number\","
+            "\"type\":\"integer\",\"default\":1,\"min\":1,"
+            "\"max\":10,\"step\":1,\"legacyDefault\":0}]}]}";
+        DlumaLuaConfigSchema schema;
+        char diagnostic[96];
+        if (!parse_schema(schema_json, &schema, diagnostic, sizeof(diagnostic)) ||
+            !schema.settings[0].has_legacy_default ||
+            schema.settings[0].legacy_default_integer != 0) return 1;
+    }
     if (!test_all_setting_types_and_exact_fields()) return 1;
     ++passed;
     puts("[PASS] all native config setting types");

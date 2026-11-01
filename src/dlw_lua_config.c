@@ -1,5 +1,6 @@
 #include "dlw_lua_config.h"
 #include "dlw_path_security.h"
+#include "core/dlw_config_legacy_default.h"
 #include "dlw_project_owner_identity.h"
 
 #ifndef CREATE_NEW
@@ -239,6 +240,10 @@ void dluma_lua_config_compute_fingerprint(DlumaLuaConfigSchema *schema)
         dluma_lua_config_hash_i32(&context, setting->default_integer);
         dluma_lua_config_hash_i32(&context, setting->minimum);
         dluma_lua_config_hash_i32(&context, setting->maximum);
+        if (setting->has_legacy_default) {
+            dluma_lua_config_hash_text(&context, "legacy_default");
+            dluma_lua_config_hash_i32(&context, setting->legacy_default_integer);
+        }
         dluma_lua_config_hash_u32(&context, setting->step);
         dluma_lua_config_hash_u32(&context, setting->max_length);
         dluma_lua_config_hash_text(&context, setting->default_text);
@@ -718,6 +723,26 @@ int dluma_lua_config_value_from_text(
     return dluma_lua_config_value_valid(setting, out);
 }
 
+int dluma_lua_config_saved_value_from_text(
+    const DlumaLuaConfigSetting *setting, const char *text,
+    DlumaLuaConfigValue *out, int *migrated)
+{
+    int legacy_value;
+    if (migrated) *migrated = 0;
+    if (dluma_lua_config_value_from_text(setting, text, out)) return 1;
+    if (!setting || setting->kind != DLUMA_LUA_CONFIG_INTEGER ||
+        !setting->has_legacy_default ||
+        !dluma_lua_config_parse_i32(text, &legacy_value) ||
+        !dluma_config_legacy_integer_default(
+            setting->has_legacy_default, legacy_value,
+            setting->legacy_default_integer, setting->default_integer,
+            &legacy_value))
+        return 0;
+    dluma_lua_config_default_value(setting, out);
+    if (migrated) *migrated = 1;
+    return 1;
+}
+
 static int dluma_lua_config_checked_join(
     WCHAR *out, unsigned int capacity,
     const WCHAR *left, const WCHAR *right)
@@ -1109,6 +1134,7 @@ static int dluma_lua_config_read_unlocked(
     unsigned int setting_index,
     DlumaLuaConfigValue *out,
     int *has_override,
+    int *migrated,
     char *error,
     unsigned int error_capacity)
 {
@@ -1127,6 +1153,7 @@ static int dluma_lua_config_read_unlocked(
     DWORD value_length;
     char value_text[DLUMA_LUA_CONFIG_VALUE_CAPACITY];
     if (has_override) *has_override = 0;
+    if (migrated) *migrated = 0;
     if (error && error_capacity) error[0] = 0;
     if (!identity || !schema || !out ||
         setting_index >= schema->setting_count ||
@@ -1210,7 +1237,8 @@ static int dluma_lua_config_read_unlocked(
                              "config_record_malformed");
         return 0;
     }
-    if (!dluma_lua_config_value_from_text(setting, value_text, out)) {
+    if (!dluma_lua_config_saved_value_from_text(
+            setting, value_text, out, migrated)) {
         dluma_lua_config_error(error, error_capacity,
                              "config_value_invalid");
         return 0;
@@ -1230,7 +1258,7 @@ int dluma_mod_config_read(
     int result;
     dluma_lua_config_lock(&g_dluma_lua_config_storage_lock);
     result = dluma_lua_config_read_unlocked(
-        identity, schema, setting_index, out, has_override,
+        identity, schema, setting_index, out, has_override, 0,
         error, error_capacity);
     dluma_lua_config_unlock(&g_dluma_lua_config_storage_lock);
     return result;
@@ -1415,6 +1443,7 @@ int dluma_mod_config_write(
     DlumaLuaConfigValue previous;
     int has_override = 0;
     int previous_known;
+    int migrated = 0;
     int result;
     if (old_value) memset(old_value, 0, sizeof(*old_value));
     if (old_value_known) *old_value_known = 0;
@@ -1433,9 +1462,9 @@ int dluma_mod_config_write(
     setting = &schema->settings[setting_index];
     dluma_lua_config_lock(&g_dluma_lua_config_storage_lock);
     previous_known = dluma_lua_config_read_unlocked(
-        identity, schema, setting_index, &previous, &has_override,
+        identity, schema, setting_index, &previous, &has_override, &migrated,
         error, error_capacity);
-    if (previous_known &&
+    if (previous_known && !migrated &&
         dluma_lua_config_value_equal(&previous, value)) {
         if (!dluma_lua_config_registry_matches(
                 identity, schema)) {
@@ -1510,7 +1539,7 @@ int dluma_mod_config_reset(
     if (new_value) *new_value = fallback;
     dluma_lua_config_lock(&g_dluma_lua_config_storage_lock);
     previous_known = dluma_lua_config_read_unlocked(
-        identity, schema, setting_index, &previous, &has_override,
+        identity, schema, setting_index, &previous, &has_override, 0,
         error, error_capacity);
     if (!dluma_lua_config_build_paths(
             identity, setting->key, 0, directory, path, 0)) {

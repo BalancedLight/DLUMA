@@ -1184,6 +1184,11 @@
           Condition="'$(DesignTimeBuild)' != 'true'">
     <Exec Command="python &quot;$(ProjectDir)tools\verify_playerdi_ondestroy_relay.py&quot; --self-test" />
   </Target>
+  <Target Name="GenerateDlumaNightlyPopup"
+          BeforeTargets="ClCompile"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="python &quot;$(ProjectDir)tools\generate_nightly_popup.py&quot;" />
+  </Target>
   <Target Name="GenerateLoaderSymbolManifest"
           AfterTargets="Link"
           Condition="'$(DesignTimeBuild)' != 'true'">

@@ -39,3 +39,5 @@ invalidates prior handles; reacquire the local player before applying new values
 Configuration schemas can declare `type: "keybind"` with an integer default Windows virtual-key code from 1 through 254. The configuration screen displays a key name and captures a replacement when the player edits the binding.
 
 Mods receive an integer from `configuration.get`. Key bindings use the same saved-value format as integer settings; bounds and step are implicit.
+
+Integer settings may specify `legacyDefault` in JSON schemas (or `legacy_default` in Lua schemas) to map one previously saved, now out-of-range integer to the current default. Other invalid saved values remain errors. The value is saved when the player changes the setting.
