@@ -44,7 +44,7 @@ def test_mod_notice_is_one_shot_but_holiday_selection_is_per_queue() -> None:
     assert "dluma_new_mod_ticker_has_pending()" in NATIVE
     assert "dluma_new_mod_ticker_mark_presented()" in NATIVE
     assert "dluma_main_menu_native_holiday_message(&holiday_message)" in NATIVE
-    assert "GetLocalTime(&local_time);" in NATIVE
+    assert "dluma_seasonal_date_get(&local_time);" in NATIVE
     assert "dluma_main_menu_presentation_holiday(" in NATIVE
     assert NATIVE.index("new_mod_pending =") < NATIVE.index("holiday_pending =")
     assert NATIVE.index("holiday_pending =") < NATIVE.index(
