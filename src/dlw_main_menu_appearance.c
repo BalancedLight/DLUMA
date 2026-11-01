@@ -1,5 +1,7 @@
 #include "dlw_main_menu_appearance.h"
 #include "dlw_main_menu_animation.h"
+#include "dlw_main_menu_props.h"
+#include "dlw_seasonal_date.h"
 #include "dlw_common.h"
 #include "dlw_main_menu_presentation_core.h"
 #include "dlw_path_security.h"
@@ -61,6 +63,7 @@ typedef struct MenuAppearanceState {
     void *destroyed_background;
     void *actor;
     const DlumaMainMenuAppearanceSet *season;
+    const DlumaMainMenuPropSet *props;
     const DlumaMainMenuAppearance *selected;
     const DlumaMainMenuAppearance *applied;
     unsigned int candidate_index;
@@ -89,10 +92,12 @@ static void menu_unlock(MenuAppearanceState *state)
 
 static void menu_clear_generation(MenuAppearanceState *state)
 {
+    dluma_main_menu_props_forget(state->background);
     dluma_main_menu_animation_forget(state->background);
     state->background = 0;
     state->actor = 0;
     state->season = 0;
+    state->props = 0;
     state->selected = 0;
     state->applied = 0;
     state->candidate_index = 0;
@@ -261,7 +266,8 @@ static MenuSetResult menu_set(MenuAppearanceState *state, void *actor,
 {
     MenuString model_value;
     MenuString skin_value;
-    if (!dluma_main_menu_animation_prepare_model_change(actor, GetTickCount64()) ||
+    if (!dluma_main_menu_props_before_body_change(actor, GetTickCount64()) ||
+        !dluma_main_menu_animation_prepare_model_change(actor, GetTickCount64()) ||
         !menu_animation_ready(state, actor, mesh))
         return MENU_SET_DEFERRED;
     model_value = menu_string(mesh);
@@ -274,12 +280,9 @@ static const DlumaMainMenuAppearanceSet *menu_date_appearance(
     MenuAppearanceState *state)
 {
     SYSTEMTIME now;
-    GetLocalTime(&now);
-#ifdef DLUMA_MAIN_MENU_APPEARANCE_DATE
-    now.wYear = (WORD)(DLUMA_MAIN_MENU_APPEARANCE_DATE / 10000);
-    now.wMonth = (WORD)((DLUMA_MAIN_MENU_APPEARANCE_DATE / 100) % 100);
-    now.wDay = (WORD)(DLUMA_MAIN_MENU_APPEARANCE_DATE % 100);
-#endif
+    dluma_seasonal_date_get(&now);
+    state->props = dluma_main_menu_presentation_props(
+        now.wYear, now.wMonth, now.wDay);
     state->animation_enabled = (unsigned char)
         dluma_main_menu_presentation_halloween_animation(
             now.wYear, now.wMonth, now.wDay,
@@ -478,9 +481,13 @@ static __int64 __fastcall menu_frame_hook(void *object, float delta)
                             background, MENU_APPEARANCE_READY_OFFSET + 1U) &&
                         *((BYTE *)background + MENU_APPEARANCE_READY_OFFSET))
                         actor = *(void **)((BYTE *)background + MENU_ACTOR_OFFSET);
-                    if (menu_actor_valid(state, background, actor))
+                    if (menu_actor_valid(state, background, actor)) {
                         dluma_main_menu_animation_tick(
                             background, actor, state->animation_enabled, now);
+                        dluma_main_menu_props_tick(
+                            background, actor, state->props,
+                            state->selection_seed, now);
+                    }
                 } __except (1) {
                     menu_clear_generation(state);
                     state->background = (BYTE *)object - 16U;
@@ -523,6 +530,11 @@ static void __fastcall menu_destroy_hook(void *object)
     if (locked) {
         dluma_atomic_exchange(&state->lock_owner, (LONG)GetCurrentThreadId());
         dluma_atomic_exchange(&state->retiring, 1);
+        if (dluma_is_readable(
+                (BYTE *)background + MENU_ACTOR_OFFSET, sizeof(void *)))
+            (void)dluma_main_menu_props_before_body_change(
+                *(void **)((BYTE *)background + MENU_ACTOR_OFFSET),
+                GetTickCount64());
         dluma_main_menu_animation_before_destroy(background);
         if (state->background == background) {
             menu_clear_generation(state);
@@ -595,6 +607,7 @@ int dluma_main_menu_appearance_start(void)
         !menu_callable((void *)state->get_bind))
         return 0;
     (void)dluma_main_menu_animation_start();
+    (void)dluma_main_menu_props_start();
     if (!menu_patch_slot(state->destroy_slot, (void *)state->destroy,
                          (void *)menu_destroy_hook))
         return 0;
@@ -620,14 +633,14 @@ int dluma_main_menu_appearance_stop(void)
     int frame_restored;
     int destroy_restored;
     if (!state->installed)
-        return dluma_main_menu_animation_stop();
+        return dluma_main_menu_props_stop() && dluma_main_menu_animation_stop();
     dluma_atomic_exchange(&state->stopping, 1);
     started = GetTickCount64();
     while (dluma_atomic_compare_exchange(&state->active_calls, 0, 0) != 0 &&
            GetTickCount64() - started < 2000ULL)
         Sleep(1);
     if (dluma_atomic_compare_exchange(&state->active_calls, 0, 0) != 0 ||
-        !dluma_main_menu_animation_stop())
+        !dluma_main_menu_props_stop() || !dluma_main_menu_animation_stop())
         return 0;
     frame_restored = !state->frame_hooked ||
         menu_patch_slot(state->frame_slot, (void *)menu_frame_hook,
@@ -648,6 +661,8 @@ int dluma_main_menu_appearance_stop(void)
     if (dluma_atomic_compare_exchange(&state->active_calls, 0, 0) != 0)
         return 0;
     if (!dluma_main_menu_animation_stop())
+        return 0;
+    if (!dluma_main_menu_props_stop())
         return 0;
     memset(state, 0, sizeof(*state));
     return 1;

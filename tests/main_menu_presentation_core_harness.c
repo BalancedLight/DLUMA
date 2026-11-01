@@ -75,6 +75,40 @@ static int test_commit(void)
     return 1;
 }
 
+static int test_date_override(void)
+{
+    unsigned int month = 99U, day = 99U;
+    CHECK(dluma_main_menu_presentation_date_override(
+        (const unsigned short *)L"player.exe -dluma_date_override=10/31",
+        2026U, &month, &day) == 1);
+    CHECK(month == 10U && day == 31U);
+    CHECK(dluma_main_menu_presentation_date_override(
+        (const unsigned short *)L"\"player path.exe\" \"-DLUMA_DATE_OVERRIDE=12/25\"",
+        2026U, &month, &day) == 1);
+    CHECK(month == 12U && day == 25U);
+    CHECK(dluma_main_menu_presentation_date_override(
+        (const unsigned short *)L"player.exe -dluma_date_override=02/30",
+        2026U, &month, &day) == -1);
+    CHECK(month == 12U && day == 25U);
+    CHECK(dluma_main_menu_presentation_date_override(
+        (const unsigned short *)L"player.exe -dluma_date_override=02/29",
+        2026U, &month, &day) == -1);
+    CHECK(dluma_main_menu_presentation_date_override(
+        (const unsigned short *)L"player.exe -dluma_date_override=02/29",
+        2028U, &month, &day) == 1);
+    CHECK(month == 2U && day == 29U);
+    CHECK(dluma_main_menu_presentation_date_override(
+        (const unsigned short *)L"player.exe -other=10/31",
+        2026U, &month, &day) == 0);
+    CHECK(dluma_main_menu_presentation_date_override(
+        (const unsigned short *)L"player.exe -dluma_date_override=1/01",
+        2026U, &month, &day) == -1);
+    CHECK(dluma_main_menu_presentation_date_override(
+        (const unsigned short *)L"player.exe \"-dluma_date_override=10/31",
+        2026U, &month, &day) == -1);
+    return 1;
+}
+
 static int test_holiday_calendar(void)
 {
     CHECK(dluma_main_menu_presentation_holiday(2025U, 12U, 30U) ==
@@ -230,11 +264,14 @@ static int test_seasonal_appearances(void)
         dluma_main_menu_presentation_appearances(2026U, 1U, 26U);
     const DlumaMainMenuAppearanceSet *parents_day =
         dluma_main_menu_presentation_appearances(2026U, 5U, 9U);
+    const DlumaMainMenuAppearanceSet *tanabata =
+        dluma_main_menu_presentation_appearances(2026U, 7U, 6U);
     unsigned int i;
 
-    CHECK(halloween && christmas && anniversary && parents_day);
+    CHECK(halloween && christmas && anniversary && parents_day && tanabata);
     CHECK(halloween->count == 4U && christmas->count == 3U);
     CHECK(anniversary->count == 1U && parents_day->count == 1U);
+    CHECK(tanabata->count == 1U);
     for (i = 0; i < halloween->count; ++i) {
         CHECK(strcmp(halloween->appearances[i].model, halloween_expected[i].model) == 0);
         CHECK(strcmp(halloween->appearances[i].skin, halloween_expected[i].skin) == 0);
@@ -247,6 +284,8 @@ static int test_seasonal_appearances(void)
     CHECK(strcmp(anniversary->appearances[0].skin, "TECHLAND_2") == 0);
     CHECK(strcmp(parents_day->appearances[0].model, "player_acolyte_tpp.msh") == 0);
     CHECK(strcmp(parents_day->appearances[0].skin, "5th_anniversary") == 0);
+    CHECK(strcmp(tanabata->appearances[0].model, "player_11_tpp.msh") == 0);
+    CHECK(strcmp(tanabata->appearances[0].skin, "JAP") == 0);
     CHECK(!dluma_main_menu_presentation_appearances(2026U, 10U, 27U));
     CHECK(dluma_main_menu_presentation_appearances(2026U, 10U, 31U) == halloween);
     CHECK(dluma_main_menu_presentation_appearances(2026U, 11U, 1U) == halloween);
@@ -261,8 +300,44 @@ static int test_seasonal_appearances(void)
     CHECK(dluma_main_menu_presentation_appearances(2026U, 6U, 20U) == parents_day);
     CHECK(dluma_main_menu_presentation_appearances(2026U, 6U, 22U) == parents_day);
     CHECK(!dluma_main_menu_presentation_appearances(2026U, 6U, 23U));
+    CHECK(!dluma_main_menu_presentation_appearances(2026U, 7U, 5U));
+    CHECK(dluma_main_menu_presentation_appearances(2026U, 7U, 7U) == tanabata);
+    CHECK(dluma_main_menu_presentation_appearances(2026U, 7U, 8U) == tanabata);
+    CHECK(!dluma_main_menu_presentation_appearances(2026U, 7U, 9U));
     CHECK(!dluma_main_menu_presentation_appearances(1500U, 1U, 26U));
     CHECK(!dluma_main_menu_presentation_appearances(2026U, 10U, 32U));
+    return 1;
+}
+
+static int test_seasonal_props(void)
+{
+    const DlumaMainMenuPropSet *thanksgiving =
+        dluma_main_menu_presentation_props(2025U, 11U, 26U);
+    const DlumaMainMenuPropSet *christmas =
+        dluma_main_menu_presentation_props(2025U, 12U, 20U);
+    unsigned int i;
+
+    CHECK(thanksgiving && christmas);
+    CHECK(thanksgiving->count == 2U && christmas->count == 1U);
+    CHECK(strcmp(thanksgiving->props[0].mesh, "dlc_stick_chicken_b.msh") == 0);
+    CHECK(strcmp(thanksgiving->props[1].mesh, "dlc_stick_chicken.msh") == 0);
+    CHECK(strcmp(christmas->props[0].mesh, "wn_christmascandy.msh") == 0);
+    for (i = 0; i < thanksgiving->count; ++i) {
+        CHECK(!thanksgiving->props[i].skin);
+        CHECK(thanksgiving->props[i].grip == DLUMA_MAIN_MENU_PROP_GRIP_ONE_HANDED);
+        CHECK(strcmp(thanksgiving->props[i].idle_loop, "TPP_Stand_menu_A") == 0);
+    }
+    CHECK(!christmas->props[0].skin);
+    CHECK(christmas->props[0].grip == DLUMA_MAIN_MENU_PROP_GRIP_ONE_HANDED);
+    CHECK(strcmp(christmas->props[0].idle_loop, "TPP_Stand_menu_A") == 0);
+    CHECK(!dluma_main_menu_presentation_props(2025U, 11U, 25U));
+    CHECK(dluma_main_menu_presentation_props(2025U, 11U, 30U) == thanksgiving);
+    CHECK(!dluma_main_menu_presentation_props(2025U, 12U, 1U));
+    CHECK(!dluma_main_menu_presentation_props(2025U, 12U, 19U));
+    CHECK(dluma_main_menu_presentation_props(2025U, 12U, 30U) == christmas);
+    CHECK(!dluma_main_menu_presentation_props(2025U, 12U, 31U));
+    CHECK(!dluma_main_menu_presentation_props(2026U, 10U, 31U));
+    CHECK(!dluma_main_menu_presentation_props(1500U, 12U, 25U));
     return 1;
 }
 
@@ -287,8 +362,9 @@ static int test_halloween_animation_chance(void)
 int main(void)
 {
     if (!test_placeholder_expansion() || !test_sha_prefix() ||
-        !test_commit() || !test_holiday_calendar() ||
-        !test_seasonal_appearances() || !test_halloween_animation_chance())
+        !test_commit() || !test_date_override() || !test_holiday_calendar() ||
+        !test_seasonal_appearances() || !test_seasonal_props() ||
+        !test_halloween_animation_chance())
         return 1;
     puts("main menu presentation core harness: PASS");
     return 0;

@@ -159,6 +159,8 @@
     <ClCompile Include="src\dlw_main_menu_native_presentation.c" />
     <ClCompile Include="src\dlw_main_menu_appearance.c" />
     <ClCompile Include="src\dlw_main_menu_animation.c" />
+    <ClCompile Include="src\dlw_main_menu_props.c" />
+    <ClCompile Include="src\dlw_seasonal_date.c" />
     <ClCompile Include="src\dlw_menu_animation_cache.c" />
     <ClCompile Include="src\dlw_mouse_lock.c" />
     <ClCompile Include="src\dlw_mouse_lock_core.c" />
@@ -979,6 +981,8 @@
     <ClInclude Include="src\dlw_main_menu_native_presentation.h" />
     <ClInclude Include="src\dlw_main_menu_appearance.h" />
     <ClInclude Include="src\dlw_main_menu_animation.h" />
+    <ClInclude Include="src\dlw_main_menu_props.h" />
+    <ClInclude Include="src\dlw_seasonal_date.h" />
     <ClInclude Include="src\dlw_menu_animation_cache.h" />
     <ClInclude Include="src\dlw_new_mod_ticker.h" />
     <ClInclude Include="src\dlw_mod_row_format_core.h" />

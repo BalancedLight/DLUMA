@@ -35,6 +35,22 @@ typedef struct DlumaMainMenuAppearanceSet {
     unsigned int count;
 } DlumaMainMenuAppearanceSet;
 
+typedef enum DlumaMainMenuPropGrip {
+    DLUMA_MAIN_MENU_PROP_GRIP_ONE_HANDED = 0
+} DlumaMainMenuPropGrip;
+
+typedef struct DlumaMainMenuPropProfile {
+    const char *mesh;
+    const char *skin;
+    DlumaMainMenuPropGrip grip;
+    const char *idle_loop;
+} DlumaMainMenuPropProfile;
+
+typedef struct DlumaMainMenuPropSet {
+    const DlumaMainMenuPropProfile *props;
+    unsigned int count;
+} DlumaMainMenuPropSet;
+
 /* The build identity stores a canonical 64-character SHA-256 digest.  This
  * pure validator deliberately preserves the digest's original case: the
  * loader hashes files as lowercase hexadecimal, while older builds and tools
@@ -78,8 +94,19 @@ DlumaMainMenuHoliday dluma_main_menu_presentation_holiday(
     unsigned int month,
     unsigned int day);
 
+/* Returns 1 for an override, 0 when absent, and -1 when malformed. */
+int dluma_main_menu_presentation_date_override(
+    const unsigned short *command_line, unsigned int year,
+    unsigned int *month_out, unsigned int *day_out);
+
 /* Returns a stable appearance set, or null when no appearance applies. */
 const DlumaMainMenuAppearanceSet *dluma_main_menu_presentation_appearances(
+    unsigned int year,
+    unsigned int month,
+    unsigned int day);
+
+/* Returns a stable prop set, or null when no prop applies. */
+const DlumaMainMenuPropSet *dluma_main_menu_presentation_props(
     unsigned int year,
     unsigned int month,
     unsigned int day);

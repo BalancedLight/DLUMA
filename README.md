@@ -16,6 +16,10 @@ The main-menu character uses Halloween outfits from October 28 through November 
 
 During Halloween, each startup has a 1-in-10 chance to replace the menu character's standing loop with Thriller. If the animation cannot load, the normal standing animation continues.
 
+Thanksgiving uses an available chicken prop in place of the menu pipe, and December 20–30 uses a candy cane. Tanabata, July 6–8, uses the Japanese outfit when available. Held props use a matching idle pose; custom menus without a compatible handheld attachment keep their authored props.
+
+To test a seasonal date, add `-dluma_date_override=12/25` to Steam's launch options. Use `MM/DD`; DLUMA keeps the current year. This affects DLUMA's seasonal presentation only. Remove the option to use your local date again; invalid dates also use the local date.
+
 Native and C# mods run with the same access as the game. Review their source and author before enabling them. Enabling or updating these mods requires a restart. Lua mods run in the loader's sandbox.
 
 - [Installation, settings, and troubleshooting](docs/USING_DLUMA.md)

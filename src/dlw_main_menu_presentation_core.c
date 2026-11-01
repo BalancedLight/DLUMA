@@ -194,6 +194,95 @@ static unsigned int dluma_main_menu_presentation_days_in_month(
     return days[month];
 }
 
+int dluma_main_menu_presentation_date_override(
+    const unsigned short *command_line, unsigned int year,
+    unsigned int *month_out, unsigned int *day_out)
+{
+    static const char prefix[] = "-dluma_date_override";
+    unsigned int pos = 0;
+    if (!command_line || !month_out || !day_out)
+        return 0;
+    while (pos < 32767U && command_line[pos])
+    {
+        unsigned short token[64];
+        unsigned int used = 0, index, slash_count;
+        int quoted = 0, overflow = 0;
+        unsigned int month, day;
+        while (pos < 32767U &&
+               (command_line[pos] == ' ' || command_line[pos] == '\t'))
+            ++pos;
+        if (pos >= 32767U || !command_line[pos])
+            break;
+        while (pos < 32767U && command_line[pos] &&
+               (quoted || (command_line[pos] != ' ' && command_line[pos] != '\t')))
+        {
+            unsigned short ch = command_line[pos++];
+            if (ch == '\\')
+            {
+                slash_count = 1U;
+                while (pos < 32767U && command_line[pos] == '\\')
+                {
+                    ++pos;
+                    ++slash_count;
+                }
+                if (pos < 32767U && command_line[pos] == '"')
+                {
+                    for (index = 0; index < slash_count / 2U; ++index)
+                    {
+                        if (used < 63U) token[used++] = '\\';
+                        else overflow = 1;
+                    }
+                    ++pos;
+                    if (slash_count % 2U)
+                    {
+                        if (used < 63U) token[used++] = '"';
+                        else overflow = 1;
+                    }
+                    else quoted = !quoted;
+                    continue;
+                }
+                for (index = 0; index < slash_count; ++index)
+                {
+                    if (used < 63U) token[used++] = '\\';
+                    else overflow = 1;
+                }
+                continue;
+            }
+            if (ch == '"') { quoted = !quoted; continue; }
+            if (used < 63U) token[used++] = ch;
+            else overflow = 1;
+        }
+        token[used] = 0;
+        for (index = 0; prefix[index]; ++index)
+        {
+            unsigned short ch = token[index];
+            if (!ch) break;
+            if (ch >= 'A' && ch <= 'Z') ch = (unsigned short)(ch + 'a' - 'A');
+            if (ch != (unsigned short)prefix[index]) break;
+        }
+        if (prefix[index] || (token[index] && token[index] != '='))
+            continue;
+        if (overflow || quoted || pos >= 32767U || token[index++] != '=' ||
+            used != index + 5U || token[index + 2U] != '/' ||
+            token[index] < '0' || token[index] > '9' ||
+            token[index + 1U] < '0' || token[index + 1U] > '9' ||
+            token[index + 3U] < '0' || token[index + 3U] > '9' ||
+            token[index + 4U] < '0' || token[index + 4U] > '9')
+            return -1;
+        month = (unsigned int)(token[index] - '0') * 10U +
+                (unsigned int)(token[index + 1U] - '0');
+        day = (unsigned int)(token[index + 3U] - '0') * 10U +
+              (unsigned int)(token[index + 4U] - '0');
+        if (year < 1583U || year > 9999U ||
+            !day || day > dluma_main_menu_presentation_days_in_month(year, month))
+            return -1;
+        *month_out = month;
+        *day_out = day;
+        return 1;
+    }
+    return 0;
+}
+
 static unsigned int dluma_main_menu_presentation_day_of_year(
     unsigned int year, unsigned int month, unsigned int day)
 {
@@ -369,15 +458,20 @@ const DlumaMainMenuAppearanceSet *dluma_main_menu_presentation_appearances(
     static const DlumaMainMenuAppearance parents_day[] = {
         {"player_acolyte_tpp.msh", "5th_anniversary"}
     };
+    static const DlumaMainMenuAppearance tanabata[] = {
+        {"player_11_tpp.msh", "JAP"}
+    };
     static const DlumaMainMenuAppearanceSet halloween_set = {halloween, 4U};
     static const DlumaMainMenuAppearanceSet christmas_set = {christmas, 3U};
     static const DlumaMainMenuAppearanceSet anniversary_set = {anniversary, 1U};
     static const DlumaMainMenuAppearanceSet parents_day_set = {parents_day, 1U};
+    static const DlumaMainMenuAppearanceSet tanabata_set = {tanabata, 1U};
     static const AppearanceRule rules[] = {
         {DLUMA_MAIN_MENU_HOLIDAY_HALLOWEEN, 0U, 0U, &halloween_set},
         {DLUMA_MAIN_MENU_HOLIDAY_HAPPY_HOLIDAYS, 0U, 0U, &christmas_set},
         {DLUMA_MAIN_MENU_HOLIDAY_MOTHERS_DAY, 0U, 0U, &parents_day_set},
         {DLUMA_MAIN_MENU_HOLIDAY_FATHERS_DAY, 0U, 0U, &parents_day_set},
+        {DLUMA_MAIN_MENU_HOLIDAY_TANABATA, 0U, 0U, &tanabata_set},
         {DLUMA_MAIN_MENU_HOLIDAY_NONE, 1U, 26U, &anniversary_set}
     };
     DlumaMainMenuHoliday holiday;
@@ -400,4 +494,31 @@ const DlumaMainMenuAppearanceSet *dluma_main_menu_presentation_appearances(
             return rule->set;
     }
     return 0;
+}
+
+const DlumaMainMenuPropSet *dluma_main_menu_presentation_props(
+    unsigned int year, unsigned int month, unsigned int day)
+{
+    static const DlumaMainMenuPropProfile thanksgiving[] = {
+        {"dlc_stick_chicken_b.msh", 0, DLUMA_MAIN_MENU_PROP_GRIP_ONE_HANDED,
+         "TPP_Stand_menu_A"},
+        {"dlc_stick_chicken.msh", 0, DLUMA_MAIN_MENU_PROP_GRIP_ONE_HANDED,
+         "TPP_Stand_menu_A"}
+    };
+    static const DlumaMainMenuPropProfile christmas[] = {
+        {"wn_christmascandy.msh", 0, DLUMA_MAIN_MENU_PROP_GRIP_ONE_HANDED,
+         "TPP_Stand_menu_A"}
+    };
+    static const DlumaMainMenuPropSet thanksgiving_set = {thanksgiving, 2U};
+    static const DlumaMainMenuPropSet christmas_set = {christmas, 1U};
+
+    switch (dluma_main_menu_presentation_holiday(year, month, day))
+    {
+    case DLUMA_MAIN_MENU_HOLIDAY_THANKSGIVING:
+        return &thanksgiving_set;
+    case DLUMA_MAIN_MENU_HOLIDAY_HAPPY_HOLIDAYS:
+        return &christmas_set;
+    default:
+        return 0;
+    }
 }

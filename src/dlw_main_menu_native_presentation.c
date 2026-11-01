@@ -4,6 +4,7 @@
 #include "dlw_main_menu_native_presentation.h"
 #include "dlw_main_menu_presentation_core.h"
 #include "dlw_new_mod_ticker.h"
+#include "dlw_seasonal_date.h"
 
 /*
  * This is intentionally a narrow Player-only adapter.  The named macOS
@@ -410,7 +411,7 @@ static int dluma_main_menu_native_holiday_message(
         return 0;
     memset(message, 0, sizeof(*message));
     memset(&local_time, 0, sizeof(local_time));
-    GetLocalTime(&local_time);
+    dluma_seasonal_date_get(&local_time);
     holiday = dluma_main_menu_presentation_holiday(
         (unsigned int)local_time.wYear,
         (unsigned int)local_time.wMonth,
