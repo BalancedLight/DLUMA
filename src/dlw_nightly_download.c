@@ -15,7 +15,7 @@ static struct {
     SRWLOCK lock;
     HANDLE thread;
     HINTERNET volatile request;
-    volatile LONG status, cancelled, error;
+    volatile LONG status, cancelled, error, http_status;
     WCHAR url[NIGHTLY_URL_CAPACITY], path[NIGHTLY_PATH_CAPACITY];
     char digest[65];
     unsigned long long limit;
@@ -103,6 +103,7 @@ static DWORD WINAPI download_worker(void *unused)
                 WINHTTP_HEADER_NAME_BY_INDEX,&status,&size,WINHTTP_NO_HEADER_INDEX)) {
             error=GetLastError(); goto done;
         }
+        InterlockedExchange(&download.http_status,(LONG)status);
         if (status==200) break;
         if (status!=301 && status!=302 && status!=303 && status!=307 && status!=308) {
             error=ERROR_WINHTTP_INVALID_SERVER_RESPONSE; goto done;
@@ -174,6 +175,7 @@ int dlw_nightly_download_start(const wchar_t *url, const wchar_t *destination,
     download.limit=byte_limit;
     InterlockedExchange(&download.cancelled,0);
     InterlockedExchange(&download.error,0);
+    InterlockedExchange(&download.http_status,0);
     InterlockedExchange(&download.status,1);
     download.thread=CreateThread(0,0,download_worker,0,0,0);
     if (download.thread) result=1;
@@ -192,6 +194,11 @@ int dlw_nightly_download_poll(void)
 unsigned long dlw_nightly_download_error(void)
 {
     return (unsigned long)InterlockedCompareExchange(&download.error,0,0);
+}
+
+unsigned long dlw_nightly_download_http_status(void)
+{
+    return (unsigned long)InterlockedCompareExchange(&download.http_status,0,0);
 }
 
 int dlw_nightly_download_sha256(char out[65])

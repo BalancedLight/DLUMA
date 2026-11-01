@@ -1261,6 +1261,7 @@
                 <Id>G_DLUMANightlyPopup</Id>
                 <Width>1280.000000</Width>
                 <Height>720.000000</Height>
+                <UseScreenTransform>false</UseScreenTransform>
                 <Show>false</Show>
                 <DisableTimelineRecursion>true</DisableTimelineRecursion>
             </Properties>

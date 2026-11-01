@@ -28,7 +28,7 @@ enum NightlyStatus { STATUS_DISABLED, STATUS_CHECKING, STATUS_CURRENT, STATUS_AV
 
 static const char *const status_text[]={"Off","Checking for updates","Up to date","Update available",
     "Downloading update","Ready; close Player to apply","Update check failed",
-    "Stable build available","Current build version is unavailable","Update declined"};
+    "Stable build available","Build comparison unavailable","Update declined"};
 static volatile LONG initialized, requested_enabled, snapshot_lock, current_status;
 static struct {
     WCHAR module[DLUMA_MAX_WPATH], directory[DLUMA_MAX_WPATH], root[DLUMA_MAX_WPATH];
@@ -38,7 +38,7 @@ static struct {
     DlumaNightlyManifest manifest;
     DlwNightlyOffer published;
     unsigned int sequence, response_ticket;
-    int response, enabled, phase;
+    int response, enabled, phase, accepted;
     HANDLE installer;
     HANDLE installer_job;
 } state;
@@ -110,9 +110,13 @@ static void cleanup_stage(void)
 }
 static void failed(const char *reason)
 {
-    state.phase=NIGHTLY_FINISHED; status_set(STATUS_FAILED); publish(DLW_NIGHTLY_ERROR);
+    state.phase=NIGHTLY_FINISHED; status_set(STATUS_FAILED);
+    /* A background check must not interrupt the menu when offline or rejected
+       by the server. Accepted installations still report failures in a dialog. */
+    publish(state.accepted ? DLW_NIGHTLY_ERROR : DLW_NIGHTLY_NONE);
     dluma_log_pair("WARN","nightly_check_result",reason);
     dluma_log_hex("WARN","nightly_download_error",dlw_nightly_download_error());
+    dluma_log_u64("WARN","nightly_http_status",dlw_nightly_download_http_status());
 }
 
 /* A local backup may offer restoration; the apply script verifies the complete
@@ -187,6 +191,7 @@ static void begin_check(void)
     int restore;
     WCHAR local[DLUMA_MAX_WPATH];
     char component_hash[65];
+    state.accepted=0;
     if(GetFileAttributesW(state.root)==INVALID_FILE_ATTRIBUTES && !state.enabled) {
         state.phase=NIGHTLY_FINISHED; status_set(STATUS_DISABLED); return;
     }
@@ -205,7 +210,7 @@ static void begin_check(void)
     }
     if(!state.enabled) {state.phase=NIGHTLY_FINISHED;status_set(STATUS_DISABLED);return;}
     if(!dluma_nightly_commit_valid(state.current)) {
-        state.phase=NIGHTLY_FINISHED;status_set(STATUS_UNKNOWN);publish(DLW_NIGHTLY_ERROR);return;
+        state.phase=NIGHTLY_FINISHED;status_set(STATUS_UNKNOWN);publish(DLW_NIGHTLY_NONE);return;
     }
     if(!prepare_stage()) {failed("stage_directory_unavailable");return;}
     dluma_wstr_copy(local,DLUMA_ARRAY_COUNT(local),L"https://github.com/BalancedLight/DLUMA/releases/download/nightly/nightly.json");
@@ -351,6 +356,7 @@ void dlw_nightly_tick(void)
         DlwNightlyKind kind=state.published.kind;
         publish(DLW_NIGHTLY_NONE);
         if(response==1) {state.phase=NIGHTLY_FINISHED;status_set(state.enabled ? STATUS_DECLINED : STATUS_DISABLED);cleanup_stage();return;}
+        state.accepted=1;
         if(kind==DLW_NIGHTLY_RESTORE) {if(!launch_apply(1)) failed("restore_could_not_start");return;}
         {
             WCHAR url[DLUMA_MAX_WPATH],filename[160];
@@ -371,7 +377,13 @@ void dlw_nightly_tick(void)
     }
     if(state.phase!=NIGHTLY_MANIFEST && state.phase!=NIGHTLY_COMPARE && state.phase!=NIGHTLY_ARCHIVE) return;
     result=dlw_nightly_download_poll();if(!result) return;
-    if(result<0) {failed("request_failed");return;}
+    if(result<0) {
+        if(state.phase==NIGHTLY_COMPARE && dlw_nightly_download_http_status()==404) {
+            state.phase=NIGHTLY_FINISHED;status_set(STATUS_UNKNOWN);publish(DLW_NIGHTLY_NONE);
+            dluma_log_pair("INFO","nightly_check_result","build_not_published");cleanup_stage();return;
+        }
+        failed("request_failed");return;
+    }
     if(state.phase==NIGHTLY_ARCHIVE) {
         char digest[65];
         if(!dlw_nightly_download_sha256(digest) || dluma_nightly_text_compare(digest,state.manifest.sha256)) {failed("archive_checksum_mismatch");return;}
