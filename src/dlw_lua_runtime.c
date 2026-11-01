@@ -151,6 +151,7 @@ static char g_dluma_lua_crash_context[DLUMA_LUA_CRASH_CONTEXT_CAPACITY];
  * context. A stale local-file reconciliation cannot resurrect retired Lua. */
 static unsigned int g_dluma_lua_project_exit_gate;
 static volatile LONG g_dluma_map_exit_active;
+static void *g_dluma_pending_unowned_level;
 static volatile LONG g_dluma_map_exit_lock;
 static DlumaProjectMapExitReceipt g_dluma_map_exit_receipt;
 static DlumaLuaRuntimeSlot* g_dluma_exit_notification_slot;
@@ -3750,7 +3751,7 @@ void dluma_lua_runtime_publish_globals(
     dluma_lua_runtime_unlock(&g_dluma_lua_runtime.pending_lock);
 }
 
-void dluma_lua_runtime_publish_context(
+int dluma_lua_runtime_publish_context(
     const WCHAR* project_root,
     const char* project_name,
     const char* workshop_id,
@@ -3759,9 +3760,14 @@ void dluma_lua_runtime_publish_context(
     unsigned int count)
 {
     unsigned int i;
-    if(dluma_atomic_compare_exchange(&g_dluma_map_exit_active,0,0))return;
+    if(dluma_atomic_compare_exchange(&g_dluma_map_exit_active,0,0))return 0;
     if (count > DLUMA_MAX_LUA_FILES) count = DLUMA_MAX_LUA_FILES;
     dluma_lua_runtime_lock(&g_dluma_lua_runtime.pending_lock);
+    if (dluma_atomic_compare_exchange(&g_dluma_map_exit_active, 0, 0)) {
+        dluma_lua_runtime_unlock(&g_dluma_lua_runtime.pending_lock);
+        return 0;
+    }
+    g_dluma_pending_unowned_level = 0;
     dluma_wstr_copy(g_dluma_lua_runtime.pending_project_root, DLUMA_MAX_WPATH,
                   project_root ? project_root : L"");
     dluma_str_copy(g_dluma_lua_runtime.pending_project_name,
@@ -3777,6 +3783,55 @@ void dluma_lua_runtime_publish_context(
     for (i = 0; i < count; ++i) g_dluma_lua_runtime.pending_locals[i] = entries[i];
     ++g_dluma_lua_runtime.pending_context_sequence;
     dluma_lua_runtime_unlock(&g_dluma_lua_runtime.pending_lock);
+    return 1;
+}
+
+int dluma_lua_runtime_context_transition_available(void)
+{
+    return dluma_atomic_compare_exchange(&g_dluma_map_exit_active, 0, 0) == 0;
+}
+
+int dluma_lua_runtime_begin_context_commit(void)
+{
+    if (dluma_atomic_compare_exchange(&g_dluma_map_exit_lock, 1, 0)) return 0;
+    if (dluma_atomic_compare_exchange(&g_dluma_map_exit_active, 0, 0)) {
+        dluma_atomic_exchange(&g_dluma_map_exit_lock, 0);
+        return 0;
+    }
+    return 1;
+}
+
+void dluma_lua_runtime_end_context_commit(void)
+{
+    dluma_atomic_exchange(&g_dluma_map_exit_lock, 0);
+}
+
+int dluma_lua_runtime_publish_unowned_context(const char* map_name, void* level)
+{
+    const char* map = map_name ? map_name : "";
+    if (!dluma_lua_runtime_begin_context_commit()) return 0;
+    dluma_lua_runtime_lock(&g_dluma_lua_runtime.pending_lock);
+    if (dluma_atomic_compare_exchange(&g_dluma_map_exit_active, 0, 0)) {
+        dluma_lua_runtime_unlock(&g_dluma_lua_runtime.pending_lock);
+        dluma_lua_runtime_end_context_commit();
+        return 0;
+    }
+    if (g_dluma_lua_runtime.pending_project_root[0] ||
+        g_dluma_lua_runtime.pending_local_count ||
+        dluma_stricmp(g_dluma_lua_runtime.pending_map, map) != 0 ||
+        g_dluma_pending_unowned_level != level) {
+        g_dluma_pending_unowned_level = level;
+        g_dluma_lua_runtime.pending_project_root[0] = 0;
+        g_dluma_lua_runtime.pending_project_name[0] = 0;
+        g_dluma_lua_runtime.pending_workshop_id[0] = 0;
+        dluma_str_copy(g_dluma_lua_runtime.pending_map,
+            DLUMA_ARRAY_COUNT(g_dluma_lua_runtime.pending_map), map);
+        g_dluma_lua_runtime.pending_local_count = 0;
+        ++g_dluma_lua_runtime.pending_context_sequence;
+    }
+    dluma_lua_runtime_unlock(&g_dluma_lua_runtime.pending_lock);
+    dluma_lua_runtime_end_context_commit();
+    return 1;
 }
 
 int dluma_lua_runtime_enqueue_event(

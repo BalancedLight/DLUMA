@@ -1008,6 +1008,16 @@ int dluma_custom_map_cancelled_presentation_cleanup(
     DlumaProjectCancelledCleanupResult *result);
 int dluma_project_launch_snapshot_admission(
     DlumaProjectLaunchAdmissionState *snapshot_out);
+typedef struct DlumaSelectedProjectLaunch {
+    DlumaProjectLaunchIdentity identity;
+    ULONGLONG generation;
+    ULONGLONG attempt_ms;
+    void *previous_level;
+} DlumaSelectedProjectLaunch;
+int dluma_ui_snapshot_selected_project_launch(DlumaSelectedProjectLaunch *out);
+int dluma_ui_lock_selected_project_launch(ULONGLONG generation);
+void dluma_ui_unlock_selected_project_launch(void);
+int dluma_workshop_validate_selected_project(const WCHAR *root, const char *map_name);
 void dluma_ui_report_error(const char *message);
 void dluma_ui_get_main_menu_mod_counts(
     unsigned int *active_out, unsigned int *installed_out,
@@ -1173,13 +1183,17 @@ void dluma_lua_runtime_publish_globals(
     const DlumaLuaMetadata *entries,
     unsigned int count,
     ULONGLONG revision);
-void dluma_lua_runtime_publish_context(
+int dluma_lua_runtime_publish_context(
     const WCHAR *project_root,
     const char *project_name,
     const char *workshop_id,
     const char *map_name,
     const DlumaLuaMetadata *entries,
     unsigned int count);
+int dluma_lua_runtime_publish_unowned_context(const char *map_name, void *level);
+int dluma_lua_runtime_context_transition_available(void);
+int dluma_lua_runtime_begin_context_commit(void);
+void dluma_lua_runtime_end_context_commit(void);
 int dluma_lua_runtime_enqueue_event(
     unsigned int kind,
     unsigned int map_generation,

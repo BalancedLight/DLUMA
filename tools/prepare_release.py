@@ -79,28 +79,81 @@ def refresh_workshop(package: Path, output: Path) -> Path | None:
         raise ValueError("Workshop output already exists and was not created by this tool")
     content = destination / "content"
     mods = content / "mods"
-    if content.is_symlink() or mods.is_symlink() or not content.is_dir():
+    if (content.is_symlink() or mods.is_symlink()
+            or (hasattr(content, "is_junction") and content.is_junction())
+            or (hasattr(mods, "is_junction") and mods.is_junction())
+            or not content.is_dir()):
         raise ValueError("Workshop content must be a normal directory")
     temporary = Path(tempfile.mkdtemp(prefix=".dluma-refresh-", dir=destination))
     preserve_backup = False
     try:
         staged = temporary / "mods"
-        backup = temporary / "previous-mods"
         shutil.copytree(package, staged, ignore=ignore_readmes)
-        if mods.exists():
-            if not mods.is_dir():
-                raise ValueError("Workshop mods destination must be a directory")
-            mods.replace(backup)
+        staged_items = sorted(staged.rglob("*"))
+        existing_items = sorted(mods.rglob("*")) if mods.is_dir() else []
+        if mods.exists() and not mods.is_dir():
+            raise ValueError("Workshop mods destination must be a directory")
+        for item in existing_items:
+            if (item.is_symlink() or (hasattr(item, "is_junction") and item.is_junction())
+                    or not item.resolve().is_relative_to(mods.resolve())):
+                raise ValueError("Workshop payload path leaves its directory")
+        expected = set()
+        for item in staged_items:
+            relative = item.relative_to(staged)
+            target = mods / relative
+            if (target.is_symlink() or (hasattr(target, "is_junction") and target.is_junction())
+                    or not target.resolve().is_relative_to(mods.resolve())):
+                raise ValueError("Workshop payload path leaves its directory")
+            if target.exists() and item.is_dir() != target.is_dir():
+                raise ValueError(f"Workshop payload path has a conflicting type: {relative}")
+            if item.is_file():
+                expected.add(relative)
+        backup = temporary / "previous-mods"
+        if mods.is_dir():
+            shutil.copytree(mods, backup)
+        else:
+            backup.mkdir()
+        changed = []
+        created_directories = []
         try:
-            staged.replace(mods)
-        except OSError as error:
-            if backup.exists():
-                try:
-                    backup.replace(mods)
-                except OSError as rollback_error:
-                    preserve_backup = True
-                    raise OSError(f"Workshop refresh failed and the previous payload could not be restored. "
-                                  f"Previous payload retained at {backup}: {rollback_error}") from error
+            if not mods.exists():
+                mods.mkdir()
+                created_directories.append(mods)
+            # Retain the directory itself because Windows may hold open handles.
+            for item in staged_items:
+                relative = item.relative_to(staged)
+                target = mods / relative
+                if item.is_dir():
+                    if not target.exists():
+                        target.mkdir()
+                        created_directories.append(target)
+                else:
+                    existed = target.exists()
+                    item.replace(target)
+                    changed.append((target, relative, existed))
+            for item in existing_items:
+                relative = item.relative_to(mods)
+                if item.is_file() and relative not in expected:
+                    item.unlink()
+                    changed.append((item, relative, True))
+        except BaseException as error:
+            try:
+                for target, relative, existed in reversed(changed):
+                    if existed:
+                        saved = backup / relative
+                        rollback_copy = temporary / "rollback-file"
+                        shutil.copy2(saved, rollback_copy)
+                        rollback_copy.replace(target)
+                    else:
+                        target.unlink()
+                for directory in reversed(created_directories):
+                    directory.rmdir()
+            except BaseException as rollback_error:
+                preserve_backup = True
+                raise OSError(
+                    f"Workshop refresh failed and rollback failed; "
+                    f"previous payload retained at {backup}: {rollback_error}"
+                ) from error
             raise
     finally:
         if not preserve_backup:

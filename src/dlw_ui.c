@@ -1,4 +1,5 @@
 #include "dlw_common.h"
+#include "core/dlw_launch_level_identity.h"
 #include "dlw_analysis_bridge.h"
 #include "dlw_custom_map_loading_core.h"
 #include "dlw_custom_main_menu.h"
@@ -8,6 +9,7 @@
 #include "dlw_discord_presence.h"
 #include "dlw_nightly.h"
 #include "dlw_steam_presence.h"
+#include "dlw_steam_text_input.h"
 #include "dlw_dual_host_runtime.h"
 #include "dlw_frontend_level.h"
 #include "dlw_first_launch.h"
@@ -17698,6 +17700,57 @@ static void dluma_ui_project_launch_unlock(void)
     dluma_atomic_exchange(&g_dluma_project_launch_lock, 0);
 }
 
+static DlumaSelectedProjectLaunch g_dluma_selected_project_launch;
+static volatile LONG g_dluma_selected_project_attempt;
+
+static ULONGLONG dluma_ui_begin_selected_project_attempt(void)
+{
+    ULONGLONG value = (unsigned int)dluma_atomic_increment(&g_dluma_selected_project_attempt);
+    if (!value) value = (unsigned int)dluma_atomic_increment(&g_dluma_selected_project_attempt);
+    return value;
+}
+
+int dluma_ui_lock_selected_project_launch(ULONGLONG generation)
+{
+    if (!dluma_ui_project_launch_lock()) return 0;
+    if (!dluma_launch_record_is_current(generation,
+            (unsigned int)dluma_atomic_compare_exchange(&g_dluma_selected_project_attempt, 0, 0)) ||
+        g_dluma_selected_project_launch.generation != generation) {
+        dluma_ui_project_launch_unlock();
+        return 0;
+    }
+    return 1;
+}
+
+void dluma_ui_unlock_selected_project_launch(void)
+{
+    dluma_ui_project_launch_unlock();
+}
+
+int dluma_ui_snapshot_selected_project_launch(DlumaSelectedProjectLaunch *out)
+{
+    if (!out || !dluma_ui_project_launch_lock()) return 0;
+    *out = g_dluma_selected_project_launch;
+    dluma_ui_project_launch_unlock();
+    return dluma_launch_record_is_current(out->generation,
+        (unsigned int)dluma_atomic_compare_exchange(&g_dluma_selected_project_attempt, 0, 0));
+}
+
+static void dluma_ui_record_selected_project_launch(
+    const DlumaProjectLaunchIdentity *identity, void *previous_level, ULONGLONG attempt, ULONGLONG attempt_ms)
+{
+    if (!attempt || !identity || !identity->normalized_project_root[0] ||
+        !dluma_ui_project_launch_lock()) return;
+    if (dluma_launch_record_is_current(attempt,
+            (unsigned int)dluma_atomic_compare_exchange(&g_dluma_selected_project_attempt, 0, 0))) {
+        g_dluma_selected_project_launch.identity = *identity;
+        g_dluma_selected_project_launch.previous_level = previous_level;
+        g_dluma_selected_project_launch.attempt_ms = attempt_ms;
+        g_dluma_selected_project_launch.generation = attempt;
+    }
+    dluma_ui_project_launch_unlock();
+}
+
 static DlumaProjectLaunchHookState *
 dluma_ui_project_launch_hook_state(
     DlumaProjectLaunchOwner owner)
@@ -19375,6 +19428,11 @@ static ULONG_PTR dluma_ui_project_premount_hook(
     int direct_identity_available = 0;
     int direct_request_created = 0;
     int loading_transition_cancelled = 0;
+    void *launch_previous_level = 0;
+    ULONGLONG launch_previous_sample = 0;
+    ULONGLONG launch_attempt = 0;
+    ULONGLONG launch_attempt_ms = 0;
+    char launch_previous_map[DLUMA_MAX_MAP_NAME];
     ULONGLONG attestation_superseded_before = 0;
     const int isolation_enabled =
         g_dluma.config.custom_map_asset_isolation_enabled != 0;
@@ -19410,6 +19468,8 @@ static ULONG_PTR dluma_ui_project_premount_hook(
             hook_state->premount_original(screen, argument);
         goto done;
     }
+    launch_attempt = dluma_ui_begin_selected_project_attempt();
+    launch_attempt_ms = GetTickCount64();
     capture = dluma_ui_capture_project_premount(
         screen, argument, owner, &evidence);
     if (capture != DLUMA_UI_PREMOUNT_CAPTURE_CUSTOM)
@@ -19454,8 +19514,18 @@ static ULONG_PTR dluma_ui_project_premount_hook(
         dluma_log_pair(
             "INFO", "custom_project_premount_admission_result",
             "isolation_disabled");
+        launch_previous_map[0] = 0;
+        (void)dluma_ui_read_level_snapshot(launch_previous_map,
+            DLUMA_ARRAY_COUNT(launch_previous_map), &launch_previous_level,
+            &launch_previous_sample);
+        if (!launch_previous_sample || launch_previous_sample > launch_attempt_ms ||
+            launch_attempt_ms - launch_previous_sample > 3000U) launch_previous_level = 0;
         return_value =
             hook_state->premount_original(screen, argument);
+        if (capture == DLUMA_UI_PREMOUNT_CAPTURE_CUSTOM)
+            dluma_ui_record_selected_project_launch(
+                evidence.identity.normalized_project_root[0] ? &evidence.identity :
+                (direct_identity_available ? &direct_identity : 0), launch_previous_level, launch_attempt, launch_attempt_ms);
         goto done;
     }
     if (capture == DLUMA_UI_PREMOUNT_CAPTURE_STOCK) {
@@ -19645,6 +19715,12 @@ static ULONG_PTR dluma_ui_project_premount_hook(
         dluma_engine_note_custom_project_admitted(
             &g_dluma.engine);
         dluma_custom_map_asset_isolation_note_premount_original();
+        launch_previous_map[0] = 0;
+        (void)dluma_ui_read_level_snapshot(launch_previous_map,
+            DLUMA_ARRAY_COUNT(launch_previous_map), &launch_previous_level,
+            &launch_previous_sample);
+        if (!launch_previous_sample || launch_previous_sample > launch_attempt_ms ||
+            launch_attempt_ms - launch_previous_sample > 3000U) launch_previous_level = 0;
         return_value =
             hook_state->premount_original(screen, argument);
         if (!dluma_custom_map_asset_mods_project_boundary(1))
@@ -19681,6 +19757,10 @@ static ULONG_PTR dluma_ui_project_premount_hook(
                 "WARN", "custom_project_premount_admission_result",
                 "post_original_state_lock_busy");
         }
+        if (!loading_transition_cancelled)
+            dluma_ui_record_selected_project_launch(
+                evidence.identity.normalized_project_root[0] ? &evidence.identity :
+                (direct_identity_available ? &direct_identity : 0), launch_previous_level, launch_attempt, launch_attempt_ms);
     }
     else
     {
@@ -19832,6 +19912,7 @@ int dluma_project_launch_note_update_dlc_content(
         dluma_project_launch_admission_cancel(
             &g_dluma_project_launch_admission,
             "frame_route_authority_lost_before_update");
+        (void)dluma_ui_begin_selected_project_attempt();
         dluma_ui_project_launch_unlock();
         dluma_ui_loading_release_pending_presentation();
         return 0;
@@ -19881,6 +19962,7 @@ int dluma_project_launch_note_custom_source_ex(
         dluma_project_launch_admission_cancel(
             &g_dluma_project_launch_admission,
             "frame_route_authority_lost_before_source");
+        (void)dluma_ui_begin_selected_project_attempt();
         loading_transition_cancelled = 1;
     }
     memset(&enriched, 0, sizeof(enriched));
@@ -20140,6 +20222,253 @@ static int dluma_ui_is_value_editor_screen(void *screen)
     return screen && dluma_ui_object_id_equals(screen, "MenuDLUMAValueEditor");
 }
 
+/* The shell dialog owns an STA thread; no game or XUI call runs on it. */
+typedef struct DlumaPickerGuid { unsigned long a; unsigned short b, c; unsigned char d[8]; } DlumaPickerGuid;
+typedef long (WINAPI *DlumaPickerInitFn)(void *, unsigned long);
+typedef void (WINAPI *DlumaPickerUninitFn)(void);
+typedef long (WINAPI *DlumaPickerCreateFn)(const DlumaPickerGuid *, void *, unsigned long, const DlumaPickerGuid *, void **);
+typedef void (WINAPI *DlumaPickerFreeFn)(void *);
+typedef long (WINAPI *DlumaPickerShowFn)(void *, HWND);
+typedef long (WINAPI *DlumaPickerOptionFn)(void *, unsigned long *);
+typedef long (WINAPI *DlumaPickerSetOptionFn)(void *, unsigned long);
+typedef long (WINAPI *DlumaPickerResultFn)(void *, void **);
+typedef long (WINAPI *DlumaPickerNameFn)(void *, unsigned long, WCHAR **);
+typedef unsigned long (WINAPI *DlumaPickerReleaseFn)(void *);
+typedef struct DlumaPickerState {
+    volatile LONG state;
+    LONG generation;
+    int folder;
+    HWND owner;
+    char path[DLUMA_UI_SETTING_VALUE_CAPACITY];
+    int accepted;
+    unsigned int capacity;
+    int too_long;
+} DlumaPickerState;
+static DlumaPickerState g_dluma_picker;
+static LONG g_dluma_value_editor_generation;
+static int g_dluma_value_steam_pending;
+static int g_dluma_value_save_pending;
+static unsigned int g_dluma_value_save_event_code;
+static HWND g_dluma_value_window;
+
+/* Window messages are queued by the window thread and consumed on the UI thread. */
+typedef struct DlumaTextInput {
+    HWND window;
+    WNDPROC previous;
+    volatile LONG active, lock;
+    unsigned int count;
+    WCHAR units[512];
+    WCHAR high_surrogate;
+    int select_all;
+} DlumaTextInput;
+static DlumaTextInput g_dluma_text_input;
+static int g_dluma_text_input_dispatching;
+
+static LRESULT CALLBACK dluma_ui_text_input_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    if (dluma_atomic_compare_exchange(&g_dluma_text_input.active, 1, 1) &&
+        (message == 0x102U || (message == 0x100U && wparam == 27U)))
+    {
+        WCHAR unit = message == 0x100U ? 27U : (WCHAR)wparam;
+        if (dluma_atomic_compare_exchange(&g_dluma_text_input.lock, 1, 0) == 0)
+        {
+            if (g_dluma_text_input.count < DLUMA_ARRAY_COUNT(g_dluma_text_input.units))
+                g_dluma_text_input.units[g_dluma_text_input.count++] = unit;
+            dluma_atomic_exchange(&g_dluma_text_input.lock, 0);
+        }
+        return 0;
+    }
+    if (dluma_atomic_compare_exchange(&g_dluma_text_input.active, 1, 1) &&
+        (message == 0x100U || message == 0x101U))
+        return 0;
+    return g_dluma_text_input.previous
+        ? CallWindowProcW(g_dluma_text_input.previous, window, message, wparam, lparam)
+        : DefWindowProcW(window, message, wparam, lparam);
+}
+
+static int dluma_ui_text_input_begin(void)
+{
+    HWND window = GetForegroundWindow();
+    HMODULE pinned;
+    DWORD process_id = 0;
+    if (!window) return 0;
+    (void)GetWindowThreadProcessId(window, &process_id);
+    if (process_id != GetCurrentProcessId()) return 0;
+    if (g_dluma_text_input.window && !IsWindow(g_dluma_text_input.window))
+        g_dluma_text_input.window = 0;
+    if (!g_dluma_text_input.window)
+    {
+        LONG_PTR previous;
+        if (!GetModuleHandleExW(5UL, (LPCWSTR)(const void *)&dluma_ui_text_input_proc, &pinned)) return 0;
+        g_dluma_text_input.previous = (WNDPROC)GetWindowLongPtrW(window, -4);
+        if (!g_dluma_text_input.previous) return 0;
+        previous = SetWindowLongPtrW(window, -4, (LONG_PTR)dluma_ui_text_input_proc);
+        if (!previous) return 0;
+        g_dluma_text_input.previous = (WNDPROC)previous;
+        g_dluma_text_input.window = window;
+    }
+    if (window != g_dluma_text_input.window) return 0;
+    if (dluma_atomic_compare_exchange(&g_dluma_text_input.lock, 1, 0) != 0)
+        return 0;
+    g_dluma_text_input.count = 0;
+    g_dluma_text_input.high_surrogate = 0;
+    g_dluma_text_input.select_all = 1;
+    dluma_atomic_exchange(&g_dluma_text_input.lock, 0);
+    dluma_atomic_exchange(&g_dluma_text_input.active, 1);
+    return 1;
+}
+
+static void dluma_ui_text_input_end(void)
+{
+    g_dluma_value_save_pending = 0;
+    dluma_atomic_exchange(&g_dluma_text_input.active, 0);
+    g_dluma_text_input.select_all = 0;
+    if (dluma_atomic_compare_exchange(&g_dluma_text_input.lock, 1, 0) == 0)
+    {
+        g_dluma_text_input.count = 0;
+        dluma_atomic_exchange(&g_dluma_text_input.lock, 0);
+    }
+    if (g_dluma_text_input.window && IsWindow(g_dluma_text_input.window) &&
+        (WNDPROC)GetWindowLongPtrW(g_dluma_text_input.window, -4) == dluma_ui_text_input_proc)
+    {
+        (void)SetWindowLongPtrW(g_dluma_text_input.window, -4, (LONG_PTR)g_dluma_text_input.previous);
+        g_dluma_text_input.window = 0;
+    }
+}
+
+typedef struct DlumaXInputGamepad {
+    WORD buttons; BYTE left_trigger, right_trigger;
+    short left_x, left_y, right_x, right_y;
+} DlumaXInputGamepad;
+typedef struct DlumaXInputState { DWORD packet; DlumaXInputGamepad gamepad; } DlumaXInputState;
+typedef DWORD (WINAPI *DlumaXInputGetStateFn)(DWORD, DlumaXInputState *);
+static DlumaXInputGetStateFn g_dluma_xinput_get_state;
+static int g_dluma_xinput_checked;
+static unsigned int g_dluma_value_controller_previous;
+static int g_dluma_value_controller_present;
+
+static unsigned int dluma_ui_value_controller_buttons(void)
+{
+    unsigned int i, buttons = 0;
+    DWORD process_id = 0;
+    HWND foreground = GetForegroundWindow();
+    g_dluma_value_controller_present = 0;
+    if (foreground) (void)GetWindowThreadProcessId(foreground, &process_id);
+    if (process_id != GetCurrentProcessId() || foreground != g_dluma_value_window) return 0;
+    if (!g_dluma_xinput_checked)
+    {
+        HMODULE module = GetModuleHandleW(L"xinput1_4.dll");
+        if (!module) module = GetModuleHandleW(L"xinput1_3.dll");
+        if (!module) module = LoadLibraryW(L"xinput1_4.dll");
+        if (!module) module = LoadLibraryW(L"xinput1_3.dll");
+        if (module) g_dluma_xinput_get_state = (DlumaXInputGetStateFn)GetProcAddress(module, "XInputGetState");
+        g_dluma_xinput_checked = 1;
+    }
+    if (g_dluma_xinput_get_state)
+        for (i = 0; i < 4U; ++i)
+        {
+            DlumaXInputState state;
+            if (!g_dluma_xinput_get_state(i, &state))
+            {
+                g_dluma_value_controller_present = 1;
+                if (state.gamepad.buttons & 0x4000U) buttons |= 1U;
+                if (state.gamepad.buttons & 0x8000U) buttons |= 2U;
+                if (state.gamepad.left_trigger >= 30U) buttons |= 4U;
+                if (state.gamepad.buttons & 0x1000U) buttons |= 8U;
+                buttons |= ((unsigned int)state.gamepad.buttons << 8);
+                if (state.gamepad.right_trigger >= 30U) buttons |= 0x01000000U;
+                if (state.gamepad.left_x > 12000 || state.gamepad.left_x < -12000 ||
+                    state.gamepad.left_y > 12000 || state.gamepad.left_y < -12000)
+                    buttons |= 0x02000000U;
+                if (state.gamepad.right_x > 12000 || state.gamepad.right_x < -12000 ||
+                    state.gamepad.right_y > 12000 || state.gamepad.right_y < -12000)
+                    buttons |= 0x04000000U;
+            }
+        }
+    return buttons;
+}
+
+static DWORD WINAPI dluma_ui_picker_worker(void *unused)
+{
+    static const DlumaPickerGuid clsid = {0xdc1c5a9c, 0xe88a, 0x4dde, {0xa5,0xa1,0x60,0xf8,0x2a,0x20,0xae,0xf7}};
+    static const DlumaPickerGuid iid = {0xd57c7288, 0xd4ad, 0x4768, {0xbe,0x02,0x9d,0x96,0x95,0x32,0xd9,0x60}};
+    HMODULE ole = LoadLibraryW(L"ole32.dll");
+    DlumaPickerInitFn init;
+    DlumaPickerUninitFn uninit;
+    DlumaPickerCreateFn create;
+    DlumaPickerFreeFn free_mem;
+    void *dialog = 0, *item = 0;
+    WCHAR *name = 0;
+    void **vt;
+    unsigned long options = 0;
+    long hr;
+    (void)unused;
+    g_dluma_picker.path[0] = 0;
+    g_dluma_picker.accepted = 0;
+    g_dluma_picker.too_long = 0;
+    if (!ole) goto done;
+    init = (DlumaPickerInitFn)GetProcAddress(ole, "CoInitializeEx");
+    uninit = (DlumaPickerUninitFn)GetProcAddress(ole, "CoUninitialize");
+    create = (DlumaPickerCreateFn)GetProcAddress(ole, "CoCreateInstance");
+    free_mem = (DlumaPickerFreeFn)GetProcAddress(ole, "CoTaskMemFree");
+    if (!init || !uninit || !create || !free_mem) goto unload;
+    hr = init(0, 2UL);
+    if (hr < 0) goto unload;
+    hr = create(&clsid, 0, 1UL, &iid, &dialog);
+    if (hr >= 0 && dialog)
+    {
+        vt = *(void ***)dialog;
+        if (((DlumaPickerOptionFn)vt[10])(dialog, &options) >= 0)
+            (void)((DlumaPickerSetOptionFn)vt[9])(dialog,
+                options | 0x40UL | (g_dluma_picker.folder ? 0x20UL : 0x1000UL));
+        if (((DlumaPickerShowFn)vt[3])(dialog, g_dluma_picker.owner) >= 0 &&
+            ((DlumaPickerResultFn)vt[20])(dialog, &item) >= 0 && item)
+        {
+            void **item_vt = *(void ***)item;
+            if (((DlumaPickerNameFn)item_vt[5])(item, 0x80058000UL, &name) >= 0 && name)
+            {
+                if (!WideCharToMultiByte(65001U, 0x80UL, name, -1, g_dluma_picker.path,
+                        (int)sizeof(g_dluma_picker.path), 0, 0))
+                {
+                    g_dluma_picker.path[0] = 0;
+                    g_dluma_picker.too_long = 1;
+                }
+                else g_dluma_picker.accepted = 1;
+                free_mem(name);
+            }
+            (void)((DlumaPickerReleaseFn)item_vt[2])(item);
+        }
+        (void)((DlumaPickerReleaseFn)vt[2])(dialog);
+    }
+    uninit();
+unload:
+    FreeLibrary(ole);
+done:
+    dluma_atomic_exchange(&g_dluma_picker.state, 2);
+    return 0;
+}
+
+static void dluma_ui_picker_start(void)
+{
+    HANDLE thread;
+    HMODULE pinned;
+    if (dluma_atomic_compare_exchange(&g_dluma_picker.state, 1, 0) != 0)
+        return;
+    if (!GetModuleHandleExW(0x00000005UL, (LPCWSTR)(const void *)&dluma_ui_picker_worker, &pinned))
+    {
+        dluma_atomic_exchange(&g_dluma_picker.state, 0);
+        return;
+    }
+    g_dluma_picker.generation = g_dluma_value_editor_generation;
+    g_dluma_picker.capacity = g_dluma_value_editor.capacity;
+    g_dluma_picker.folder = g_dluma_value_editor.kind == DLUMA_VALUE_EDITOR_SETTINGS &&
+         g_dluma_value_editor.category == DLUMA_LOADER_CATEGORY_WORKSHOP_ROOTS;
+    g_dluma_picker.owner = GetForegroundWindow();
+    thread = CreateThread(0, 0, dluma_ui_picker_worker, 0, 0, 0);
+    if (thread) CloseHandle(thread);
+    else dluma_atomic_exchange(&g_dluma_picker.state, 0);
+}
+
 static void dluma_ui_value_editor_message(const char *text)
 {
     dluma_ui_set_text_element_long(g_dluma_value_editor.status, text);
@@ -20225,7 +20554,7 @@ static int dluma_ui_value_editor_apply_keyboard(int force)
 static char dluma_ui_value_editor_character(unsigned int index)
 {
     static const char letters[] =
-        "abcdefghijklmnopqrstuvwxyz0123456789-_.:/\\@+%=!?";
+        "qwertyuiopasdfghjkl;zxcvbnm,./0123456789-_:\\@+!?";
     static const char punctuation[] =
         " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~0123456789 -_./";
     char value;
@@ -20247,9 +20576,11 @@ static void dluma_ui_value_editor_refresh_keyboard(void)
     size_t length = strlen(tail);
     char current[DLUMA_UI_SETTING_VALUE_CAPACITY + 64U];
     char display[DLUMA_UI_SETTING_VALUE_CAPACITY];
+    int typing = dluma_atomic_compare_exchange(&g_dluma_text_input.active, 1, 1) != 0;
     for (index = 0; index < 48U; ++index)
     {
         const char *display_label;
+        void *character_button;
         dluma_u64_to_text(index, number, DLUMA_ARRAY_COUNT(number));
         dluma_str_copy(id, DLUMA_ARRAY_COUNT(id), "B_ValueChar");
         dluma_str_append(id, DLUMA_ARRAY_COUNT(id), number);
@@ -20265,10 +20596,25 @@ static void dluma_ui_value_editor_refresh_keyboard(void)
         case ' ': display_label = "Space"; break;
         default: display_label = label; break;
         }
-        dluma_ui_set_element_text(
-            dluma_ui_find_required_child(g_dluma_value_editor.screen, id),
-            display_label);
+        character_button = dluma_ui_find_required_child(g_dluma_value_editor.screen, id);
+        dluma_ui_set_element_text(character_button, display_label);
+        dluma_ui_set_element_visible(character_button, !typing);
+        if (g_dluma_set_element_can_focus)
+            g_dluma_set_element_can_focus(character_button, !typing);
     }
+    {
+        static const char *const controls[] = {
+            "B_ValueShift", "B_ValueSymbols", "B_ValueSpace", "B_ValueBackspace"
+        };
+        for (index = 0; index < DLUMA_ARRAY_COUNT(controls); ++index)
+        {
+            void *element = dluma_ui_find_required_child(g_dluma_value_editor.screen, controls[index]);
+            dluma_ui_set_element_visible(element, !typing);
+            if (g_dluma_set_element_can_focus) g_dluma_set_element_can_focus(element, !typing);
+        }
+    }
+    dluma_ui_set_element_visible(
+        dluma_ui_find_required_child(g_dluma_value_editor.screen, "T_ValueInlineHelp"), typing);
     if (length > 100U)
     {
         tail += length - 100U;
@@ -20286,6 +20632,12 @@ static void dluma_ui_value_editor_refresh_keyboard(void)
     dluma_ui_value_editor_action_label("B_ValueBackspace", "DLUMA_ValueEditor_Backspace", "Backspace");
     dluma_ui_value_editor_action_label("B_ValueClear", "DLUMA_ValueEditor_Clear", "Clear");
     dluma_ui_value_editor_action_label("B_ValueKeyboard", "DLUMA_ValueEditor_TypeText", "Type text");
+    dluma_ui_value_editor_action_label("B_ValuePaste", "DLUMA_ValueEditor_Paste", "Paste");
+    dluma_ui_value_editor_action_label("B_ValueGrid", "DLUMA_ValueEditor_Grid", "Keyboard");
+    if (g_dluma_value_editor.kind == DLUMA_VALUE_EDITOR_LOG_SEARCH)
+        dluma_ui_value_editor_action_label("B_ValueBrowse", "DLUMA_Logs_Search", "Search");
+    else
+        dluma_ui_value_editor_action_label("B_ValueBrowse", "DLUMA_ValueEditor_Browse", "Browse");
     dluma_ui_value_editor_action_label("B_ValueUseText", "DLUMA_ValueEditor_UseText", "Use text");
     current[0] = 0;
     dluma_ui_localize_text("DLUMA_Common_Value", "Value",
@@ -20298,10 +20650,24 @@ static void dluma_ui_value_editor_refresh_keyboard(void)
     dluma_ui_set_element_visible(
         dluma_ui_find_required_child(g_dluma_value_editor.screen, "B_ValueUseText"),
         !g_dluma_value_editor.controller_mode);
+    dluma_ui_set_element_visible(
+        dluma_ui_find_required_child(g_dluma_value_editor.screen, "B_ValuePaste"),
+        g_dluma_value_editor.controller_mode);
+    dluma_ui_set_element_visible(
+        dluma_ui_find_required_child(g_dluma_value_editor.screen, "B_ValueBrowse"),
+        1);
     if (g_dluma_set_element_can_focus)
+    {
         g_dluma_set_element_can_focus(
             dluma_ui_find_required_child(g_dluma_value_editor.screen, "B_ValueUseText"),
             !g_dluma_value_editor.controller_mode);
+        g_dluma_set_element_can_focus(
+            dluma_ui_find_required_child(g_dluma_value_editor.screen, "B_ValuePaste"),
+            g_dluma_value_editor.controller_mode);
+        g_dluma_set_element_can_focus(
+            dluma_ui_find_required_child(g_dluma_value_editor.screen, "B_ValueBrowse"),
+            1);
+    }
     dluma_ui_set_element_visible(g_dluma_value_editor.buffer_text,
                                  g_dluma_value_editor.controller_mode);
     dluma_ui_set_element_visible(g_dluma_value_editor.edit_box,
@@ -20344,6 +20710,9 @@ static int dluma_ui_value_editor_open(
     staged.parent = parent;
     staged.kind = kind;
     staged.setting_index = setting_index;
+    /* The shared value display and controller grid are the default surface;
+       the native text window is opened by Type text. */
+    staged.controller_mode = 1;
     staged.capacity = sizeof(staged.buffer);
     if (kind == DLUMA_VALUE_EDITOR_SETTINGS)
     {
@@ -20396,6 +20765,9 @@ static int dluma_ui_value_editor_open(
     if (screen_id < 0)
         return 0;
     g_dluma_value_editor = staged;
+    g_dluma_value_window = GetForegroundWindow();
+    g_dluma_value_controller_previous = dluma_ui_value_controller_buttons();
+    ++g_dluma_value_editor_generation;
     if (!dluma_ui_show_next_registered_screen(parent, screen_id,
             "value_editor_show_next_ui_requested_id"))
     {
@@ -20411,11 +20783,168 @@ static void dluma_ui_value_editor_show(void *screen)
     dluma_atomic_exchange(&g_dluma_value_editor_deferred_show, 1);
 }
 
+/* Negative means the window thread is still appending a character. */
+static int dluma_ui_value_editor_drain_text(void *screen)
+{
+    if (screen != g_dluma_value_editor.screen ||
+        !dluma_atomic_compare_exchange(&g_dluma_text_input.active, 1, 1))
+        return 0;
+    if (dluma_atomic_compare_exchange(&g_dluma_text_input.lock, 1, 0) != 0)
+        return -1;
+    {
+        WCHAR units[DLUMA_ARRAY_COUNT(g_dluma_text_input.units)];
+        unsigned int count = g_dluma_text_input.count, i;
+        memcpy(units, g_dluma_text_input.units, count * sizeof(WCHAR));
+        g_dluma_text_input.count = 0;
+        dluma_atomic_exchange(&g_dluma_text_input.lock, 0);
+        for (i = 0; i < count; ++i)
+        {
+            WCHAR pair[2];
+            char encoded[8];
+            int bytes, unit_count = 1;
+            size_t length = strlen(g_dluma_value_editor.buffer);
+            WCHAR unit = units[i];
+            if (unit == 1U)
+            {
+                g_dluma_text_input.select_all = 1;
+                dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_SelectedHint", "All selected. Type to replace.");
+                continue;
+            }
+            if (unit == 13U || unit == 27U)
+            {
+                void *target = dluma_ui_find_required_child(screen,
+                    unit == 13U ? "B_ValueSave" : "B_Back");
+                g_dluma_text_input_dispatching = 1;
+                (void)dluma_ui_value_editor_button(screen, target, 0);
+                g_dluma_text_input_dispatching = 0;
+                if (!dluma_atomic_compare_exchange(&g_dluma_text_input.active, 1, 1))
+                    return 1;
+                continue;
+            }
+            if (unit == 22U)
+            {
+                g_dluma_text_input_dispatching = 1;
+                (void)dluma_ui_value_editor_button(screen,
+                    dluma_ui_find_required_child(screen, "B_ValuePaste"), 0);
+                g_dluma_text_input_dispatching = 0;
+                continue;
+            }
+            if (unit == 8U)
+            {
+                if (g_dluma_text_input.select_all)
+                {
+                    g_dluma_value_editor.buffer[0] = 0;
+                    g_dluma_text_input.select_all = 0;
+                }
+                else if (length) {
+                    do { --length; } while (length && ((unsigned char)g_dluma_value_editor.buffer[length] & 0xc0U) == 0x80U);
+                    g_dluma_value_editor.buffer[length] = 0;
+                }
+                continue;
+            }
+            if (unit < 32U) continue;
+            if (unit >= 0xd800U && unit <= 0xdbffU) { g_dluma_text_input.high_surrogate = unit; continue; }
+            if (unit >= 0xdc00U && unit <= 0xdfffU)
+            {
+                if (!g_dluma_text_input.high_surrogate) continue;
+                pair[0] = g_dluma_text_input.high_surrogate;
+                pair[1] = unit;
+                unit_count = 2;
+            }
+            else pair[0] = unit;
+            g_dluma_text_input.high_surrogate = 0;
+            bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, pair, unit_count,
+                                       encoded, sizeof(encoded), 0, 0);
+            if (g_dluma_text_input.select_all) length = 0;
+            if (bytes > 0 && length + (size_t)bytes < g_dluma_value_editor.capacity)
+            {
+                memcpy(g_dluma_value_editor.buffer + length, encoded, (size_t)bytes);
+                g_dluma_value_editor.buffer[length + (size_t)bytes] = 0;
+                g_dluma_text_input.select_all = 0;
+            }
+            else if (bytes > 0)
+                dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_ValueTooLong", "The value is too long.");
+        }
+        if (count) dluma_ui_value_editor_refresh_keyboard();
+    }
+    return 0;
+}
+
 static void dluma_ui_value_editor_post(void *screen)
 {
     void *title;
     void *current;
     char text[DLUMA_UI_SETTING_VALUE_CAPACITY + 64U];
+    int drain_result;
+    if (screen == g_dluma_value_editor.screen && g_dluma_value_steam_pending)
+    {
+        char result[DLUMA_UI_SETTING_VALUE_CAPACITY];
+        int state = dluma_steam_text_poll((unsigned int)g_dluma_value_editor_generation,
+                                          result, g_dluma_value_editor.capacity);
+        if (state == 0) return;
+        g_dluma_value_steam_pending = 0;
+        if (state == 1)
+        {
+            dluma_str_copy(g_dluma_value_editor.buffer, DLUMA_ARRAY_COUNT(g_dluma_value_editor.buffer), result);
+            dluma_ui_value_editor_refresh_keyboard();
+            dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_UpdatedHint", "Value updated. Select Save to apply it.");
+        }
+        else if (state < 0)
+            dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_ReadTextFailed", "Text input is unavailable.");
+    }
+    if (screen == g_dluma_value_editor.screen)
+    {
+        unsigned int held = dluma_ui_value_controller_buttons();
+        unsigned int pressed = held & ~g_dluma_value_controller_previous;
+        g_dluma_value_controller_previous = held;
+        if (pressed && dluma_atomic_compare_exchange(&g_dluma_text_input.active, 1, 1))
+        {
+            dluma_ui_text_input_end();
+            dluma_ui_value_editor_refresh_keyboard();
+            dluma_ui_focus_element(dluma_ui_find_required_child(screen, "B_ValueChar0"));
+            dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_ControllerHint", "Choose characters, or select Type text to replace the value.");
+        }
+        g_dluma_text_input_dispatching = 1;
+        if (pressed & 1U)
+            (void)dluma_ui_value_editor_button(screen, dluma_ui_find_required_child(screen, "B_ValueBackspace"), 0);
+        if (pressed & 2U)
+            (void)dluma_ui_value_editor_button(screen, dluma_ui_find_required_child(screen, "B_ValueSpace"), 0);
+        if (pressed & 4U)
+            (void)dluma_ui_value_editor_button(screen, dluma_ui_find_required_child(screen, "B_ValueShift"), 0);
+        g_dluma_text_input_dispatching = 0;
+    }
+    drain_result = dluma_ui_value_editor_drain_text(screen);
+    if (drain_result > 0)
+        return;
+    if (screen == g_dluma_value_editor.screen &&
+        drain_result == 0 && g_dluma_value_save_pending)
+    {
+        unsigned int event_code = g_dluma_value_save_event_code;
+        g_dluma_value_save_pending = 0;
+        (void)dluma_ui_value_editor_button(screen,
+            dluma_ui_find_required_child(screen, "B_ValueSave"), event_code);
+        return;
+    }
+    if (dluma_atomic_compare_exchange(&g_dluma_picker.state, 2, 2) == 2)
+    {
+        if (screen == g_dluma_value_editor.screen &&
+            g_dluma_picker.generation == g_dluma_value_editor_generation &&
+            (g_dluma_picker.too_long ||
+             (g_dluma_picker.accepted && strlen(g_dluma_picker.path) >= g_dluma_picker.capacity)))
+            dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_ValueTooLong", "The value is too long.");
+        if (screen == g_dluma_value_editor.screen &&
+            g_dluma_picker.generation == g_dluma_value_editor_generation &&
+            g_dluma_picker.accepted &&
+            strlen(g_dluma_picker.path) < g_dluma_picker.capacity &&
+            dluma_ui_value_editor_use_controller())
+        {
+            dluma_str_copy(g_dluma_value_editor.buffer,
+                           DLUMA_ARRAY_COUNT(g_dluma_value_editor.buffer), g_dluma_picker.path);
+            dluma_ui_value_editor_refresh_keyboard();
+            dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_UpdatedHint", "Value updated. Select Save to apply it.");
+        }
+        dluma_atomic_exchange(&g_dluma_picker.state, 0);
+    }
     if (!dluma_atomic_exchange(&g_dluma_value_editor_deferred_show, 0))
     {
         if (screen == g_dluma_value_editor.screen &&
@@ -20469,8 +20998,8 @@ static void dluma_ui_value_editor_post(void *screen)
     }
     dluma_ui_value_editor_refresh_keyboard();
     dluma_ui_value_editor_message_localized(
-        "DLUMA_ValueEditor_KeyboardHint", "Type replacement text, then select Use text. Leave it empty to clear the value.");
-    dluma_ui_focus_element(g_dluma_value_editor.edit_box);
+        "DLUMA_ValueEditor_ControllerHint", "Choose characters, or select Type text to replace the value.");
+    dluma_ui_focus_element(dluma_ui_find_required_child(screen, "B_ValueKeyboard"));
     dluma_log_u64("INFO", "value_editor_opened_parent_kind",
                   g_dluma_value_editor.kind);
 }
@@ -20557,30 +21086,117 @@ static int dluma_ui_value_editor_button(void *screen, void *button, unsigned int
     char number[16];
     char character = 0;
     size_t length;
+    if (g_dluma_value_steam_pending)
+        return 1;
     if (dluma_ui_object_id_equals(button, "B_Back") ||
-        dluma_ui_object_id_equals(button, "B_ValueSave"))
+        dluma_ui_object_id_equals(button, "B_ValueSave") ||
+        (g_dluma_value_editor.kind == DLUMA_VALUE_EDITOR_LOG_SEARCH &&
+         dluma_ui_object_id_equals(button, "B_ValueBrowse")))
     {
-        if (dluma_ui_object_id_equals(button, "B_ValueSave") &&
+        if (!dluma_ui_object_id_equals(button, "B_Back") &&
+            !g_dluma_text_input_dispatching)
+        {
+            int drain_result = dluma_ui_value_editor_drain_text(screen);
+            if (drain_result < 0)
+            {
+                g_dluma_value_save_pending = 1;
+                g_dluma_value_save_event_code = event_code;
+            }
+            if (drain_result != 0)
+                return 1;
+        }
+        g_dluma_value_save_pending = 0;
+        if (!dluma_ui_object_id_equals(button, "B_Back") &&
             !dluma_ui_value_editor_save())
+        {
+            /* Refresh the value without replacing the validation message. */
+            dluma_ui_value_editor_refresh_keyboard();
             return 1;
+        }
+        dluma_steam_text_cancel((unsigned int)g_dluma_value_editor_generation);
+        g_dluma_value_steam_pending = 0;
+        dluma_ui_text_input_end();
         if (g_dluma_workshop_button_original && g_dluma_value_editor.back)
             g_dluma_workshop_button_original(screen, g_dluma_value_editor.back, event_code);
         return 1;
     }
+    if (dluma_atomic_compare_exchange(&g_dluma_text_input.active, 1, 1) &&
+        !g_dluma_text_input_dispatching &&
+        !dluma_ui_object_id_equals(button, "B_ValueGrid"))
+        return 1;
     if (dluma_ui_object_id_equals(button, "B_ValueKeyboard"))
     {
-        if (g_dluma_value_editor.controller_mode)
+        if (dluma_ui_value_editor_use_controller())
         {
-            char typed[DLUMA_UI_SETTING_VALUE_CAPACITY];
-            g_dluma_value_editor.controller_mode = 0;
-            g_dluma_value_editor.keyboard_dirty = 0;
-            g_dluma_value_editor.keyboard_snapshot_ready = 0;
-            (void)dluma_ui_value_editor_poll_keyboard(typed, DLUMA_ARRAY_COUNT(typed));
+            dluma_ui_value_editor_refresh_keyboard();
+            if ((dluma_ui_value_controller_buttons() & 8U) && g_dluma_value_controller_present)
+            {
+                if (dluma_steam_text_open(g_dluma_value_editor.buffer, g_dluma_value_editor.capacity,
+                        g_dluma_value_editor.title, (unsigned int)g_dluma_value_editor_generation))
+                    g_dluma_value_steam_pending = 1;
+                else
+                    dluma_ui_focus_element(dluma_ui_find_required_child(screen, "B_ValueChar0"));
+                return 1;
+            }
+            if (dluma_ui_text_input_begin())
+            {
+                dluma_log_line("INFO", "value_editor_inline_input_started");
+                dluma_ui_value_editor_refresh_keyboard();
+                dluma_ui_focus_element(dluma_ui_find_required_child(screen, "B_ValueKeyboard"));
+                dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_InlineHint", "Type to replace. Ctrl+A selects all; Enter saves, Escape cancels.");
+            }
+            else
+                dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_ReadTextFailed", "Text input is unavailable.");
         }
+        return 1;
+    }
+    if (dluma_ui_object_id_equals(button, "B_ValueGrid"))
+    {
+        dluma_ui_text_input_end();
         dluma_ui_value_editor_refresh_keyboard();
-        dluma_ui_value_editor_message_localized(
-            "DLUMA_ValueEditor_KeyboardHint", "Type replacement text, then select Use text. Leave it empty to clear the value.");
-        dluma_ui_focus_element(g_dluma_value_editor.edit_box);
+        dluma_ui_focus_element(dluma_ui_find_required_child(screen, "B_ValueChar0"));
+        return 1;
+    }
+    if (dluma_ui_object_id_equals(button, "B_ValuePaste"))
+    {
+        HANDLE handle;
+        const WCHAR *wide;
+        SIZE_T max_chars, chars;
+        char pasted[DLUMA_UI_SETTING_VALUE_CAPACITY];
+        int bytes = 0;
+        if (!OpenClipboard(NULL)) return 1;
+        handle = GetClipboardData(13U); /* CF_UNICODETEXT */
+        wide = handle ? (const WCHAR *)GlobalLock(handle) : NULL;
+        max_chars = handle ? GlobalSize(handle) / sizeof(WCHAR) : 0;
+        chars = 0;
+        if (wide && max_chars <= 32768U)
+        {
+            while (chars < max_chars && wide[chars]) ++chars;
+            if (chars < max_chars && chars <= 32767U)
+                bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide,
+                    (int)chars, pasted, (int)sizeof(pasted) - 1, NULL, NULL);
+        }
+        if (wide) GlobalUnlock(handle);
+        CloseClipboard();
+        if (bytes <= 0 || !dluma_ui_value_editor_use_controller()) return 1;
+        pasted[bytes] = 0;
+        if ((g_dluma_text_input.select_all ? 0U : strlen(g_dluma_value_editor.buffer)) + (size_t)bytes >= g_dluma_value_editor.capacity)
+        {
+            dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_ValueTooLong", "The value is too long.");
+            return 1;
+        }
+        if (g_dluma_text_input.select_all)
+            g_dluma_value_editor.buffer[0] = 0;
+        g_dluma_text_input.select_all = 0;
+        dluma_str_append(g_dluma_value_editor.buffer, DLUMA_ARRAY_COUNT(g_dluma_value_editor.buffer), pasted);
+        dluma_ui_value_editor_refresh_keyboard();
+        dluma_ui_value_editor_message_localized("DLUMA_ValueEditor_UpdatedHint", "Value updated. Select Save to apply it.");
+        return 1;
+    }
+    if (dluma_ui_object_id_equals(button, "B_ValueBrowse"))
+    {
+        dluma_ui_text_input_end();
+        dluma_ui_picker_start();
         return 1;
     }
     if (dluma_ui_object_id_equals(button, "B_ValueUseText"))
@@ -20623,7 +21239,12 @@ static int dluma_ui_value_editor_button(void *screen, void *button, unsigned int
         length = strlen(g_dluma_value_editor.buffer);
         if (dluma_ui_object_id_equals(button, "B_ValueBackspace"))
         {
-            if (length)
+            if (g_dluma_text_input.select_all)
+            {
+                g_dluma_value_editor.buffer[0] = 0;
+                g_dluma_text_input.select_all = 0;
+            }
+            else if (length)
             {
                 do { --length; }
                 while (length && ((unsigned char)g_dluma_value_editor.buffer[length] & 0xC0U) == 0x80U);
@@ -20636,6 +21257,11 @@ static int dluma_ui_value_editor_button(void *screen, void *button, unsigned int
         {
             if (dluma_ui_object_id_equals(button, "B_ValueSpace"))
                 character = ' ';
+            if (character && g_dluma_text_input.select_all)
+            {
+                length = 0;
+                g_dluma_text_input.select_all = 0;
+            }
             if (character && length + 1U < g_dluma_value_editor.capacity)
             {
                 g_dluma_value_editor.buffer[length] = character;
@@ -20655,6 +21281,9 @@ static int dluma_ui_value_editor_parent_show(void *screen)
     if (!g_dluma_value_editor.kind || g_dluma_value_editor.parent != screen ||
         !g_dluma_value_editor.screen)
         return 0;
+    dluma_steam_text_cancel((unsigned int)g_dluma_value_editor_generation);
+    g_dluma_value_steam_pending = 0;
+    dluma_ui_text_input_end();
     g_dluma_value_editor.screen = 0;
     g_dluma_value_editor.restore_pending = 1;
     dluma_log_u64("INFO", "value_editor_returned_saved",
@@ -20705,6 +21334,7 @@ static void dluma_ui_value_editor_restore_parent(void *screen)
     }
     else
         dluma_ui_focus_element(g_dluma_ui_logs_list);
+    dluma_ui_text_input_end();
     memset(&g_dluma_value_editor, 0, sizeof(g_dluma_value_editor));
 }
 
@@ -24291,6 +24921,7 @@ static void dluma_ui_restore_registry_hooks_now(void)
         dluma_project_launch_admission_cancel(
             &g_dluma_project_launch_admission,
             "shutdown");
+        (void)dluma_ui_begin_selected_project_attempt();
         dluma_ui_project_launch_unlock();
     }
     detached &=
@@ -24658,6 +25289,9 @@ static void dluma_ui_uninstall_registry_hooks(void)
     dluma_atomic_exchange(&g_dluma_mod_config_option_refresh_pending, 0);
     dluma_atomic_exchange(&g_dluma_mod_config_option_refresh_index, -1);
     dluma_atomic_exchange(&g_dluma_mod_details_deferred_populate, 0);
+    dluma_steam_text_cancel((unsigned int)g_dluma_value_editor_generation);
+    g_dluma_value_steam_pending = 0;
+    dluma_ui_text_input_end();
     memset(&g_dluma_value_editor, 0, sizeof(g_dluma_value_editor));
     dluma_atomic_exchange(&g_dluma_value_editor_deferred_show, 0);
     dluma_log_line("INFO", "MenuSteamWorkshop global-mod registry callback state finalized.");

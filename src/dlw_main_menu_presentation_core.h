@@ -25,6 +25,16 @@ typedef enum DlumaMainMenuHoliday {
     DLUMA_MAIN_MENU_HOLIDAY_HAPPY_HOLIDAYS
 } DlumaMainMenuHoliday;
 
+typedef struct DlumaMainMenuAppearance {
+    const char *model;
+    const char *skin;
+} DlumaMainMenuAppearance;
+
+typedef struct DlumaMainMenuAppearanceSet {
+    const DlumaMainMenuAppearance *appearances;
+    unsigned int count;
+} DlumaMainMenuAppearanceSet;
+
 /* The build identity stores a canonical 64-character SHA-256 digest.  This
  * pure validator deliberately preserves the digest's original case: the
  * loader hashes files as lowercase hexadecimal, while older builds and tools
@@ -67,5 +77,15 @@ DlumaMainMenuHoliday dluma_main_menu_presentation_holiday(
     unsigned int year,
     unsigned int month,
     unsigned int day);
+
+/* Returns a stable appearance set, or null when no appearance applies. */
+const DlumaMainMenuAppearanceSet *dluma_main_menu_presentation_appearances(
+    unsigned int year,
+    unsigned int month,
+    unsigned int day);
+
+int dluma_main_menu_presentation_halloween_animation(
+    unsigned int year, unsigned int month, unsigned int day,
+    unsigned int startup_roll);
 
 #endif

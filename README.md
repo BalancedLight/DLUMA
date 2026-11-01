@@ -12,6 +12,10 @@ To enable new and updated global mods automatically at startup, turn on **Automa
 
 The first launch asks whether you want to continue with an early version of DLUMA. **Yes** remembers your choice for your Windows user account. **No** exits Player.
 
+The main-menu character uses Halloween outfits from October 28 through November 1, Christmas outfits from December 20–30, and World's Best Crane around Mother's Day and Father's Day. January 26 uses the Techland outfit. Each outfit pool gets one random choice at startup, with unavailable outfits skipped. Dates follow your local calendar, and compatible custom menus use the same seasonal outfits. Your gameplay outfit stays unchanged.
+
+During Halloween, each startup has a 1-in-10 chance to replace the menu character's standing loop with Thriller. If the animation cannot load, the normal standing animation continues.
+
 Native and C# mods run with the same access as the game. Review their source and author before enabling them. Enabling or updating these mods requires a restart. Lua mods run in the loader's sandbox.
 
 - [Installation, settings, and troubleshooting](docs/USING_DLUMA.md)

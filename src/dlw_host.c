@@ -1,4 +1,5 @@
 #include "dlw_common.h"
+#include "core/dlw_launch_level_identity.h"
 #include "dlw_analysis_bridge.h"
 #include "dlw_animation_refresh_runtime.h"
 #include "dlw_frontend_level.h"
@@ -402,14 +403,35 @@ static void dluma_unload_active_map(const char* reason, int publish_empty_lua_co
     dluma_engine_clear_tracked_level(&g_dluma.engine);
 }
 
-static void dluma_activate_map(
+static int dluma_activate_map(
     const char* map_name, const WCHAR* project_root,
-    const DlumaProjectOwnerProofSnapshot* proof)
+    const DlumaProjectOwnerProofSnapshot* proof, ULONGLONG launch_generation)
 {
     char project[DLUMA_MAX_WPATH * 2];
     char project_name[128];
     char workshop_id[64];
     unsigned char is_workshop = 0;
+    dluma_lua_discover_locals(project_root, map_name);
+    project_name[0] = 0;
+    workshop_id[0] = 0;
+    dluma_describe_project_source(project_root,
+                                project_name, DLUMA_ARRAY_COUNT(project_name),
+                                workshop_id, DLUMA_ARRAY_COUNT(workshop_id),
+                                &is_workshop);
+    (void)is_workshop;
+    if (launch_generation && !dluma_ui_lock_selected_project_launch(launch_generation)) return 0;
+    if (!dluma_lua_runtime_begin_context_commit()) {
+        if (launch_generation) dluma_ui_unlock_selected_project_launch();
+        return 0;
+    }
+    if (!dluma_lua_runtime_publish_context(
+            project_root, project_name, workshop_id, map_name,
+            g_dluma.lua_discovery.local_files,
+            g_dluma.lua_discovery.local_count)) {
+        dluma_lua_runtime_end_context_commit();
+        if (launch_generation) dluma_ui_unlock_selected_project_launch();
+        return 0;
+    }
     dluma_str_copy(g_dluma.active_map, DLUMA_MAX_MAP_NAME, map_name);
     dluma_wstr_copy(g_dluma.active_project_root, DLUMA_MAX_WPATH, project_root);
     g_dluma.active_project_owner_epoch =
@@ -422,6 +444,8 @@ static void dluma_activate_map(
             : 0;
     g_dluma.map_loaded_ms = GetTickCount64();
     g_dluma.first_unmatched_ms = 0;
+    dluma_lua_runtime_end_context_commit();
+    if (launch_generation) dluma_ui_unlock_selected_project_launch();
     dluma_crash_publish_runtime_context(
         "map_active", project_root, map_name,
         g_dluma.active_project_owner_epoch,
@@ -429,21 +453,10 @@ static void dluma_activate_map(
     dluma_wide_to_utf8(project_root, project, DLUMA_ARRAY_COUNT(project));
     dluma_log_pair("INFO", "active_workshop_map", map_name);
     dluma_log_pair("INFO", "active_workshop_project", project);
-    dluma_lua_discover_locals(project_root, map_name);
-    project_name[0] = 0;
-    workshop_id[0] = 0;
-    dluma_describe_project_source(project_root,
-                                project_name, DLUMA_ARRAY_COUNT(project_name),
-                                workshop_id, DLUMA_ARRAY_COUNT(workshop_id),
-                                &is_workshop);
-    (void)is_workshop;
-    dluma_lua_runtime_publish_context(
-        project_root, project_name, workshop_id, map_name,
-        g_dluma.lua_discovery.local_files,
-        g_dluma.lua_discovery.local_count);
     dluma_scripts_load(&g_dluma.scripts, project_root, map_name);
     dluma_scripts_fire(&g_dluma.scripts, DLUMA_EVENT_MAP_LOAD, 0);
     dluma_engine_track_last_level(&g_dluma.engine);
+    return 1;
 }
 
 typedef struct DlumaEditorPlaytestActivation {
@@ -533,8 +546,13 @@ static void dluma_activate_editor_playtest_handoff_on_worker(
         dluma_free(activation);
         return;
     }
-    dluma_activate_map(
-        activation->map_name, current_identity.final_path, 0);
+    if (!dluma_activate_map(
+            activation->map_name, current_identity.final_path, 0, 0)) {
+        dluma_log_pair("ERROR", "editor_playtest_context",
+                       "map context publication was deferred during exit");
+        dluma_free(activation);
+        return;
+    }
     dluma_log_pair(
         "INFO", "editor_playtest_context",
         "authoritative handoff project/map published before lifecycle polling");
@@ -559,6 +577,8 @@ DWORD WINAPI dluma_worker_thread(LPVOID parameter)
     ULONGLONG discovery_dirty_since = 0;
     ULONGLONG last_project_probe_ms = 0;
     ULONGLONG query_failure_started_ms = 0;
+    ULONGLONG consumed_launch_generation = 0;
+    void* active_context_level = 0;
     char last_project_probe_map[DLUMA_MAX_MAP_NAME];
     int bind_warning_logged = 0;
     int query_failure_warning_logged = 0;
@@ -726,22 +746,52 @@ DWORD WINAPI dluma_worker_thread(LPVOID parameter)
             if (positive_level_changed)
                 dluma_asset_trace_annotate_active_level(
                     observed_map, observed_level, "<frontend>", now);
-            g_dluma.last_unowned_map[0] = 0;
             if (g_dluma.active_map[0]) {
                 dluma_asset_trace_late_transition(g_dluma.active_map, observed_map);
                 dluma_unload_active_map("confirmed frontend level became active", 1);
+                g_dluma.last_unowned_map[0] = 0;
+            } else if (g_dluma.last_unowned_map[0] &&
+                       dluma_lua_runtime_publish_unowned_context("", 0)) {
+                g_dluma.last_unowned_map[0] = 0;
             }
+            active_context_level = 0;
         } else {
+            DlumaSelectedProjectLaunch launch;
+            int selected_launch = 0;
+            int level_instance_changed = active_context_level &&
+                active_context_level != observed_level;
             int same_active_map =
                 g_dluma.active_map[0] &&
                 dluma_stricmp(
-                    g_dluma.active_map, observed_map) == 0;
+                    g_dluma.active_map, observed_map) == 0 &&
+                !level_instance_changed;
             int replaced_active_context =
                 g_dluma.active_map[0] && !same_active_map;
             int should_probe;
             int found_project = 0;
+            int context_published = 1;
             DlumaProjectOwnerProofSnapshot project_proof;
+            if (!dluma_lua_runtime_context_transition_available()) {
+                if (dluma_wait_for_stop(g_dluma.config.poll_interval_ms)) break;
+                continue;
+            }
             memset(&project_proof, 0, sizeof(project_proof));
+            memset(&launch, 0, sizeof(launch));
+            if (dluma_ui_snapshot_selected_project_launch(&launch) &&
+                dluma_launch_matches_new_level(launch.generation,
+                    consumed_launch_generation, (uintptr_t)launch.previous_level,
+                    (uintptr_t)observed_level, !launch.identity.map_name[0] ||
+                    dluma_stricmp(launch.identity.map_name, observed_map) == 0,
+                    launch.attempt_ms, level_sample_ms) &&
+                dluma_utf8_to_wide(launch.identity.normalized_project_root,
+                    project, DLUMA_ARRAY_COUNT(project)) &&
+                dluma_workshop_validate_selected_project(project, observed_map))
+                selected_launch = 1;
+            if (selected_launch && same_active_map &&
+                !dluma_project_roots_same_identity(g_dluma.active_project_root, project)) {
+                same_active_map = 0;
+                replaced_active_context = 1;
+            }
             if (same_active_map)
                 g_dluma.first_unmatched_ms = 0;
             if (replaced_active_context) {
@@ -750,11 +800,14 @@ DWORD WINAPI dluma_worker_thread(LPVOID parameter)
                 dluma_unload_active_map("different confirmed level became active", 0);
             }
             should_probe =
+                level_instance_changed ||
                 dluma_stricmp(
                     last_project_probe_map, observed_map) != 0 ||
                 now - last_project_probe_ms >= 3000;
-            project[0] = 0;
-            if (should_probe) {
+            if (selected_launch) {
+                found_project = 1;
+            } else if (should_probe) {
+                project[0] = 0;
                 dluma_str_copy(
                     last_project_probe_map,
                     DLUMA_ARRAY_COUNT(last_project_probe_map),
@@ -802,26 +855,27 @@ DWORD WINAPI dluma_worker_thread(LPVOID parameter)
                         dluma_asset_trace_annotate_active_level(
                             observed_map, observed_level,
                             project_utf8, now);
-                        dluma_activate_map(
+                        context_published = dluma_activate_map(
                             observed_map, project,
-                            &project_proof);
+                            &project_proof, selected_launch ? launch.generation : 0);
                     }
                 } else {
                     if (positive_level_changed)
                         dluma_asset_trace_annotate_active_level(
                             observed_map, observed_level,
                             project_utf8, now);
-                    dluma_activate_map(
-                        observed_map, project, &project_proof);
+                    context_published = dluma_activate_map(
+                        observed_map, project, &project_proof,
+                        selected_launch ? launch.generation : 0);
                 }
+                if (selected_launch && context_published)
+                    consumed_launch_generation = launch.generation;
             } else if (!same_active_map) {
                 if (positive_level_changed)
                     dluma_asset_trace_annotate_active_level(
                         observed_map, observed_level,
                         "<unknown>", now);
-                if (replaced_active_context)
-                    dluma_lua_runtime_publish_context(
-                        L"", "", "", "", 0, 0);
+                context_published = dluma_lua_runtime_publish_unowned_context(observed_map, observed_level);
                 if (dluma_stricmp(
                         g_dluma.last_unowned_map,
                         observed_map) != 0) {
@@ -834,6 +888,11 @@ DWORD WINAPI dluma_worker_thread(LPVOID parameter)
                         "map_detected_but_no_project_owner_found",
                         observed_map);
                 }
+            }
+            if (context_published) active_context_level = observed_level;
+            else {
+                last_project_probe_map[0] = 0;
+                last_project_probe_ms = 0;
             }
         }
         if (g_dluma.active_project_root[0])

@@ -155,6 +155,9 @@
     <ClCompile Include="src\dlw_editor_model_animation_fix.c" />
     <ClCompile Include="src\dlw_main_menu_presentation_core.c" />
     <ClCompile Include="src\dlw_main_menu_native_presentation.c" />
+    <ClCompile Include="src\dlw_main_menu_appearance.c" />
+    <ClCompile Include="src\dlw_main_menu_animation.c" />
+    <ClCompile Include="src\dlw_menu_animation_cache.c" />
     <ClCompile Include="src\dlw_mouse_lock.c" />
     <ClCompile Include="src\dlw_mouse_lock_core.c" />
     <ClCompile Include="src\dlw_player_startup.c" />
@@ -245,6 +248,7 @@
     <ClCompile Include="src\dlw_util.c" />
     <ClCompile Include="src\dlw_workshop.c" />
     <ClCompile Include="src\dlw_workshop_menu.c" />
+    <ClCompile Include="src\dlw_steam_text_input.c" />
     <ClCompile Include="src\dlw_workshop_preview.c" />
     <ClCompile Include="src\fixes\FixRegistry.cpp">
       <CompileAs>CompileAsCpp</CompileAs>
@@ -971,6 +975,9 @@
     <ClInclude Include="sdk\c\dluma_editor_api.h" />
     <ClInclude Include="src\dlw_main_menu_presentation_core.h" />
     <ClInclude Include="src\dlw_main_menu_native_presentation.h" />
+    <ClInclude Include="src\dlw_main_menu_appearance.h" />
+    <ClInclude Include="src\dlw_main_menu_animation.h" />
+    <ClInclude Include="src\dlw_menu_animation_cache.h" />
     <ClInclude Include="src\dlw_new_mod_ticker.h" />
     <ClInclude Include="src\dlw_mod_row_format_core.h" />
     <ClInclude Include="src\dlw_common.h" />

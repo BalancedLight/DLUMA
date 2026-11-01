@@ -334,3 +334,70 @@ DlumaMainMenuHoliday dluma_main_menu_presentation_holiday(
 
     return DLUMA_MAIN_MENU_HOLIDAY_NONE;
 }
+
+int dluma_main_menu_presentation_halloween_animation(
+    unsigned int year, unsigned int month, unsigned int day,
+    unsigned int startup_roll)
+{
+    return dluma_main_menu_presentation_holiday(year, month, day) ==
+        DLUMA_MAIN_MENU_HOLIDAY_HALLOWEEN && startup_roll % 10U == 0U;
+}
+
+const DlumaMainMenuAppearanceSet *dluma_main_menu_presentation_appearances(
+    unsigned int year, unsigned int month, unsigned int day)
+{
+    typedef struct AppearanceRule {
+        DlumaMainMenuHoliday holiday;
+        unsigned int month;
+        unsigned int day;
+        const DlumaMainMenuAppearanceSet *set;
+    } AppearanceRule;
+    static const DlumaMainMenuAppearance halloween[] = {
+        {"player_1_tpp.msh", "player_1_zombie"},
+        {"player_12_tpp.msh", "player_12_zombie"},
+        {"player_2_tpp.msh", "player_2_zombie"},
+        {"player_4_tpp.msh", "phosphor_paint_a"}
+    };
+    static const DlumaMainMenuAppearance christmas[] = {
+        {"player_2_tpp.msh", "Christma_event"},
+        {"player_9_tpp.msh", "Christmas_event"},
+        {"player_14_tpp.msh", "Christmas_event"}
+    };
+    static const DlumaMainMenuAppearance anniversary[] = {
+        {"player_11_tpp.msh", "TECHLAND_2"}
+    };
+    static const DlumaMainMenuAppearance parents_day[] = {
+        {"player_acolyte_tpp.msh", "5th_anniversary"}
+    };
+    static const DlumaMainMenuAppearanceSet halloween_set = {halloween, 4U};
+    static const DlumaMainMenuAppearanceSet christmas_set = {christmas, 3U};
+    static const DlumaMainMenuAppearanceSet anniversary_set = {anniversary, 1U};
+    static const DlumaMainMenuAppearanceSet parents_day_set = {parents_day, 1U};
+    static const AppearanceRule rules[] = {
+        {DLUMA_MAIN_MENU_HOLIDAY_HALLOWEEN, 0U, 0U, &halloween_set},
+        {DLUMA_MAIN_MENU_HOLIDAY_HAPPY_HOLIDAYS, 0U, 0U, &christmas_set},
+        {DLUMA_MAIN_MENU_HOLIDAY_MOTHERS_DAY, 0U, 0U, &parents_day_set},
+        {DLUMA_MAIN_MENU_HOLIDAY_FATHERS_DAY, 0U, 0U, &parents_day_set},
+        {DLUMA_MAIN_MENU_HOLIDAY_NONE, 1U, 26U, &anniversary_set}
+    };
+    DlumaMainMenuHoliday holiday;
+    unsigned int index;
+
+    if (year < 1583U || year > 9999U ||
+        !dluma_main_menu_presentation_days_in_month(year, month) ||
+        day < 1U ||
+        day > dluma_main_menu_presentation_days_in_month(year, month))
+        return 0;
+
+    holiday = dluma_main_menu_presentation_holiday(year, month, day);
+    for (index = 0; index < sizeof(rules) / sizeof(rules[0]); ++index)
+    {
+        const AppearanceRule *rule = &rules[index];
+        if ((rule->holiday != DLUMA_MAIN_MENU_HOLIDAY_NONE &&
+             rule->holiday == holiday) ||
+            (rule->holiday == DLUMA_MAIN_MENU_HOLIDAY_NONE &&
+             rule->month == month && rule->day == day))
+            return rule->set;
+    }
+    return 0;
+}

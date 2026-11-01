@@ -3876,12 +3876,13 @@ void dluma_native_mods_activate_scope(
     dluma_native_lock();
     count = g_dluma_native_mods.count;
     dluma_native_unlock();
-    if (!project_root || !project_root[0] ||
-        !map_name || !map_name[0]) {
+    if (!map_name || !map_name[0]) {
         dluma_atomic_exchange(&g_dluma_native_project_exit_gate, 0);
         return;
     }
-    if (g_dluma_native_project_exit_gate) return;
+    if (!project_root || !project_root[0])
+        dluma_atomic_exchange(&g_dluma_native_project_exit_gate, 0);
+    else if (g_dluma_native_project_exit_gate) return;
 
     for (index = 0; index < count; ++index) {
         DlumaNativeModEntry* entry =
@@ -3910,6 +3911,8 @@ void dluma_native_mods_activate_scope(
             map_name);
         dluma_native_unlock();
     }
+
+    if (!project_root || !project_root[0]) return;
 
     /* Scope entry follows native load order and happens before managed/Lua
      * activation in the caller. */

@@ -16,6 +16,7 @@
 #undef dluma_ui_workshop_show_hook
 
 #include "dlw_main_menu_native_presentation.h"
+#include "dlw_main_menu_appearance.h"
 
 #define DLUMA_UI_FIX_MODS_VISIBLE_ROWS 10
 #define DLUMA_UI_FIX_WORKSHOP_VISIBLE_ROWS 6
@@ -953,6 +954,7 @@ int dluma_ui_start(void)
         dluma_log_line(
             "WARN",
             "Stock main-menu news integration is unavailable for this exact build; no ticker ownership was installed.");
+    (void)dluma_main_menu_appearance_start();
     if (!g_dluma_ui_fix_timer_id)
         g_dluma_ui_fix_timer_id = SetTimer(
             0, 0, DLUMA_UI_FIX_PATCH_TIMER_MS,
@@ -963,6 +965,7 @@ int dluma_ui_start(void)
 void dluma_ui_stop(void)
 {
     const int native_stopped = dluma_main_menu_native_presentation_stop();
+    const int appearance_stopped = dluma_main_menu_appearance_stop();
     if (g_dluma_ui_fix_timer_id)
     {
         KillTimer(0, g_dluma_ui_fix_timer_id);
@@ -982,7 +985,7 @@ void dluma_ui_stop(void)
     g_dluma_ui_fix_logs_message_screen = 0;
     g_dluma_ui_fix_logs_messages_ready = 0;
     dluma_ui_stop_base();
-    if (!native_stopped)
+    if (!native_stopped || !appearance_stopped)
     {
         /* The native subsystem retained its code/data after a hook ownership
          * loss or drain timeout. Do not report a clean UI teardown. */

@@ -602,6 +602,24 @@ static void dluma_collect_exact_proof_match(
         scan->unique_matches = 1;
 }
 
+int dluma_workshop_validate_selected_project(const WCHAR* root, const char* map_name)
+{
+    DlumaDirectoryIdentity identity;
+    DlumaExactProofMatchScan matches;
+    unsigned char complete = 1;
+    if (!root || !root[0] || !dluma_valid_map_segment(map_name) ||
+        !dluma_open_directory_identity(root, &identity) ||
+        !dluma_validate_map_anchor_under_project(root, map_name, &identity))
+        return 0;
+    memset(&matches, 0, sizeof(matches));
+    matches.map_name = map_name;
+    matches.proof_identity = &identity;
+    matches.complete = 1;
+    dluma_visit_project_claims(map_name, dluma_collect_exact_proof_match,
+                              &matches, &complete);
+    return complete && matches.complete && matches.unique_matches == 1;
+}
+
 static const char* dluma_project_owner_reason_name(
     unsigned int reason)
 {

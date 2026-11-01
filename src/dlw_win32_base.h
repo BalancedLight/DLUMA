@@ -348,6 +348,37 @@ __declspec(dllimport) BOOL WINAPI CopyFileW(LPCWSTR lpExistingFileName, LPCWSTR 
 __declspec(dllimport) BOOL WINAPI MoveFileExW(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, DWORD dwFlags);
 __declspec(dllimport) DWORD WINAPI GetLastError(void);
 __declspec(dllimport) DWORD WINAPI GetCurrentProcessId(void);
+__declspec(dllimport) BOOL WINAPI OpenClipboard(HWND hWndNewOwner);
+__declspec(dllimport) HANDLE WINAPI GetClipboardData(unsigned int uFormat);
+__declspec(dllimport) BOOL WINAPI CloseClipboard(void);
+__declspec(dllimport) LPVOID WINAPI GlobalLock(HANDLE hMem);
+__declspec(dllimport) BOOL WINAPI GlobalUnlock(HANDLE hMem);
+__declspec(dllimport) SIZE_T WINAPI GlobalSize(HANDLE hMem);
+typedef LRESULT (CALLBACK *DLUMA_WNDPROC)(HWND, UINT, WPARAM, LPARAM);
+typedef struct DLUMA_WNDCLASSW {
+    UINT style; DLUMA_WNDPROC wndproc; int cls_extra, wnd_extra;
+    HINSTANCE instance; HANDLE icon, cursor, background; LPCWSTR menu, name;
+} DLUMA_WNDCLASSW;
+typedef struct DLUMA_MSG {
+    HWND hwnd; UINT message; WPARAM wparam; LPARAM lparam; DWORD time;
+    LONG x, y; DWORD private_value;
+} DLUMA_MSG;
+__declspec(dllimport) unsigned short WINAPI RegisterClassW(const DLUMA_WNDCLASSW *);
+__declspec(dllimport) HWND WINAPI CreateWindowExW(DWORD, LPCWSTR, LPCWSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
+__declspec(dllimport) LRESULT WINAPI DefWindowProcW(HWND, UINT, WPARAM, LPARAM);
+__declspec(dllimport) BOOL WINAPI DestroyWindow(HWND);
+__declspec(dllimport) void WINAPI PostQuitMessage(int);
+__declspec(dllimport) BOOL WINAPI GetMessageW(DLUMA_MSG *, HWND, UINT, UINT);
+__declspec(dllimport) BOOL WINAPI TranslateMessage(const DLUMA_MSG *);
+__declspec(dllimport) LRESULT WINAPI DispatchMessageW(const DLUMA_MSG *);
+__declspec(dllimport) LRESULT WINAPI SendMessageW(HWND, UINT, WPARAM, LPARAM);
+__declspec(dllimport) BOOL WINAPI ShowWindow(HWND, int);
+__declspec(dllimport) BOOL WINAPI UpdateWindow(HWND);
+__declspec(dllimport) HWND WINAPI SetFocus(HWND);
+__declspec(dllimport) BOOL WINAPI SetForegroundWindow(HWND);
+__declspec(dllimport) BOOL WINAPI IsDialogMessageW(HWND, DLUMA_MSG *);
+__declspec(dllimport) HANDLE WINAPI LoadCursorW(HINSTANCE, LPCWSTR);
+__declspec(dllimport) BOOL WINAPI SystemParametersInfoW(UINT, UINT, LPVOID, UINT);
 __declspec(dllimport) DWORD WINAPI GetCurrentThreadId(void);
 __declspec(dllimport) HANDLE WINAPI GetCurrentThread(void);
 __declspec(dllimport) VOID WINAPI GetSystemTime(SYSTEMTIME* lpSystemTime);

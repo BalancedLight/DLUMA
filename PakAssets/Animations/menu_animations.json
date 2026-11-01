@@ -1,0 +1,25 @@
+{
+  "format": "dl-reanimated-animation-library-build-v1",
+  "animations": [
+    {
+      "name": "dluma_menu_thriller",
+      "path": "thriller.anm2"
+    }
+  ],
+  "animationScripts": [
+    {
+      "name": "dluma_menu_animations",
+      "sequences": [
+        {
+          "name": "dluma_menu_thriller",
+          "anm2Name": "dluma_menu_thriller",
+          "startFrame": 0,
+          "endFrame": 3473,
+          "framesPerSecond": 30,
+          "enabled": 1,
+          "blend": 0.5
+        }
+      ]
+    }
+  ]
+}

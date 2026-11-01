@@ -19,6 +19,8 @@ from verify_quest_bindings import (
 from validate_localization import SUPPORTED as LOCALE_CODES, validate as validate_localization
 
 SOURCES = (
+    (ROOT / 'PakAssets/Animations/dluma_thriller_ee.rpack', 'Anims/dluma_thriller_ee.rpack'),
+    (ROOT / 'PakAssets/Animations/dluma_menu_animations.scr', 'data/characters/animations/animscripts/dluma_menu_animations.scr'),
     (ROOT / 'PakAssets/XUI/DLUMA_Main_PC_workshop.xui', 'data/menu/scr/DLM_Main_PC_workshop.xui'),
     (ROOT / 'PakAssets/XUI/DLUMA_MenuExtras.xui', 'data/menu/scr/MenuExtras.xui'),
     (ROOT / 'PakAssets/XUI/MenuDLUMAMods.xui', 'data/menu/scr/MenuDLUMAMods.xui'),
@@ -701,12 +703,15 @@ def build(output: Path) -> None:
     with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for source, entry_name in SOURCES:
             info = zipfile.ZipInfo(entry_name, date_time=(2000, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info.compress_type = (
+                zipfile.ZIP_STORED if entry_name == 'Anims/dluma_thriller_ee.rpack'
+                else zipfile.ZIP_DEFLATED
+            )
             info.external_attr = 0o100644 << 16
             zf.writestr(
                 info,
                 packed_source_bytes(source, entry_name),
-                compress_type=zipfile.ZIP_DEFLATED,
+                compress_type=info.compress_type,
                 compresslevel=9,
             )
     hashes = verify_archive_sources(output)

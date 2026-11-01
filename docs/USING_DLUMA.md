@@ -26,9 +26,11 @@ Native and C# changes take effect on the next launch. An update that changes a m
 
 Use a mod's configuration screen to change its supported settings. An option's description explains what it does and whether a restart is required.
 
-For text settings and log searches, use the on-screen keyboard to edit the value and select **Save**. **Shift** and **Symbols** provide additional characters; **Clear** empties the current value.
+For text settings and log searches, use the on-screen keyboard to edit the value and select **Save**. **Keyboard** focuses the QWERTY grid. **Shift** and **Symbols** provide additional characters; **Clear** empties the current value. On a controller, X deletes a character, Y inserts a space, and left trigger toggles Shift.
 
-To replace a value using a physical keyboard, select **Type text**, press Enter to activate the field, enter the replacement, then choose **Use text** and **Save**.
+To use a physical keyboard, select **Type text** and type directly in the game. Ctrl+V pastes clipboard text, Enter saves the value, and Escape cancels. When a controller is connected, **Type text** first tries Steam's gamepad keyboard; if it is unavailable, the on-screen keyboard remains available. **Paste** also appends clipboard text directly to the current value; use **Clear** first to replace it.
+
+**Browse** opens a Windows folder picker for Workshop roots and a file picker for mod text settings such as WAD and SoundFont paths. Select the location, then choose **Save**. Cancel leaves the value unchanged. The on-screen character grid remains available for controller input and when a Windows dialog cannot be used.
 
 ## Loader settings
 

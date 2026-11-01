@@ -98,10 +98,26 @@
                         <AutoSizeToText>false</AutoSizeToText>
                     </Properties>
                 </MyText>
+                <MyText>
+                    <Properties>
+                        <Id>T_ValueInlineHelp</Id>
+                        <Width>717.000000</Width>
+                        <Height>80.000000</Height>
+                        <Position>24.000000,190.000000,0.000000</Position>
+                        <Text>Type your text above. Press Enter to save or Escape to cancel.</Text>
+                        <TextColor>0xffb0b0b0</TextColor>
+                        <Font>boxed_r_10</Font>
+                        <TextStyle>5136</TextStyle>
+                        <MultiLine>true</MultiLine>
+                        <Uppercase>false</Uppercase>
+                        <AutoSizeToText>false</AutoSizeToText>
+                        <Show>false</Show>
+                    </Properties>
+                </MyText>
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar0</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
                         <Position>24.000000,150.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
@@ -109,10 +125,10 @@
                         <Text>a</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
-                        <NavLeft>B_ValueChar7</NavLeft>
+                        <NavLeft>B_ValueChar9</NavLeft>
                         <NavRight>B_ValueChar1</NavRight>
                         <NavUp>B_ValueKeyboard</NavUp>
-                        <NavDown>B_ValueChar8</NavDown>
+                        <NavDown>B_ValueChar10</NavDown>
                         <NavTabForward>B_ValueChar1</NavTabForward>
                         <NavTabBackward>B_ValueKeyboard</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -121,9 +137,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar1</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>114.000000,150.000000,0.000000</Position>
+                        <Position>95.000000,150.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>b</Text>
@@ -132,7 +148,7 @@
                         <NavLeft>B_ValueChar0</NavLeft>
                         <NavRight>B_ValueChar2</NavRight>
                         <NavUp>B_ValueKeyboard</NavUp>
-                        <NavDown>B_ValueChar9</NavDown>
+                        <NavDown>B_ValueChar11</NavDown>
                         <NavTabForward>B_ValueChar2</NavTabForward>
                         <NavTabBackward>B_ValueChar0</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -141,9 +157,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar2</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>204.000000,150.000000,0.000000</Position>
+                        <Position>166.000000,150.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>c</Text>
@@ -152,7 +168,7 @@
                         <NavLeft>B_ValueChar1</NavLeft>
                         <NavRight>B_ValueChar3</NavRight>
                         <NavUp>B_ValueKeyboard</NavUp>
-                        <NavDown>B_ValueChar10</NavDown>
+                        <NavDown>B_ValueChar12</NavDown>
                         <NavTabForward>B_ValueChar3</NavTabForward>
                         <NavTabBackward>B_ValueChar1</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -161,9 +177,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar3</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>294.000000,150.000000,0.000000</Position>
+                        <Position>237.000000,150.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>d</Text>
@@ -172,7 +188,7 @@
                         <NavLeft>B_ValueChar2</NavLeft>
                         <NavRight>B_ValueChar4</NavRight>
                         <NavUp>B_ValueKeyboard</NavUp>
-                        <NavDown>B_ValueChar11</NavDown>
+                        <NavDown>B_ValueChar13</NavDown>
                         <NavTabForward>B_ValueChar4</NavTabForward>
                         <NavTabBackward>B_ValueChar2</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -181,9 +197,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar4</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>384.000000,150.000000,0.000000</Position>
+                        <Position>308.000000,150.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>e</Text>
@@ -192,7 +208,7 @@
                         <NavLeft>B_ValueChar3</NavLeft>
                         <NavRight>B_ValueChar5</NavRight>
                         <NavUp>B_ValueKeyboard</NavUp>
-                        <NavDown>B_ValueChar12</NavDown>
+                        <NavDown>B_ValueChar14</NavDown>
                         <NavTabForward>B_ValueChar5</NavTabForward>
                         <NavTabBackward>B_ValueChar3</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -201,9 +217,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar5</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>474.000000,150.000000,0.000000</Position>
+                        <Position>379.000000,150.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>f</Text>
@@ -212,7 +228,7 @@
                         <NavLeft>B_ValueChar4</NavLeft>
                         <NavRight>B_ValueChar6</NavRight>
                         <NavUp>B_ValueKeyboard</NavUp>
-                        <NavDown>B_ValueChar13</NavDown>
+                        <NavDown>B_ValueChar15</NavDown>
                         <NavTabForward>B_ValueChar6</NavTabForward>
                         <NavTabBackward>B_ValueChar4</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -221,9 +237,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar6</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>564.000000,150.000000,0.000000</Position>
+                        <Position>450.000000,150.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>g</Text>
@@ -232,7 +248,7 @@
                         <NavLeft>B_ValueChar5</NavLeft>
                         <NavRight>B_ValueChar7</NavRight>
                         <NavUp>B_ValueKeyboard</NavUp>
-                        <NavDown>B_ValueChar14</NavDown>
+                        <NavDown>B_ValueChar16</NavDown>
                         <NavTabForward>B_ValueChar7</NavTabForward>
                         <NavTabBackward>B_ValueChar5</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -241,18 +257,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar7</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>654.000000,150.000000,0.000000</Position>
+                        <Position>521.000000,150.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>h</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar6</NavLeft>
-                        <NavRight>B_ValueChar0</NavRight>
+                        <NavRight>B_ValueChar8</NavRight>
                         <NavUp>B_ValueKeyboard</NavUp>
-                        <NavDown>B_ValueChar15</NavDown>
+                        <NavDown>B_ValueChar17</NavDown>
                         <NavTabForward>B_ValueChar8</NavTabForward>
                         <NavTabBackward>B_ValueChar6</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -261,18 +277,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar8</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>24.000000,184.000000,0.000000</Position>
+                        <Position>592.000000,150.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>i</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
-                        <NavLeft>B_ValueChar15</NavLeft>
+                        <NavLeft>B_ValueChar7</NavLeft>
                         <NavRight>B_ValueChar9</NavRight>
-                        <NavUp>B_ValueChar0</NavUp>
-                        <NavDown>B_ValueChar16</NavDown>
+                        <NavUp>B_ValueKeyboard</NavUp>
+                        <NavDown>B_ValueChar18</NavDown>
                         <NavTabForward>B_ValueChar9</NavTabForward>
                         <NavTabBackward>B_ValueChar7</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -281,18 +297,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar9</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>114.000000,184.000000,0.000000</Position>
+                        <Position>663.000000,150.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>j</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar8</NavLeft>
-                        <NavRight>B_ValueChar10</NavRight>
-                        <NavUp>B_ValueChar1</NavUp>
-                        <NavDown>B_ValueChar17</NavDown>
+                        <NavRight>B_ValueChar0</NavRight>
+                        <NavUp>B_ValueKeyboard</NavUp>
+                        <NavDown>B_ValueChar19</NavDown>
                         <NavTabForward>B_ValueChar10</NavTabForward>
                         <NavTabBackward>B_ValueChar8</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -301,18 +317,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar10</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>204.000000,184.000000,0.000000</Position>
+                        <Position>24.000000,186.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>k</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
-                        <NavLeft>B_ValueChar9</NavLeft>
+                        <NavLeft>B_ValueChar19</NavLeft>
                         <NavRight>B_ValueChar11</NavRight>
-                        <NavUp>B_ValueChar2</NavUp>
-                        <NavDown>B_ValueChar18</NavDown>
+                        <NavUp>B_ValueChar0</NavUp>
+                        <NavDown>B_ValueChar20</NavDown>
                         <NavTabForward>B_ValueChar11</NavTabForward>
                         <NavTabBackward>B_ValueChar9</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -321,9 +337,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar11</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>294.000000,184.000000,0.000000</Position>
+                        <Position>95.000000,186.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>l</Text>
@@ -331,8 +347,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar10</NavLeft>
                         <NavRight>B_ValueChar12</NavRight>
-                        <NavUp>B_ValueChar3</NavUp>
-                        <NavDown>B_ValueChar19</NavDown>
+                        <NavUp>B_ValueChar1</NavUp>
+                        <NavDown>B_ValueChar21</NavDown>
                         <NavTabForward>B_ValueChar12</NavTabForward>
                         <NavTabBackward>B_ValueChar10</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -341,9 +357,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar12</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>384.000000,184.000000,0.000000</Position>
+                        <Position>166.000000,186.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>m</Text>
@@ -351,8 +367,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar11</NavLeft>
                         <NavRight>B_ValueChar13</NavRight>
-                        <NavUp>B_ValueChar4</NavUp>
-                        <NavDown>B_ValueChar20</NavDown>
+                        <NavUp>B_ValueChar2</NavUp>
+                        <NavDown>B_ValueChar22</NavDown>
                         <NavTabForward>B_ValueChar13</NavTabForward>
                         <NavTabBackward>B_ValueChar11</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -361,9 +377,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar13</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>474.000000,184.000000,0.000000</Position>
+                        <Position>237.000000,186.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>n</Text>
@@ -371,8 +387,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar12</NavLeft>
                         <NavRight>B_ValueChar14</NavRight>
-                        <NavUp>B_ValueChar5</NavUp>
-                        <NavDown>B_ValueChar21</NavDown>
+                        <NavUp>B_ValueChar3</NavUp>
+                        <NavDown>B_ValueChar23</NavDown>
                         <NavTabForward>B_ValueChar14</NavTabForward>
                         <NavTabBackward>B_ValueChar12</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -381,9 +397,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar14</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>564.000000,184.000000,0.000000</Position>
+                        <Position>308.000000,186.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>o</Text>
@@ -391,8 +407,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar13</NavLeft>
                         <NavRight>B_ValueChar15</NavRight>
-                        <NavUp>B_ValueChar6</NavUp>
-                        <NavDown>B_ValueChar22</NavDown>
+                        <NavUp>B_ValueChar4</NavUp>
+                        <NavDown>B_ValueChar24</NavDown>
                         <NavTabForward>B_ValueChar15</NavTabForward>
                         <NavTabBackward>B_ValueChar13</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -401,18 +417,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar15</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>654.000000,184.000000,0.000000</Position>
+                        <Position>379.000000,186.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>p</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar14</NavLeft>
-                        <NavRight>B_ValueChar8</NavRight>
-                        <NavUp>B_ValueChar7</NavUp>
-                        <NavDown>B_ValueChar23</NavDown>
+                        <NavRight>B_ValueChar16</NavRight>
+                        <NavUp>B_ValueChar5</NavUp>
+                        <NavDown>B_ValueChar25</NavDown>
                         <NavTabForward>B_ValueChar16</NavTabForward>
                         <NavTabBackward>B_ValueChar14</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -421,18 +437,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar16</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>24.000000,218.000000,0.000000</Position>
+                        <Position>450.000000,186.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>q</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
-                        <NavLeft>B_ValueChar23</NavLeft>
+                        <NavLeft>B_ValueChar15</NavLeft>
                         <NavRight>B_ValueChar17</NavRight>
-                        <NavUp>B_ValueChar8</NavUp>
-                        <NavDown>B_ValueChar24</NavDown>
+                        <NavUp>B_ValueChar6</NavUp>
+                        <NavDown>B_ValueChar26</NavDown>
                         <NavTabForward>B_ValueChar17</NavTabForward>
                         <NavTabBackward>B_ValueChar15</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -441,9 +457,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar17</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>114.000000,218.000000,0.000000</Position>
+                        <Position>521.000000,186.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>r</Text>
@@ -451,8 +467,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar16</NavLeft>
                         <NavRight>B_ValueChar18</NavRight>
-                        <NavUp>B_ValueChar9</NavUp>
-                        <NavDown>B_ValueChar25</NavDown>
+                        <NavUp>B_ValueChar7</NavUp>
+                        <NavDown>B_ValueChar27</NavDown>
                         <NavTabForward>B_ValueChar18</NavTabForward>
                         <NavTabBackward>B_ValueChar16</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -461,9 +477,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar18</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>204.000000,218.000000,0.000000</Position>
+                        <Position>592.000000,186.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>s</Text>
@@ -471,8 +487,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar17</NavLeft>
                         <NavRight>B_ValueChar19</NavRight>
-                        <NavUp>B_ValueChar10</NavUp>
-                        <NavDown>B_ValueChar26</NavDown>
+                        <NavUp>B_ValueChar8</NavUp>
+                        <NavDown>B_ValueChar28</NavDown>
                         <NavTabForward>B_ValueChar19</NavTabForward>
                         <NavTabBackward>B_ValueChar17</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -481,18 +497,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar19</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>294.000000,218.000000,0.000000</Position>
+                        <Position>663.000000,186.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>t</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar18</NavLeft>
-                        <NavRight>B_ValueChar20</NavRight>
-                        <NavUp>B_ValueChar11</NavUp>
-                        <NavDown>B_ValueChar27</NavDown>
+                        <NavRight>B_ValueChar10</NavRight>
+                        <NavUp>B_ValueChar9</NavUp>
+                        <NavDown>B_ValueChar29</NavDown>
                         <NavTabForward>B_ValueChar20</NavTabForward>
                         <NavTabBackward>B_ValueChar18</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -501,18 +517,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar20</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>384.000000,218.000000,0.000000</Position>
+                        <Position>24.000000,222.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>u</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
-                        <NavLeft>B_ValueChar19</NavLeft>
+                        <NavLeft>B_ValueChar29</NavLeft>
                         <NavRight>B_ValueChar21</NavRight>
-                        <NavUp>B_ValueChar12</NavUp>
-                        <NavDown>B_ValueChar28</NavDown>
+                        <NavUp>B_ValueChar10</NavUp>
+                        <NavDown>B_ValueChar30</NavDown>
                         <NavTabForward>B_ValueChar21</NavTabForward>
                         <NavTabBackward>B_ValueChar19</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -521,9 +537,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar21</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>474.000000,218.000000,0.000000</Position>
+                        <Position>95.000000,222.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>v</Text>
@@ -531,8 +547,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar20</NavLeft>
                         <NavRight>B_ValueChar22</NavRight>
-                        <NavUp>B_ValueChar13</NavUp>
-                        <NavDown>B_ValueChar29</NavDown>
+                        <NavUp>B_ValueChar11</NavUp>
+                        <NavDown>B_ValueChar31</NavDown>
                         <NavTabForward>B_ValueChar22</NavTabForward>
                         <NavTabBackward>B_ValueChar20</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -541,9 +557,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar22</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>564.000000,218.000000,0.000000</Position>
+                        <Position>166.000000,222.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>w</Text>
@@ -551,8 +567,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar21</NavLeft>
                         <NavRight>B_ValueChar23</NavRight>
-                        <NavUp>B_ValueChar14</NavUp>
-                        <NavDown>B_ValueChar30</NavDown>
+                        <NavUp>B_ValueChar12</NavUp>
+                        <NavDown>B_ValueChar32</NavDown>
                         <NavTabForward>B_ValueChar23</NavTabForward>
                         <NavTabBackward>B_ValueChar21</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -561,18 +577,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar23</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>654.000000,218.000000,0.000000</Position>
+                        <Position>237.000000,222.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>x</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar22</NavLeft>
-                        <NavRight>B_ValueChar16</NavRight>
-                        <NavUp>B_ValueChar15</NavUp>
-                        <NavDown>B_ValueChar31</NavDown>
+                        <NavRight>B_ValueChar24</NavRight>
+                        <NavUp>B_ValueChar13</NavUp>
+                        <NavDown>B_ValueChar33</NavDown>
                         <NavTabForward>B_ValueChar24</NavTabForward>
                         <NavTabBackward>B_ValueChar22</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -581,18 +597,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar24</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>24.000000,252.000000,0.000000</Position>
+                        <Position>308.000000,222.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>y</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
-                        <NavLeft>B_ValueChar31</NavLeft>
+                        <NavLeft>B_ValueChar23</NavLeft>
                         <NavRight>B_ValueChar25</NavRight>
-                        <NavUp>B_ValueChar16</NavUp>
-                        <NavDown>B_ValueChar32</NavDown>
+                        <NavUp>B_ValueChar14</NavUp>
+                        <NavDown>B_ValueChar34</NavDown>
                         <NavTabForward>B_ValueChar25</NavTabForward>
                         <NavTabBackward>B_ValueChar23</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -601,9 +617,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar25</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>114.000000,252.000000,0.000000</Position>
+                        <Position>379.000000,222.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>z</Text>
@@ -611,8 +627,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar24</NavLeft>
                         <NavRight>B_ValueChar26</NavRight>
-                        <NavUp>B_ValueChar17</NavUp>
-                        <NavDown>B_ValueChar33</NavDown>
+                        <NavUp>B_ValueChar15</NavUp>
+                        <NavDown>B_ValueChar35</NavDown>
                         <NavTabForward>B_ValueChar26</NavTabForward>
                         <NavTabBackward>B_ValueChar24</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -621,9 +637,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar26</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>204.000000,252.000000,0.000000</Position>
+                        <Position>450.000000,222.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>0</Text>
@@ -631,8 +647,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar25</NavLeft>
                         <NavRight>B_ValueChar27</NavRight>
-                        <NavUp>B_ValueChar18</NavUp>
-                        <NavDown>B_ValueChar34</NavDown>
+                        <NavUp>B_ValueChar16</NavUp>
+                        <NavDown>B_ValueChar36</NavDown>
                         <NavTabForward>B_ValueChar27</NavTabForward>
                         <NavTabBackward>B_ValueChar25</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -641,9 +657,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar27</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>294.000000,252.000000,0.000000</Position>
+                        <Position>521.000000,222.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>1</Text>
@@ -651,8 +667,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar26</NavLeft>
                         <NavRight>B_ValueChar28</NavRight>
-                        <NavUp>B_ValueChar19</NavUp>
-                        <NavDown>B_ValueChar35</NavDown>
+                        <NavUp>B_ValueChar17</NavUp>
+                        <NavDown>B_ValueChar37</NavDown>
                         <NavTabForward>B_ValueChar28</NavTabForward>
                         <NavTabBackward>B_ValueChar26</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -661,9 +677,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar28</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>384.000000,252.000000,0.000000</Position>
+                        <Position>592.000000,222.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>2</Text>
@@ -671,8 +687,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar27</NavLeft>
                         <NavRight>B_ValueChar29</NavRight>
-                        <NavUp>B_ValueChar20</NavUp>
-                        <NavDown>B_ValueChar36</NavDown>
+                        <NavUp>B_ValueChar18</NavUp>
+                        <NavDown>B_ValueChar38</NavDown>
                         <NavTabForward>B_ValueChar29</NavTabForward>
                         <NavTabBackward>B_ValueChar27</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -681,18 +697,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar29</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>474.000000,252.000000,0.000000</Position>
+                        <Position>663.000000,222.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>3</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar28</NavLeft>
-                        <NavRight>B_ValueChar30</NavRight>
-                        <NavUp>B_ValueChar21</NavUp>
-                        <NavDown>B_ValueChar37</NavDown>
+                        <NavRight>B_ValueChar20</NavRight>
+                        <NavUp>B_ValueChar19</NavUp>
+                        <NavDown>B_ValueChar39</NavDown>
                         <NavTabForward>B_ValueChar30</NavTabForward>
                         <NavTabBackward>B_ValueChar28</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -701,18 +717,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar30</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>564.000000,252.000000,0.000000</Position>
+                        <Position>24.000000,258.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>4</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
-                        <NavLeft>B_ValueChar29</NavLeft>
+                        <NavLeft>B_ValueChar39</NavLeft>
                         <NavRight>B_ValueChar31</NavRight>
-                        <NavUp>B_ValueChar22</NavUp>
-                        <NavDown>B_ValueChar38</NavDown>
+                        <NavUp>B_ValueChar20</NavUp>
+                        <NavDown>B_ValueChar40</NavDown>
                         <NavTabForward>B_ValueChar31</NavTabForward>
                         <NavTabBackward>B_ValueChar29</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -721,18 +737,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar31</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>654.000000,252.000000,0.000000</Position>
+                        <Position>95.000000,258.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>5</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar30</NavLeft>
-                        <NavRight>B_ValueChar24</NavRight>
-                        <NavUp>B_ValueChar23</NavUp>
-                        <NavDown>B_ValueChar39</NavDown>
+                        <NavRight>B_ValueChar32</NavRight>
+                        <NavUp>B_ValueChar21</NavUp>
+                        <NavDown>B_ValueChar41</NavDown>
                         <NavTabForward>B_ValueChar32</NavTabForward>
                         <NavTabBackward>B_ValueChar30</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -741,18 +757,18 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar32</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>24.000000,286.000000,0.000000</Position>
+                        <Position>166.000000,258.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>6</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
-                        <NavLeft>B_ValueChar39</NavLeft>
+                        <NavLeft>B_ValueChar31</NavLeft>
                         <NavRight>B_ValueChar33</NavRight>
-                        <NavUp>B_ValueChar24</NavUp>
-                        <NavDown>B_ValueChar40</NavDown>
+                        <NavUp>B_ValueChar22</NavUp>
+                        <NavDown>B_ValueChar42</NavDown>
                         <NavTabForward>B_ValueChar33</NavTabForward>
                         <NavTabBackward>B_ValueChar31</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -761,9 +777,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar33</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>114.000000,286.000000,0.000000</Position>
+                        <Position>237.000000,258.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>7</Text>
@@ -771,8 +787,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar32</NavLeft>
                         <NavRight>B_ValueChar34</NavRight>
-                        <NavUp>B_ValueChar25</NavUp>
-                        <NavDown>B_ValueChar41</NavDown>
+                        <NavUp>B_ValueChar23</NavUp>
+                        <NavDown>B_ValueChar43</NavDown>
                         <NavTabForward>B_ValueChar34</NavTabForward>
                         <NavTabBackward>B_ValueChar32</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -781,9 +797,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar34</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>204.000000,286.000000,0.000000</Position>
+                        <Position>308.000000,258.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>8</Text>
@@ -791,8 +807,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar33</NavLeft>
                         <NavRight>B_ValueChar35</NavRight>
-                        <NavUp>B_ValueChar26</NavUp>
-                        <NavDown>B_ValueChar42</NavDown>
+                        <NavUp>B_ValueChar24</NavUp>
+                        <NavDown>B_ValueChar44</NavDown>
                         <NavTabForward>B_ValueChar35</NavTabForward>
                         <NavTabBackward>B_ValueChar33</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -801,9 +817,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar35</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>294.000000,286.000000,0.000000</Position>
+                        <Position>379.000000,258.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>9</Text>
@@ -811,8 +827,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar34</NavLeft>
                         <NavRight>B_ValueChar36</NavRight>
-                        <NavUp>B_ValueChar27</NavUp>
-                        <NavDown>B_ValueChar43</NavDown>
+                        <NavUp>B_ValueChar25</NavUp>
+                        <NavDown>B_ValueChar45</NavDown>
                         <NavTabForward>B_ValueChar36</NavTabForward>
                         <NavTabBackward>B_ValueChar34</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -821,9 +837,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar36</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>384.000000,286.000000,0.000000</Position>
+                        <Position>450.000000,258.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>-</Text>
@@ -831,8 +847,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar35</NavLeft>
                         <NavRight>B_ValueChar37</NavRight>
-                        <NavUp>B_ValueChar28</NavUp>
-                        <NavDown>B_ValueChar44</NavDown>
+                        <NavUp>B_ValueChar26</NavUp>
+                        <NavDown>B_ValueChar46</NavDown>
                         <NavTabForward>B_ValueChar37</NavTabForward>
                         <NavTabBackward>B_ValueChar35</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -841,9 +857,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar37</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>474.000000,286.000000,0.000000</Position>
+                        <Position>521.000000,258.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>_</Text>
@@ -851,8 +867,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar36</NavLeft>
                         <NavRight>B_ValueChar38</NavRight>
-                        <NavUp>B_ValueChar29</NavUp>
-                        <NavDown>B_ValueChar45</NavDown>
+                        <NavUp>B_ValueChar27</NavUp>
+                        <NavDown>B_ValueChar47</NavDown>
                         <NavTabForward>B_ValueChar38</NavTabForward>
                         <NavTabBackward>B_ValueChar36</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -861,9 +877,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar38</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>564.000000,286.000000,0.000000</Position>
+                        <Position>592.000000,258.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>.</Text>
@@ -871,8 +887,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar37</NavLeft>
                         <NavRight>B_ValueChar39</NavRight>
-                        <NavUp>B_ValueChar30</NavUp>
-                        <NavDown>B_ValueChar46</NavDown>
+                        <NavUp>B_ValueChar28</NavUp>
+                        <NavDown>B_ValueChar47</NavDown>
                         <NavTabForward>B_ValueChar39</NavTabForward>
                         <NavTabBackward>B_ValueChar37</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -881,17 +897,17 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar39</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>654.000000,286.000000,0.000000</Position>
+                        <Position>663.000000,258.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>:</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar38</NavLeft>
-                        <NavRight>B_ValueChar32</NavRight>
-                        <NavUp>B_ValueChar31</NavUp>
+                        <NavRight>B_ValueChar30</NavRight>
+                        <NavUp>B_ValueChar29</NavUp>
                         <NavDown>B_ValueChar47</NavDown>
                         <NavTabForward>B_ValueChar40</NavTabForward>
                         <NavTabBackward>B_ValueChar38</NavTabBackward>
@@ -901,9 +917,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar40</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>24.000000,320.000000,0.000000</Position>
+                        <Position>24.000000,294.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>/</Text>
@@ -911,7 +927,7 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar47</NavLeft>
                         <NavRight>B_ValueChar41</NavRight>
-                        <NavUp>B_ValueChar32</NavUp>
+                        <NavUp>B_ValueChar30</NavUp>
                         <NavDown>B_ValueShift</NavDown>
                         <NavTabForward>B_ValueChar41</NavTabForward>
                         <NavTabBackward>B_ValueChar39</NavTabBackward>
@@ -921,9 +937,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar41</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>114.000000,320.000000,0.000000</Position>
+                        <Position>95.000000,294.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>\</Text>
@@ -931,7 +947,7 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar40</NavLeft>
                         <NavRight>B_ValueChar42</NavRight>
-                        <NavUp>B_ValueChar33</NavUp>
+                        <NavUp>B_ValueChar31</NavUp>
                         <NavDown>B_ValueShift</NavDown>
                         <NavTabForward>B_ValueChar42</NavTabForward>
                         <NavTabBackward>B_ValueChar40</NavTabBackward>
@@ -941,9 +957,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar42</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>204.000000,320.000000,0.000000</Position>
+                        <Position>166.000000,294.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>@</Text>
@@ -951,7 +967,7 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar41</NavLeft>
                         <NavRight>B_ValueChar43</NavRight>
-                        <NavUp>B_ValueChar34</NavUp>
+                        <NavUp>B_ValueChar32</NavUp>
                         <NavDown>B_ValueSymbols</NavDown>
                         <NavTabForward>B_ValueChar43</NavTabForward>
                         <NavTabBackward>B_ValueChar41</NavTabBackward>
@@ -961,9 +977,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar43</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>294.000000,320.000000,0.000000</Position>
+                        <Position>237.000000,294.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>+</Text>
@@ -971,8 +987,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar42</NavLeft>
                         <NavRight>B_ValueChar44</NavRight>
-                        <NavUp>B_ValueChar35</NavUp>
-                        <NavDown>B_ValueSpace</NavDown>
+                        <NavUp>B_ValueChar33</NavUp>
+                        <NavDown>B_ValueSymbols</NavDown>
                         <NavTabForward>B_ValueChar44</NavTabForward>
                         <NavTabBackward>B_ValueChar42</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -981,9 +997,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar44</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>384.000000,320.000000,0.000000</Position>
+                        <Position>308.000000,294.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>%</Text>
@@ -991,8 +1007,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar43</NavLeft>
                         <NavRight>B_ValueChar45</NavRight>
-                        <NavUp>B_ValueChar36</NavUp>
-                        <NavDown>B_ValueBackspace</NavDown>
+                        <NavUp>B_ValueChar34</NavUp>
+                        <NavDown>B_ValueSpace</NavDown>
                         <NavTabForward>B_ValueChar45</NavTabForward>
                         <NavTabBackward>B_ValueChar43</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -1001,9 +1017,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar45</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>474.000000,320.000000,0.000000</Position>
+                        <Position>379.000000,294.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>=</Text>
@@ -1011,8 +1027,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar44</NavLeft>
                         <NavRight>B_ValueChar46</NavRight>
-                        <NavUp>B_ValueChar37</NavUp>
-                        <NavDown>B_ValueBackspace</NavDown>
+                        <NavUp>B_ValueChar35</NavUp>
+                        <NavDown>B_ValueSpace</NavDown>
                         <NavTabForward>B_ValueChar46</NavTabForward>
                         <NavTabBackward>B_ValueChar44</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -1021,9 +1037,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar46</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>564.000000,320.000000,0.000000</Position>
+                        <Position>450.000000,294.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>!</Text>
@@ -1031,8 +1047,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar45</NavLeft>
                         <NavRight>B_ValueChar47</NavRight>
-                        <NavUp>B_ValueChar38</NavUp>
-                        <NavDown>B_ValueClear</NavDown>
+                        <NavUp>B_ValueChar36</NavUp>
+                        <NavDown>B_ValueBackspace</NavDown>
                         <NavTabForward>B_ValueChar47</NavTabForward>
                         <NavTabBackward>B_ValueChar45</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -1041,9 +1057,9 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueChar47</Id>
-                        <Width>82.000000</Width>
+                        <Width>65.000000</Width>
                         <Height>30.000000</Height>
-                        <Position>654.000000,320.000000,0.000000</Position>
+                        <Position>521.000000,294.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>?</Text>
@@ -1051,8 +1067,8 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueChar46</NavLeft>
                         <NavRight>B_ValueChar40</NavRight>
-                        <NavUp>B_ValueChar39</NavUp>
-                        <NavDown>B_ValueKeyboard</NavDown>
+                        <NavUp>B_ValueChar37</NavUp>
+                        <NavDown>B_ValueBackspace</NavDown>
                         <NavTabForward>B_ValueShift</NavTabForward>
                         <NavTabBackward>B_ValueChar46</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
@@ -1069,12 +1085,12 @@
                         <Text>&amp;DLUMA_ValueEditor_Shift&amp;</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
-                        <NavLeft>B_ValueKeyboard</NavLeft>
+                        <NavLeft>B_ValueBrowse</NavLeft>
                         <NavRight>B_ValueSymbols</NavRight>
                         <NavUp>B_ValueChar40</NavUp>
                         <NavDown>B_ValueClear</NavDown>
                         <NavTabForward>B_ValueSymbols</NavTabForward>
-                        <NavTabBackward>B_ValueKeyboard</NavTabBackward>
+                        <NavTabBackward>B_ValueBrowse</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
                     </Properties>
                 </UINaviButton>
@@ -1091,7 +1107,7 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueShift</NavLeft>
                         <NavRight>B_ValueSpace</NavRight>
-                        <NavUp>B_ValueChar41</NavUp>
+                        <NavUp>B_ValueChar42</NavUp>
                         <NavDown>B_ValueClear</NavDown>
                         <NavTabForward>B_ValueSpace</NavTabForward>
                         <NavTabBackward>B_ValueShift</NavTabBackward>
@@ -1111,7 +1127,7 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueSymbols</NavLeft>
                         <NavRight>B_ValueBackspace</NavRight>
-                        <NavUp>B_ValueChar42</NavUp>
+                        <NavUp>B_ValueChar45</NavUp>
                         <NavDown>B_ValueKeyboard</NavDown>
                         <NavTabForward>B_ValueBackspace</NavTabForward>
                         <NavTabBackward>B_ValueSymbols</NavTabBackward>
@@ -1131,7 +1147,7 @@
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueSpace</NavLeft>
                         <NavRight>B_ValueClear</NavRight>
-                        <NavUp>B_ValueChar43</NavUp>
+                        <NavUp>B_ValueChar47</NavUp>
                         <NavDown>B_ValueKeyboard</NavDown>
                         <NavTabForward>B_ValueClear</NavTabForward>
                         <NavTabBackward>B_ValueSpace</NavTabBackward>
@@ -1141,7 +1157,7 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueClear</Id>
-                        <Width>205.000000</Width>
+                        <Width>120.000000</Width>
                         <Height>32.000000</Height>
                         <Position>24.000000,400.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
@@ -1161,20 +1177,80 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueKeyboard</Id>
-                        <Width>240.000000</Width>
+                        <Width>145.000000</Width>
                         <Height>32.000000</Height>
-                        <Position>245.000000,400.000000,0.000000</Position>
+                        <Position>152.000000,400.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>&amp;DLUMA_ValueEditor_TypeText&amp;</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueClear</NavLeft>
-                        <NavRight>B_ValueShift</NavRight>
+                        <NavRight>B_ValuePaste</NavRight>
                         <NavUp>B_ValueSpace</NavUp>
                         <NavDown>B_ValueSave</NavDown>
-                        <NavTabForward>B_ValueShift</NavTabForward>
+                        <NavTabForward>B_ValuePaste</NavTabForward>
                         <NavTabBackward>B_ValueClear</NavTabBackward>
+                        <WidthAdjust>0</WidthAdjust>
+                    </Properties>
+                </UINaviButton>
+                <UINaviButton>
+                    <Properties>
+                        <Id>B_ValuePaste</Id>
+                        <Width>135.000000</Width>
+                        <Height>32.000000</Height>
+                        <Position>305.000000,400.000000,0.000000</Position>
+                        <ClassOverride>UIButton</ClassOverride>
+                        <Visual>ListButtonHtmlV</Visual>
+                        <Text>Paste</Text>
+                        <CanFocus>true</CanFocus>
+                        <UnfocusedInput>false</UnfocusedInput>
+                        <NavLeft>B_ValueKeyboard</NavLeft>
+                        <NavRight>B_ValueGrid</NavRight>
+                        <NavUp>B_ValueBackspace</NavUp>
+                        <NavDown>B_ValueSave</NavDown>
+                        <NavTabForward>B_ValueGrid</NavTabForward>
+                        <NavTabBackward>B_ValueKeyboard</NavTabBackward>
+                        <WidthAdjust>0</WidthAdjust>
+                    </Properties>
+                </UINaviButton>
+                <UINaviButton>
+                    <Properties>
+                        <Id>B_ValueGrid</Id>
+                        <Width>140.000000</Width>
+                        <Height>32.000000</Height>
+                        <Position>448.000000,400.000000,0.000000</Position>
+                        <ClassOverride>UIButton</ClassOverride>
+                        <Visual>ListButtonHtmlV</Visual>
+                        <Text>Keyboard</Text>
+                        <CanFocus>true</CanFocus>
+                        <UnfocusedInput>false</UnfocusedInput>
+                        <NavLeft>B_ValuePaste</NavLeft>
+                        <NavRight>B_ValueBrowse</NavRight>
+                        <NavUp>B_ValueBackspace</NavUp>
+                        <NavDown>B_ValueSave</NavDown>
+                        <NavTabForward>B_ValueBrowse</NavTabForward>
+                        <NavTabBackward>B_ValuePaste</NavTabBackward>
+                        <WidthAdjust>0</WidthAdjust>
+                    </Properties>
+                </UINaviButton>
+                <UINaviButton>
+                    <Properties>
+                        <Id>B_ValueBrowse</Id>
+                        <Width>145.000000</Width>
+                        <Height>32.000000</Height>
+                        <Position>596.000000,400.000000,0.000000</Position>
+                        <ClassOverride>UIButton</ClassOverride>
+                        <Visual>ListButtonHtmlV</Visual>
+                        <Text>Browse</Text>
+                        <CanFocus>true</CanFocus>
+                        <UnfocusedInput>false</UnfocusedInput>
+                        <NavLeft>B_ValueGrid</NavLeft>
+                        <NavRight>B_ValueShift</NavRight>
+                        <NavUp>B_ValueBackspace</NavUp>
+                        <NavDown>B_ValueSave</NavDown>
+                        <NavTabForward>B_ValueShift</NavTabForward>
+                        <NavTabBackward>B_ValueGrid</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
                     </Properties>
                 </UINaviButton>
@@ -1270,19 +1346,19 @@
                 <UINaviButton>
                     <Properties>
                         <Id>B_ValueUseText</Id>
-                        <Width>240.000000</Width>
+                        <Width>135.000000</Width>
                         <Height>32.000000</Height>
-                        <Position>501.000000,400.000000,0.000000</Position>
+                        <Position>305.000000,400.000000,0.000000</Position>
                         <ClassOverride>UIButton</ClassOverride>
                         <Visual>ListButtonHtmlV</Visual>
                         <Text>&amp;DLUMA_ValueEditor_UseText&amp;</Text>
                         <CanFocus>true</CanFocus>
                         <UnfocusedInput>false</UnfocusedInput>
                         <NavLeft>B_ValueKeyboard</NavLeft>
-                        <NavRight>B_ValueSave</NavRight>
+                        <NavRight>B_ValueBrowse</NavRight>
                         <NavUp>E_ValueEditor</NavUp>
                         <NavDown>B_ValueSave</NavDown>
-                        <NavTabForward>B_ValueSave</NavTabForward>
+                        <NavTabForward>B_ValueBrowse</NavTabForward>
                         <NavTabBackward>E_ValueEditor</NavTabBackward>
                         <WidthAdjust>0</WidthAdjust>
                     </Properties>
