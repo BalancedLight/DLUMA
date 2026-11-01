@@ -4,6 +4,8 @@
 #include "dlw_asset_mods.h"
 #include "dlw_pack.h"
 #include "dlw_path_security.h"
+#include "dlw_custom_menu_nightly_xml.h"
+#include "dlw_nightly_popup_template.h"
 
 #define DLUMA_CUSTOM_MENU_MAX_STAGE_FILES 4096U
 #define DLUMA_CUSTOM_MENU_MAX_TREE_DEPTH 32U
@@ -54,6 +56,7 @@ typedef struct DlumaCustomMenuStageFile
     ULONGLONG output_size;
     DWORD output_crc32;
     unsigned char promote_root;
+    unsigned char compose_nightly;
     unsigned char overlay_output;
     unsigned char declared_bank_index_plus_one;
     /* An empty overlay record with no source file.  It shadows a stock level
@@ -1815,6 +1818,92 @@ static int dluma_custom_menu_hash_and_crc_handle(
     return 1;
 }
 
+static int dluma_custom_menu_compose_stage_xui(
+    DlumaCustomMenuStageFile *record, unsigned char **output_out,
+    unsigned int *output_size_out)
+{
+    unsigned char *input = 0, *output = 0, *projection = 0, *composed = 0;
+    unsigned int size, capacity, composed_size = 0, insertion = 0, index;
+    int utf16 = 0, big_endian = 0, result = 0;
+    if (!record || !output_out || !output_size_out ||
+        record->source_size > DLUMA_CUSTOM_MENU_MAX_XUI_BYTES)
+        return 0;
+    *output_out = 0;
+    *output_size_out = 0;
+    size = (unsigned int)record->source_size;
+    if (!dluma_custom_menu_read_handle(record->source,
+            &record->source_identity, record->source_size, &input))
+        return 0;
+    utf16 = size >= 2U && ((input[0] == 0xffU && input[1] == 0xfeU) ||
+        (input[0] == 0xfeU && input[1] == 0xffU) ||
+        (input[0] == '<' && input[1] == 0) ||
+        (input[0] == 0 && input[1] == '<'));
+    if (utf16)
+    {
+        unsigned int units = size / 2U;
+        if (size % 2U) goto done;
+        big_endian = input[0] == 0xfeU || input[0] == 0;
+        projection = (unsigned char *)dluma_alloc(units);
+        composed = (unsigned char *)dluma_alloc(
+            units + sizeof(dluma_nightly_popup_template));
+        capacity = size + 2U * (unsigned int)sizeof(dluma_nightly_popup_template);
+        output = (unsigned char *)dluma_alloc(capacity);
+        if (!projection || !composed || !output) goto done;
+        for (index = 0; index < units; ++index)
+        {
+            unsigned char low = input[index * 2U + (big_endian ? 1U : 0U)];
+            unsigned char high = input[index * 2U + (big_endian ? 0U : 1U)];
+            projection[index] = high ? '?' : low;
+        }
+        if (!dluma_custom_menu_compose_nightly(projection, units,
+                dluma_nightly_popup_template,
+                (unsigned int)sizeof(dluma_nightly_popup_template),
+                composed, units + (unsigned int)sizeof(dluma_nightly_popup_template),
+                &composed_size, &insertion)) goto done;
+        if (composed_size == units)
+        {
+            memcpy(output, input, size);
+            *output_size_out = size;
+        }
+        else
+        {
+            unsigned int offset = insertion * 2U;
+            memcpy(output, input, offset);
+            for (index = 0; index < (unsigned int)sizeof(dluma_nightly_popup_template); ++index)
+            {
+                unsigned char value = dluma_nightly_popup_template[index];
+                if (value >= 0x80U) goto done;
+                output[offset + index * 2U + (big_endian ? 0U : 1U)] = 0;
+                output[offset + index * 2U + (big_endian ? 1U : 0U)] = value;
+            }
+            offset += 2U * (unsigned int)sizeof(dluma_nightly_popup_template);
+            memcpy(output + offset, input + insertion * 2U, size - insertion * 2U);
+            *output_size_out = size + 2U * (unsigned int)sizeof(dluma_nightly_popup_template);
+        }
+    }
+    else
+    {
+        capacity = size + (unsigned int)sizeof(dluma_nightly_popup_template);
+        output = (unsigned char *)dluma_alloc(capacity);
+        if (!output || !dluma_custom_menu_compose_nightly(input, size,
+                dluma_nightly_popup_template,
+                (unsigned int)sizeof(dluma_nightly_popup_template),
+                output, capacity, output_size_out, 0)) goto done;
+    }
+    if (dluma_custom_menu_source_still_same(record))
+    {
+        *output_out = output;
+        output = 0;
+        result = 1;
+    }
+done:
+    if (output) dluma_free(output);
+    if (projection) dluma_free(projection);
+    if (composed) dluma_free(composed);
+    dluma_free(input);
+    return result;
+}
+
 static int dluma_custom_menu_hash_stage_record(
     DlumaCustomMenuStageFile *record)
 {
@@ -1826,6 +1915,19 @@ static int dluma_custom_menu_hash_stage_record(
                !record->output_size;
     if (record->source == INVALID_HANDLE_VALUE)
         return 0;
+    if (record->compose_nightly)
+    {
+        unsigned char *output = 0;
+        unsigned int output_size = 0;
+        if (!dluma_custom_menu_compose_stage_xui(record, &output, &output_size))
+            return 0;
+        record->output_size = output_size;
+        dluma_sha256_bytes_hex(output, output_size, record->output_sha256);
+        record->output_crc32 = dluma_custom_menu_crc32_update(
+            0xffffffffUL, output, output_size) ^ 0xffffffffUL;
+        dluma_free(output);
+        return 1;
+    }
     if (record->promote_root)
     {
         unsigned char *input = 0;
@@ -1922,7 +2024,7 @@ static int dluma_custom_menu_inventory_fingerprint(
     }
     dluma_sha256_init(&context);
     dluma_custom_menu_hash_text(
-        &context, "dluma.custom-main-menu.loose-overlay.v10");
+        &context, "dluma.custom-main-menu.loose-overlay.v11");
     dluma_custom_menu_hash_text(&context, candidate->manifest_sha256);
     dluma_custom_menu_hash_u64(&context, inventory->asset_revision);
     dluma_custom_menu_hash_u32(&context, inventory->count);
@@ -2001,6 +2103,7 @@ static int dluma_custom_menu_add_declared_assets(
         {
             char alias_utf8[DLUMA_CUSTOM_MENU_XUI_NAME_CAPACITY];
             WCHAR alias_wide[DLUMA_CUSTOM_MENU_XUI_NAME_CAPACITY];
+            inventory->files[inventory->count - 1U].compose_nightly = 1U;
             destination[0] = 0;
             dluma_wstr_append(destination, DLUMA_ARRAY_COUNT(destination),
                             L"data\\menu\\scr\\");
@@ -2017,6 +2120,7 @@ static int dluma_custom_menu_add_declared_assets(
                     inventory, source, candidate->canonical_root,
                     destination, DLUMA_CUSTOM_MENU_MAX_XUI_BYTES, 0, 1))
                 return 0;
+            inventory->files[inventory->count - 1U].compose_nightly = 1U;
         }
     }
     for (index = 0; index < candidate->manifest.texture_def_count; ++index) {
@@ -2878,6 +2982,18 @@ static int dluma_custom_menu_overlay_payload(
     zero.QuadPart = 0;
     if (!SetFilePointerEx(record->source, zero, 0, FILE_BEGIN))
         return 0;
+    if (record->compose_nightly)
+    {
+        unsigned char *composed = 0;
+        unsigned int composed_size = 0;
+        if (!dluma_custom_menu_compose_stage_xui(record, &composed, &composed_size))
+            return 0;
+        result = composed_size == record->output_size &&
+            dluma_custom_menu_write_exact(output, composed, composed_size) &&
+            dluma_custom_menu_source_still_same(record);
+        dluma_free(composed);
+        return result;
+    }
     if (record->promote_root)
     {
         unsigned char *input = 0;

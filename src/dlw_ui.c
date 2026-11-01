@@ -1260,6 +1260,8 @@ static void *g_dluma_nightly_no;
 static void *g_dluma_nightly_ok;
 static ULONGLONG g_dluma_nightly_stable_since;
 static int g_dluma_nightly_offer_kind;
+static unsigned int g_dluma_nightly_offer_ticket, g_dluma_nightly_ack_ticket;
+static void *g_dluma_nightly_missing_controls_root;
 
 static void *g_dluma_new_global_main_owner;
 static void *g_dluma_new_global_main_root;
@@ -6480,6 +6482,10 @@ static void dluma_ui_settings_update_for_row(unsigned int row_index)
         dluma_ui_localize_text(g_dluma_loader_settings[index].hint_key,
                              g_dluma_loader_settings[index].hint_fallback,
                              body, DLUMA_ARRAY_COUNT(body));
+        if (!dluma_wstricmp(g_dluma_loader_settings[index].key,L"nightly_updates_enabled")) {
+            dluma_str_append(body,DLUMA_ARRAY_COUNT(body),"\n");
+            dluma_str_append(body,DLUMA_ARRAY_COUNT(body),dlw_nightly_status_text());
+        }
         dluma_ui_set_text_element_long(
             g_dluma_ui_settings_hint_body,
             body);
@@ -25340,7 +25346,7 @@ static void dluma_ui_new_global_clear_controls(void)
     g_dluma_new_global_later = 0;
 }
 
-static int dluma_ui_new_global_resolve_main(void *level)
+static int dluma_ui_resolve_main_root(void *level)
 {
     int screen_id;
     void *root;
@@ -25366,6 +25372,14 @@ static int dluma_ui_new_global_resolve_main(void *level)
         g_dluma_new_global_main_owner = owner;
         g_dluma_new_global_frontend_stable_since = GetTickCount64();
     }
+    return 1;
+}
+
+static int dluma_ui_new_global_resolve_main(void *level)
+{
+    void *root;
+    if (!dluma_ui_resolve_main_root(level)) return 0;
+    root = g_dluma_new_global_main_root;
     g_dluma_new_global_popup =
         dluma_ui_find_required_child(root, "G_DLUMANewGlobalModsPopup");
     g_dluma_new_global_panel =
@@ -25827,22 +25841,24 @@ static void dluma_ui_nightly_hide(void)
 
 static int dluma_ui_nightly_handle_button(void *button)
 {
-    int accepted;
+    int accepted, has_choice;
     if (!g_dluma_nightly_offer_kind)
         return 0;
-    accepted = g_dluma_nightly_offer_kind != DLW_NIGHTLY_ERROR &&
+    has_choice = g_dluma_nightly_offer_kind == DLW_NIGHTLY_UPDATE || g_dluma_nightly_offer_kind == DLW_NIGHTLY_RESTORE;
+    accepted = has_choice &&
         dluma_ui_object_id_equals(button, "B_DLUMANightlyYes");
     if (!accepted &&
-        !(g_dluma_nightly_offer_kind != DLW_NIGHTLY_ERROR &&
+        !(has_choice &&
           dluma_ui_object_id_equals(button, "B_DLUMANightlyNo")) &&
-        !(g_dluma_nightly_offer_kind == DLW_NIGHTLY_ERROR &&
+        !(!has_choice &&
           dluma_ui_object_id_equals(button, "B_DLUMANightlyOk")) &&
         !dluma_ui_object_id_equals(button, "B_Back") &&
         !dluma_ui_object_id_equals(button, "ButtonBack") &&
         !dluma_ui_object_id_equals(button, "ID_BACK"))
         return 1;
+    g_dluma_nightly_ack_ticket=g_dluma_nightly_offer_ticket;
     dluma_ui_nightly_hide();
-    dlw_nightly_respond(accepted);
+    dlw_nightly_respond_to(g_dluma_nightly_offer_ticket,accepted);
     return 1;
 }
 
@@ -25853,11 +25869,18 @@ static void dluma_ui_nightly_tick(void *level, ULONGLONG now)
     char body[384];
     int is_error;
     offer = dlw_nightly_get_offer();
+    if (offer && g_dluma_nightly_offer_kind && offer->kind == DLW_NIGHTLY_NONE &&
+        offer->ticket != g_dluma_nightly_offer_ticket)
+        dluma_ui_nightly_hide();
+    if (offer && g_dluma_nightly_offer_kind == DLW_NIGHTLY_DOWNLOADING &&
+        offer->kind != DLW_NIGHTLY_DOWNLOADING && offer->kind != DLW_NIGHTLY_NONE)
+        dluma_ui_nightly_hide();
+    if (offer && offer->ticket == g_dluma_nightly_ack_ticket) return;
     if (g_dluma_nightly_offer_kind)
         return;
     if (!g_dluma_get_element_visible || !g_dluma_set_element_visible ||
         !g_dluma_set_element_focus || !g_dluma_set_element_can_focus ||
-        !dluma_ui_new_global_resolve_main(level))
+        !dluma_ui_resolve_main_root(level))
         return;
     if (!g_dluma_nightly_stable_since) {
         g_dluma_nightly_stable_since = now;
@@ -25877,7 +25900,8 @@ static void dluma_ui_nightly_tick(void *level, ULONGLONG now)
     if (!offer || offer->kind == DLW_NIGHTLY_NONE)
         return;
     if (offer->kind != DLW_NIGHTLY_UPDATE && offer->kind != DLW_NIGHTLY_RESTORE &&
-        offer->kind != DLW_NIGHTLY_ERROR)
+        offer->kind != DLW_NIGHTLY_ERROR && offer->kind != DLW_NIGHTLY_DOWNLOADING &&
+        offer->kind != DLW_NIGHTLY_READY)
         return;
     g_dluma_nightly_popup = dluma_ui_find_required_child(g_dluma_new_global_main_root, "G_DLUMANightlyPopup");
     g_dluma_nightly_text = dluma_ui_find_required_child(g_dluma_new_global_main_root, "T_DLUMANightlyText");
@@ -25885,18 +25909,28 @@ static void dluma_ui_nightly_tick(void *level, ULONGLONG now)
     g_dluma_nightly_no = dluma_ui_find_required_child(g_dluma_new_global_main_root, "B_DLUMANightlyNo");
     g_dluma_nightly_ok = dluma_ui_find_required_child(g_dluma_new_global_main_root, "B_DLUMANightlyOk");
     if (!g_dluma_nightly_popup || !g_dluma_nightly_text || !g_dluma_nightly_yes ||
-        !g_dluma_nightly_no || !g_dluma_nightly_ok)
+        !g_dluma_nightly_no || !g_dluma_nightly_ok) {
+        if (g_dluma_nightly_missing_controls_root != g_dluma_new_global_main_root) {
+            g_dluma_nightly_missing_controls_root = g_dluma_new_global_main_root;
+            dluma_log_pair("WARN", "nightly_popup_controls", "selected menu is missing update controls");
+        }
         return;
-    is_error = offer->kind == DLW_NIGHTLY_ERROR;
+    }
+    g_dluma_nightly_missing_controls_root = 0;
+    is_error = offer->kind != DLW_NIGHTLY_UPDATE && offer->kind != DLW_NIGHTLY_RESTORE;
     if (offer->kind == DLW_NIGHTLY_UPDATE) {
         char commit[41];
-        dluma_ui_localize_text("DLUMA_Nightly_UpdateBody", "Install the available nightly build after the game closes? Commit: ", body, DLUMA_ARRAY_COUNT(body));
+        dluma_ui_localize_text("DLUMA_Nightly_NativeUpdateBody", "Download the new nightly build? Keep Player open until it is ready, then close it to install. Commit: ", body, DLUMA_ARRAY_COUNT(body));
         dluma_str_copy(message, DLUMA_ARRAY_COUNT(message), body);
         memcpy(commit, offer->commit, sizeof(commit));
         commit[sizeof(commit) - 1] = 0;
         dluma_ui_html_append_escaped(message, DLUMA_ARRAY_COUNT(message), commit, "nightly_commit");
-    } else if (is_error) {
-        dluma_ui_localize_text("DLUMA_Nightly_ErrorBody", "Could not check for updates or start the update. Please try again.", message, DLUMA_ARRAY_COUNT(message));
+    } else if (offer->kind == DLW_NIGHTLY_DOWNLOADING) {
+        dluma_ui_localize_text("DLUMA_Nightly_DownloadingBody", "Downloading the update. Keep Player open; you will be notified when it is ready.", message, DLUMA_ARRAY_COUNT(message));
+    } else if (offer->kind == DLW_NIGHTLY_READY) {
+        dluma_ui_localize_text("DLUMA_Nightly_ReadyBody", "Ready to apply. Close Player and Developer Tools. Your settings and other mods will be kept.", message, DLUMA_ARRAY_COUNT(message));
+    } else if (offer->kind == DLW_NIGHTLY_ERROR) {
+        dluma_ui_localize_text("DLUMA_Nightly_NativeErrorBody", "Could not check or stage the update. Restart Player to try again. Details are in the DLUMA log.", message, DLUMA_ARRAY_COUNT(message));
     } else {
         dluma_ui_localize_text("DLUMA_Nightly_RestoreBody", "Restore the previous build after the game closes?", message, DLUMA_ARRAY_COUNT(message));
     }
@@ -25908,6 +25942,7 @@ static void dluma_ui_nightly_tick(void *level, ULONGLONG now)
     g_dluma_set_element_can_focus(g_dluma_nightly_no, (unsigned char)!is_error);
     g_dluma_set_element_can_focus(g_dluma_nightly_ok, (unsigned char)is_error);
     g_dluma_nightly_offer_kind = offer->kind;
+    g_dluma_nightly_offer_ticket = offer->ticket;
     dluma_ui_set_element_visible(g_dluma_nightly_popup, 1);
     dluma_ui_focus_element(is_error ? g_dluma_nightly_ok : g_dluma_nightly_no);
 }

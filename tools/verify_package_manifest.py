@@ -82,6 +82,7 @@ def main() -> int:
         }
         required_diagnostics = {
             "diagnostics/loader_address_ranges.json",
+            "updater/apply_nightly_update.ps1",
         }
         missing_diagnostics = sorted(
             path

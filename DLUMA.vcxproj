@@ -86,7 +86,7 @@
       <EntryPointSymbol>DllMain</EntryPointSymbol>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
       <ModuleDefinitionFile>$(ProjectDir)build\exports.def</ModuleDefinitionFile>
-      <AdditionalDependencies>kernel32.lib;user32.lib;BufferOverflowU.lib;libvcruntime.lib;libcmt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;winhttp.lib;bcrypt.lib;advapi32.lib;BufferOverflowU.lib;libvcruntime.lib;libcmt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <GenerateMapFile>true</GenerateMapFile>
       <MapFileName>$(DlumaLoaderMapPath)</MapFileName>
@@ -113,6 +113,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\dlw_nightly.c" />
+    <ClCompile Include="src\dlw_nightly_download.c" />
+    <ClCompile Include="src\core\dlw_nightly_offer_core.c" />
     <ClCompile Include="src\dlw_analysis_bridge.c" />
     <ClCompile Include="src\dlw_animation_refresh_runtime.c" />
     <ClCompile Include="src\dlw_animation_pack_runtime.c" />
@@ -1198,8 +1200,8 @@
     <RemoveDir Directories="$(DlumaQuestGraphOutputDir)" />
     <Exec Command="dotnet restore &quot;$(ProjectDir)workbench\Dluma.QuestGraph\Dluma.QuestGraph.csproj&quot; --locked-mode --nologo" />
     <Exec Command="dotnet publish &quot;$(ProjectDir)workbench\Dluma.QuestGraph\Dluma.QuestGraph.csproj&quot; -c $(Configuration) --no-restore --nologo -o &quot;$(DlumaQuestGraphOutputDir).&quot;" />
-    <Exec Command="dotnet publish &quot;$(ProjectDir)tools\Dluma.NightlyUpdater\Dluma.NightlyUpdater.csproj&quot; -c $(Configuration) -r win-x64 --self-contained true -p:PublishSingleFile=true --nologo -o &quot;$(OutDir)nightly-helper&quot;" />
-    <Copy SourceFiles="$(OutDir)nightly-helper\Dluma.NightlyUpdater.exe" DestinationFiles="$(DlumaPackageDir)dluma_nightly_updater.exe" />
+    <Exec Command="call &quot;$(ProjectDir)tools\build_nightly_launcher.bat&quot; $(Configuration) &quot;$(OutDir)nightly-helper&quot;" />
+    <Copy SourceFiles="$(OutDir)nightly-helper\dluma_nightly_updater.exe" DestinationFiles="$(DlumaPackageDir)dluma_nightly_updater.exe" />
     <Copy SourceFiles="$(TargetPath)"
           DestinationFiles="$(DlumaPackageDir)$(TargetFileName)" />
     <Copy SourceFiles="$(ProjectDir)LICENSE;$(ProjectDir)THIRD_PARTY_NOTICES.md" DestinationFolder="$(DlumaPackageDir)" />

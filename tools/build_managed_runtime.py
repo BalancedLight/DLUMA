@@ -106,6 +106,10 @@ def collect_sources(
 
     files: list[SourceFile] = [
         SourceFile(
+            require_regular_file(Path(__file__).resolve().parent / "apply_nightly_update.ps1", "native updater script"),
+            PurePosixPath("updater/apply_nightly_update.ps1"),
+        ),
+        SourceFile(
             require_regular_file(dotnet_root / "dotnet.exe", "pinned dotnet host"),
             PurePosixPath("dotnet/dotnet.exe"),
         ),

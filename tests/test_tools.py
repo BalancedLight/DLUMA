@@ -43,7 +43,9 @@ def test_prebuilt_mod_exports_and_imports():
     assert result["machine"] == "0x8664"
     assert result["is_dll"]
     assert {"InitializeGameScriptDLL", "ShutdownGameScriptDLL", "DLUMA_GetVersion"}.issubset(result["exports"])
-    assert set(result["imports"]) <= {"KERNEL32.dll", "USER32.dll"}
+    assert {name.lower() for name in result["imports"]} <= {
+        "kernel32.dll", "user32.dll", "winhttp.dll", "bcrypt.dll", "advapi32.dll"
+    }
     assert result["dynamic_base"]
     assert result["nx_compatible"]
     assert result["high_entropy_va"]
@@ -244,6 +246,7 @@ def test_package_manifest_rejects_extra_runtime_files(tmp_path):
             "managed/Dluma.Managed.Bootstrap.runtimeconfig.json",
             "managed/Dluma.Managed.Sdk.dll",
             "diagnostics/loader_address_ranges.json",
+            "updater/apply_nightly_update.ps1",
             "licenses/dotnet/LICENSE.txt",
             "licenses/dotnet/ThirdPartyNotices.txt",
             "quest-graph/Dluma.QuestGraph.exe",

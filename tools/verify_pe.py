@@ -127,13 +127,16 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
         "--profile",
-        choices=("loader", "helper", "discord-helper", "native-mod"),
+        choices=("loader", "helper", "discord-helper", "native-mod", "nightly-launcher"),
         default="loader",
         help="artifact contract to validate (default: loader)",
     )
     args = parser.parse_args()
     result = inspect(args.image)
-    if args.profile == "helper":
+    if args.profile == "nightly-launcher":
+        required = set()
+        allowed_imports = {"KERNEL32.dll"}
+    elif args.profile == "helper":
         required = {"DLUMA_Lua54_GetApi"}
         allowed_imports = {"KERNEL32.dll"}
     elif args.profile == "discord-helper":
@@ -144,16 +147,18 @@ def main() -> int:
         allowed_imports = {"KERNEL32.dll"}
     else:
         required = {"InitializeGameScriptDLL", "ShutdownGameScriptDLL", "DLUMA_GetVersion"}
-        allowed_imports = {"KERNEL32.dll", "USER32.dll"}
+        allowed_imports = {"KERNEL32.dll", "USER32.dll", "WINHTTP.dll", "bcrypt.dll", "ADVAPI32.dll"}
     errors = []
     if result["machine"] != "0x8664": errors.append("not x64")
-    if not result["is_dll"]: errors.append("not marked DLL")
+    if args.profile == "nightly-launcher":
+        if result["is_dll"]: errors.append("launcher must be an executable")
+    elif not result["is_dll"]: errors.append("not marked DLL")
     if not required.issubset(result["exports"]): errors.append("missing required exports")
     if args.profile in {"native-mod", "discord-helper"} and \
             set(result["exports"]) != required:
         errors.append(f"unexpected {args.profile} exports")
-    if set(result["imports"]) - allowed_imports: errors.append("unexpected imported DLL")
-    if args.profile in {"loader", "discord-helper", "native-mod"}:
+    if {name.lower() for name in result["imports"]} - {name.lower() for name in allowed_imports}: errors.append("unexpected imported DLL")
+    if args.profile in {"loader", "discord-helper", "native-mod", "nightly-launcher"}:
         if not result["dynamic_base"]: errors.append("ASLR/DYNAMIC_BASE is disabled")
         if not result["nx_compatible"]: errors.append("NX compatibility is disabled")
         if not result["high_entropy_va"]: errors.append("high-entropy VA is disabled")

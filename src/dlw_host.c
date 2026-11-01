@@ -598,6 +598,8 @@ DWORD WINAPI dluma_worker_thread(LPVOID parameter)
         int has_level;
         int positive_level_changed;
 
+        dlw_nightly_tick();
+
         if (dluma_engine_take_tracked_level_destroyed(&g_dluma.engine)) {
             dluma_log_line("INFO", "tracked_level_destroyed = authoritative ILevel destructor signal received");
             dluma_unload_active_map("tracked level was destroyed", 1);

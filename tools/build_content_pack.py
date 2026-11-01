@@ -17,6 +17,7 @@ from verify_quest_bindings import (
     validate as validate_quest_bindings,
 )
 from validate_localization import SUPPORTED as LOCALE_CODES, validate as validate_localization
+from generate_nightly_popup import validate as validate_nightly_popup
 
 SOURCES = (
     (ROOT / 'PakAssets/Animations/dluma_thriller_ee.rpack', 'Anims/dluma_thriller_ee.rpack'),
@@ -698,6 +699,7 @@ def verify_archive_sources(output: Path) -> dict[str, str]:
 
 
 def build(output: Path) -> None:
+    validate_nightly_popup()
     validate()
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
