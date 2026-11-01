@@ -25375,6 +25375,15 @@ static int dluma_ui_resolve_main_root(void *level)
     return 1;
 }
 
+static void dluma_ui_nightly_wait(const char *reason)
+{
+    static const char *previous;
+    if (previous != reason) {
+        previous = reason;
+        dluma_log_pair("INFO", "nightly_menu_wait", reason);
+    }
+}
+
 static int dluma_ui_new_global_resolve_main(void *level)
 {
     void *root;
@@ -25755,11 +25764,17 @@ static int dluma_ui_first_launch_tick(void *root, ULONGLONG now)
     return 1;
 }
 
+static void dluma_ui_nightly_tick(void *level, void *menu_main, ULONGLONG now);
+
 void dluma_ui_first_launch_main_menu_post(void *menu_main)
 {
+    ULONGLONG now;
     if (g_dluma_ui_stopping || !g_dluma.started || g_dluma.stop_requested)
         return;
-    (void)dluma_ui_first_launch_tick(menu_main, GetTickCount64());
+    now = GetTickCount64();
+    (void)dluma_ui_first_launch_tick(menu_main, now);
+    if (!dluma_first_launch_is_pending())
+        dluma_ui_nightly_tick(0, menu_main, now);
 }
 
 static int dluma_ui_first_launch_handle_button(void *button)
@@ -25862,7 +25877,7 @@ static int dluma_ui_nightly_handle_button(void *button)
     return 1;
 }
 
-static void dluma_ui_nightly_tick(void *level, ULONGLONG now)
+static void dluma_ui_nightly_tick(void *level, void *menu_main, ULONGLONG now)
 {
     const DlwNightlyOffer *offer;
     char message[512];
@@ -25878,10 +25893,26 @@ static void dluma_ui_nightly_tick(void *level, ULONGLONG now)
     if (offer && offer->ticket == g_dluma_nightly_ack_ticket) return;
     if (g_dluma_nightly_offer_kind)
         return;
+    if (!offer || offer->kind == DLW_NIGHTLY_NONE) return;
     if (!g_dluma_get_element_visible || !g_dluma_set_element_visible ||
-        !g_dluma_set_element_focus || !g_dluma_set_element_can_focus ||
-        !dluma_ui_resolve_main_root(level))
-        return;
+        !g_dluma_set_element_focus || !g_dluma_set_element_can_focus) {
+        dluma_ui_nightly_wait("ui_capabilities"); return;
+    }
+    if (menu_main) {
+        /* The validated MenuMainDI post-update owns this live scene. Custom
+         * menu aliases need not be indexed by ILevel's filename lookup. */
+        if (!dluma_is_readable(menu_main, sizeof(void *)) ||
+            !dluma_ui_object_id_equals(menu_main, "MenuMain") ||
+            !dluma_ui_is_element_visible(menu_main)) return;
+        if (menu_main != g_dluma_new_global_main_root) {
+            dluma_ui_new_global_clear_controls();
+            g_dluma_new_global_main_root = menu_main;
+            g_dluma_new_global_main_owner = menu_main;
+            g_dluma_new_global_frontend_stable_since = now;
+        }
+    } else if (!dluma_ui_resolve_main_root(level)) {
+        dluma_ui_nightly_wait("main_menu_root"); return;
+    }
     if (!g_dluma_nightly_stable_since) {
         g_dluma_nightly_stable_since = now;
         return;
@@ -25895,8 +25926,9 @@ static void dluma_ui_nightly_tick(void *level, ULONGLONG now)
         g_dluma_mods_native_visible_logged ||
         g_dluma_new_global_popup_visible || g_dluma_new_global_waiting_visibility ||
         dluma_ui_is_element_visible(g_dluma_new_global_popup) ||
-        dluma_ui_stock_popup_visible(g_dluma_new_global_main_root))
-        return;
+        dluma_ui_stock_popup_visible(g_dluma_new_global_main_root)) {
+        dluma_ui_nightly_wait("another_dialog_or_transition"); return;
+    }
     if (!offer || offer->kind == DLW_NIGHTLY_NONE)
         return;
     if (offer->kind != DLW_NIGHTLY_UPDATE && offer->kind != DLW_NIGHTLY_RESTORE &&
@@ -25917,6 +25949,7 @@ static void dluma_ui_nightly_tick(void *level, ULONGLONG now)
         return;
     }
     g_dluma_nightly_missing_controls_root = 0;
+    dluma_ui_nightly_wait("ready");
     is_error = offer->kind != DLW_NIGHTLY_UPDATE && offer->kind != DLW_NIGHTLY_RESTORE;
     if (offer->kind == DLW_NIGHTLY_UPDATE) {
         char commit[41];
@@ -28020,7 +28053,7 @@ static void dluma_ui_game_thread_tick_impl(unsigned int tick_source)
         goto done;
     if (!dluma_first_launch_is_pending()) {
         dluma_ui_new_global_tick(level, now);
-        dluma_ui_nightly_tick(level, now);
+        dluma_ui_nightly_tick(level, 0, now);
     }
     if (g_dluma_ui_registered_level == level && g_dluma_ui_screen_id >= 0)
     {
