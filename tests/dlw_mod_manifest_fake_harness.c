@@ -385,6 +385,15 @@ static int test_catalog_compatibility_boundary(void)
     CHECK(lock.uses_previous_catalog == 1U);
     CHECK(dluma_mod_lock_catalog_compatible(&lock, &manifest));
 
+    memcpy(catalog, OTHER_CATALOG_SHA256, 64U);
+    memset(&lock, 0, sizeof(lock));
+    lock.struct_size = sizeof(lock);
+    lock.artifacts = artifacts;
+    lock.artifact_capacity = 4U;
+    CHECK(dluma_mod_lock_parse(scope_lock, (unsigned int)strlen(scope_lock),
+                               &lock, &diagnostic) == DLUMA_STATUS_OK);
+    CHECK(dluma_mod_lock_catalog_compatible(&lock, &manifest));
+
     memset(&lock, 0, sizeof(lock));
     lock.struct_size = sizeof(lock);
     lock.artifacts = artifacts;

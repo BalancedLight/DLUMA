@@ -39,4 +39,4 @@ def test_manifest_runtime_is_catalog_driven_and_length_aware():
     assert "DLUMA_STATUS_INSUFFICIENT_BUFFER" in source
     assert "DLUMA_MOD_HOST_EDITOR" in header
     assert "quest_phase_handlers" in source
-    assert "DLUMA_API_IMMEDIATELY_PREVIOUS_CATALOG_SHA256" in source
+    assert "DLUMA_API_PUBLIC_VERSION" in source
