@@ -234,8 +234,13 @@ def build_edf(aliases: Sequence[AliasDeclaration]) -> bytes:
     ]
     for command, builtin in declarations:
         suffix = "name mod handler arguments wait" if builtin else "name arguments wait"
+        authoring = f",{command} <<phase_name>> "
+        if builtin:
+            authoring += "-mod=<<mod.id>> -handler=<<handler>> "
+        authoring += "-arguments=<<{}>> -wait=0"
         lines.extend(
             [
+                f"# DLUMA authoring: {authoring}",
                 f",{command} {suffix} =",
                 "  Phase -type=<<wait guard>> -name=<(,name)>"
                 " -time=<(,wait)> -time2p=<(,wait)>"
@@ -365,6 +370,28 @@ def _parse_pxsl_line(value: str | None) -> int | None:
         return None
     parsed = int(value, 10)
     return parsed if 0 < parsed <= 0xFFFFFFFF else None
+
+
+def lower_source(source: bytes, directives: Sequence[Directive]) -> bytes:
+    """Keep source line numbers while converting named fields for pxslcc."""
+    bindings = {value.source_line: value for value in directives}
+    lines: list[bytes] = []
+    for number, line in enumerate(source.splitlines(keepends=True), 1):
+        directive = bindings.get(number)
+        if directive is None:
+            lines.append(line)
+            continue
+        command = _command(line)
+        if command is None:
+            raise QuestPhaseAuthoringError("custom directive source line is missing")
+        content = line.rstrip(b"\r\n")
+        indent = content[: len(content) - len(content.lstrip(b" \t"))]
+        wait_token = content.rsplit(b"-wait=", 1)[1].strip()
+        lowered = f",{command} <<{directive.phase_id}>> ".encode("utf-8")
+        if command in {"call-lua", "call-native"}:
+            lowered += f"<<{directive.provider_mod}>> <<{directive.handler_id}>> ".encode("utf-8")
+        lines.append(indent + lowered + b"<<{}>> " + wait_token + line[len(content):])
+    return b"".join(lines)
 
 
 def _parse_stock_wait(value: str | None) -> float | None:
@@ -823,7 +850,20 @@ def compile_and_emit(
         raise QuestPhaseAuthoringError("source/output path escapes project root")
     with locked_source_snapshot(source_path, root) as source:
         directives = parse_directives(source.data, aliases)
-        if not compiler(source.final_path, output_path):
+        if directives:
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=".dluma-quest-", suffix=".pxsl", dir=source.final_path.parent
+            )
+            temporary = Path(temporary_name)
+            try:
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(lower_source(source.data, directives))
+                with locked_source_snapshot(temporary, root):
+                    if not compiler(temporary, output_path):
+                        raise QuestPhaseAuthoringError("stock quest compiler reported failure")
+            finally:
+                temporary.unlink(missing_ok=True)
+        elif not compiler(source.final_path, output_path):
             raise QuestPhaseAuthoringError("stock quest compiler reported failure")
     _reject_reparse_chain(root, output_path)
     output = _read_exact_file(output_path, MAX_OUTPUT_BYTES)

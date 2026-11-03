@@ -13,6 +13,7 @@
 #define DLUMA_RUNTIME_TREE_MAX_DEPTH 12U
 
 static const WCHAR* const g_dluma_runtime_mutable_root_files[] = {
+    L"asset_mods.ini",
     L"custom_content_ledger_report.txt",
     L"custom_main_menu_activation.ini",
     L"custom_map_asset_trace.log",
@@ -22,11 +23,17 @@ static const WCHAR* const g_dluma_runtime_mutable_root_files[] = {
     L"frontend_startup_baseline.txt",
     L"global_mods.ini",
     L"lua_discovery_report.txt",
+    L"managed_mods.ini",
     L"native_mods.ini",
     L"startup_recovery.ini"
 };
 
+/* Generated user data is outside the packaged executable/runtime inventory. */
 static const WCHAR* const g_dluma_runtime_mutable_root_directories[] = {
+    L"asset_mods",
+    L"cache",
+    L"developer_mode",
+    L"workshop_thumbnails",
     L"crashes",
     L"markers",
     L"mod_config",
@@ -66,10 +73,12 @@ enum DlumaRuntimeRequiredFile {
     DLUMA_RUNTIME_REQUIRED_QG_CORE = 1U << 16,
     DLUMA_RUNTIME_REQUIRED_QG_NODIFY = 1U << 17,
     DLUMA_RUNTIME_REQUIRED_QG_NOTICES = 1U << 18,
-    DLUMA_RUNTIME_REQUIRED_QG_LICENSE = 1U << 19
+    DLUMA_RUNTIME_REQUIRED_QG_LICENSE = 1U << 19,
+    DLUMA_RUNTIME_REQUIRED_EDITOR_SYSTEM = 1U << 20,
+    DLUMA_RUNTIME_REQUIRED_EDITOR_FRAMEWORK = 1U << 21
 };
 
-#define DLUMA_RUNTIME_REQUIRED_ALL ((1U << 20) - 1U)
+#define DLUMA_RUNTIME_REQUIRED_ALL ((1U << 22) - 1U)
 
 static void dluma_runtime_tree_error(
     DlumaRuntimeTreeLease* lease,
@@ -378,7 +387,11 @@ static unsigned int dluma_runtime_required_bit(
         {"quest-graph/THIRD_PARTY_NOTICES.md",
             DLUMA_RUNTIME_REQUIRED_QG_NOTICES},
         {"quest-graph/Licenses/Nodify-MIT.txt",
-            DLUMA_RUNTIME_REQUIRED_QG_LICENSE}
+            DLUMA_RUNTIME_REQUIRED_QG_LICENSE},
+        {"editor/dluma_editor_theme_system.dll",
+            DLUMA_RUNTIME_REQUIRED_EDITOR_SYSTEM},
+        {"editor/Dluma.EditorTheme.Framework.dll",
+            DLUMA_RUNTIME_REQUIRED_EDITOR_FRAMEWORK}
     };
     unsigned int index;
     for (index = 0; index < DLUMA_ARRAY_COUNT(versioned); ++index) {
@@ -400,6 +413,31 @@ static unsigned int dluma_runtime_required_bit(
                 path, fixed[index].path))
             return fixed[index].bit;
     return 0U;
+}
+
+static int dluma_runtime_managed_ini_temp(const WCHAR* name)
+{
+    static const WCHAR prefix[] = L"managed_mods.ini.tmp.";
+    const WCHAR* cursor;
+    uint64_t pid = 0;
+    unsigned int digits = 0;
+    if (!dluma_wstarts_with_icase(name, prefix)) return 0;
+    cursor = name + DLUMA_ARRAY_COUNT(prefix) - 1U;
+    if (*cursor < L'1' || *cursor > L'9') return 0;
+    while (*cursor >= L'0' && *cursor <= L'9') {
+        if (++digits > 10U) return 0;
+        pid = pid * 10U + (unsigned int)(*cursor++ - L'0');
+        if (pid > 0xffffffffULL) return 0;
+    }
+    return digits != 0U && *cursor == 0;
+}
+
+static int dluma_runtime_managed_ini_manifest_path(const char* path)
+{
+    WCHAR wide[DLUMA_MOD_RELATIVE_PATH_CAPACITY];
+    if (!dluma_utf8_to_wide(path, wide, DLUMA_ARRAY_COUNT(wide))) return 0;
+    return dluma_wstricmp(wide, L"managed_mods.ini") == 0 ||
+        dluma_runtime_managed_ini_temp(wide);
 }
 
 static int dluma_runtime_parse_file(
@@ -456,7 +494,10 @@ static int dluma_runtime_parse_file(
             (unsigned int)sizeof(normalized)) ||
         !dluma_runtime_string_equal(output->path, normalized) ||
         dluma_runtime_string_equal(
-            output->path, "runtime-manifest.json"))
+            output->path, "runtime-manifest.json") ||
+        dluma_runtime_managed_ini_manifest_path(output->path) ||
+        dluma_stricmp(output->path, "editor/quest_extensions.edf") == 0 ||
+        dluma_stricmp(output->path, "editor/quest_extensions.edf.tmp") == 0)
         return 0;
     return 1;
 }
@@ -578,6 +619,7 @@ static int dluma_runtime_tree_mutable_root_entry(
     if (!name || !name[0]) return 0;
     is_directory =
         (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    if (!is_directory && dluma_runtime_managed_ini_temp(name)) return 1;
     if (is_directory) {
         entries = g_dluma_runtime_mutable_root_directories;
         count = DLUMA_ARRAY_COUNT(
@@ -596,6 +638,7 @@ static int dluma_runtime_tree_mutable_root_entry(
 static int dluma_runtime_tree_count_files(
     const WCHAR* directory,
     unsigned int depth,
+    int editor_directory,
     unsigned int* count)
 {
     WCHAR pattern[DLUMA_MAX_WPATH];
@@ -628,6 +671,11 @@ static int dluma_runtime_tree_count_files(
                 data.cFileName,
                 data.dwFileAttributes))
             continue;
+        if (editor_directory && depth == 1U &&
+            !(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+            (dluma_wstricmp(data.cFileName, L"quest_extensions.edf") == 0 ||
+             dluma_wstricmp(data.cFileName, L"quest_extensions.edf.tmp") == 0))
+            continue;
         if (!dluma_runtime_tree_join(
                 child, DLUMA_ARRAY_COUNT(child),
                 directory, data.cFileName)) {
@@ -637,7 +685,9 @@ static int dluma_runtime_tree_count_files(
         if (data.dwFileAttributes &
             FILE_ATTRIBUTE_DIRECTORY) {
             if (!dluma_runtime_tree_count_files(
-                    child, depth + 1U, count)) {
+                    child, depth + 1U,
+                    depth == 0U && dluma_wstricmp(data.cFileName, L"editor") == 0,
+                    count)) {
                 FindClose(find);
                 return 0;
             }
@@ -829,7 +879,7 @@ file_invalid:
     if (manifest.required_mask !=
             DLUMA_RUNTIME_REQUIRED_ALL ||
         !dluma_runtime_tree_count_files(
-            runtime_root, 0U, &actual_file_count) ||
+            runtime_root, 0U, 0, &actual_file_count) ||
         actual_file_count !=
             manifest.record_count + 1U) {
         dluma_runtime_tree_error(

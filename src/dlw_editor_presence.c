@@ -6,12 +6,15 @@
 #include "dlw_editor_exit_observer.h"
 #include "dlw_log.h"
 #include "dlw_path_security.h"
+#include "dlw_editor_ui.h"
+#include "dlw_editor_theme.h"
 
 #include <string.h>
 
 #define DLUMA_EDITOR_PRESENCE_POLL_MS 250U
 #define DLUMA_EDITOR_PRESENCE_STOP_TIMEOUT_MS 3000U
 #define DLUMA_EDITOR_PRESENCE_DISCOVER_OPTIONS (WM_APP + 0x5D1U)
+#define DLUMA_EDITOR_PRESENCE_TEARDOWN (WM_APP + 0x5D2U)
 #define DLUMA_EDITOR_OPTIONS_CONTROL_PAGE 0x6D10U
 #define DLUMA_EDITOR_OPTIONS_CONTROL_DISCORD 0x6D11U
 #define DLUMA_EDITOR_OPTIONS_CONTROL_HINT 0x6D12U
@@ -40,6 +43,10 @@
 #define DLUMA_EDITOR_WS_CHILD 0x40000000UL
 #define DLUMA_EDITOR_WS_VISIBLE 0x10000000UL
 #define DLUMA_EDITOR_WS_TABSTOP 0x00010000UL
+#define DLUMA_EDITOR_DS_CONTROL 0x00000400UL
+#define DLUMA_EDITOR_GW_HWNDPREV 3U
+#define DLUMA_EDITOR_SWP_NOSIZE 0x0001U
+#define DLUMA_EDITOR_SWP_NOMOVE 0x0002U
 #define DLUMA_EDITOR_SWP_NOZORDER 0x0004U
 #define DLUMA_EDITOR_SWP_NOACTIVATE 0x0010U
 #define DLUMA_EDITOR_PLAYER_SHA256 \
@@ -48,6 +55,7 @@
 __declspec(dllimport) BOOL WINAPI EnumThreadWindows(
     DWORD thread_id, WNDENUMPROC callback, LPARAM parameter);
 __declspec(dllimport) HWND WINAPI GetParent(HWND window);
+__declspec(dllimport) HWND WINAPI GetWindow(HWND window, unsigned int command);
 __declspec(dllimport) BOOL WINAPI IsChild(HWND parent, HWND window);
 __declspec(dllimport) int WINAPI MapWindowPoints(
     HWND from, HWND to, POINT* points, unsigned int count);
@@ -68,6 +76,9 @@ __declspec(dllimport) HWND WINAPI CreateWindowExW(
     DWORD extended_style, LPCWSTR class_name, LPCWSTR window_name,
     DWORD style, int x, int y, int width, int height, HWND parent,
     HMENU menu, HINSTANCE instance, LPVOID parameter);
+__declspec(dllimport) HWND WINAPI CreateDialogIndirectParamW(
+    HINSTANCE instance, const void* dialog_template, HWND parent,
+    WNDPROC dialog_proc, LPARAM parameter);
 __declspec(dllimport) HWND WINAPI GetDlgItem(HWND window, int identifier);
 __declspec(dllimport) BOOL WINAPI EnumChildWindows(
     HWND parent, WNDENUMPROC callback, LPARAM parameter);
@@ -106,6 +117,18 @@ typedef struct DlumaEditorNmHdr {
     UINT_PTR id_from;
     unsigned int code;
 } DlumaEditorNmHdr;
+
+#pragma pack(push, 2)
+typedef struct DlumaEditorOptionsPageTemplate {
+    DWORD style;
+    DWORD extended_style;
+    unsigned short item_count;
+    short x, y, width, height;
+    unsigned short menu, window_class, title;
+} DlumaEditorOptionsPageTemplate;
+#pragma pack(pop)
+typedef char DlumaEditorOptionsPageTemplateSize[
+    sizeof(DlumaEditorOptionsPageTemplate) == 24U ? 1 : -1];
 
 typedef struct DlumaEditorGuiThreadInfo {
     DWORD size;
@@ -168,7 +191,7 @@ typedef struct DlumaEditorPresenceState {
     HANDLE wake_event;
     HANDLE worker_thread;
     HWND main_window;
-    WNDPROC main_predecessor;
+    unsigned int main_subscribed;
     DWORD owner_thread_id;
     volatile LONG started;
     volatile LONG stopping;
@@ -211,6 +234,7 @@ typedef struct DlumaEditorStockPageSearch {
 } DlumaEditorStockPageSearch;
 
 static DlumaEditorPresenceState g_dluma_editor_presence;
+static void dluma_editor_presence_detach_windows(void);
 
 static void dluma_log_event(
     const char* category, const char* level,
@@ -453,7 +477,7 @@ static BOOL CALLBACK dluma_editor_presence_find_stock_page(
     DlumaEditorStockPageSearch* search =
         (DlumaEditorStockPageSearch*)parameter;
     WCHAR class_name[128];
-    if (!search || GetParent(window) == search->tab ||
+    if (!search || GetParent(window) != search->tab ||
         !GetClassNameW(window, class_name,
                        (int)DLUMA_ARRAY_COUNT(class_name)))
         return TRUE;
@@ -518,6 +542,34 @@ static int dluma_editor_presence_stock_tabs_exact(HWND tab)
     return 1;
 }
 
+static LRESULT CALLBACK dluma_editor_presence_page_proc(
+    HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    LRESULT result = 0;
+    HWND parent;
+    dluma_editor_presence_callback_enter();
+    parent = GetParent(window);
+    if (parent && message == WM_COMMAND) {
+        (void)SendMessageW(parent, message, wparam, lparam);
+        dluma_editor_presence_callback_leave();
+        return 1;
+    }
+    if (parent && message == DLUMA_EDITOR_WM_NOTIFY) {
+        result = SendMessageW(parent, message, wparam, lparam);
+        if (IsWindow(window) && GetParent(window) == parent)
+            (void)SetWindowLongPtrW(window, 0, result); /* DWLP_MSGRESULT */
+        dluma_editor_presence_callback_leave();
+        return 1;
+    }
+    if (parent && message >= 0x0132U && message <= 0x0138U) {
+        result = SendMessageW(parent, message, wparam, lparam);
+        dluma_editor_presence_callback_leave();
+        return result;
+    }
+    dluma_editor_presence_callback_leave();
+    return 0;
+}
+
 static void dluma_editor_presence_position_options_page(void)
 {
     DlumaEditorOptionsState* options = &g_dluma_editor_presence.options;
@@ -543,8 +595,9 @@ static void dluma_editor_presence_position_options_page(void)
         options->checkbox, 0, 14, 14, width - 28, 24,
         DLUMA_EDITOR_SWP_NOZORDER | DLUMA_EDITOR_SWP_NOACTIVATE);
     (void)SetWindowPos(
-        options->hint, 0, 14, 46, width - 28, height - 54,
+        options->hint, 0, 14, 46, width - 28, height > 160 ? 40 : 28,
         DLUMA_EDITOR_SWP_NOZORDER | DLUMA_EDITOR_SWP_NOACTIVATE);
+    dluma_editor_theme_options_layout(options->page, height > 160 ? 98 : 82);
 }
 
 static void dluma_editor_presence_show_custom_page(int show)
@@ -553,11 +606,17 @@ static void dluma_editor_presence_show_custom_page(int show)
     unsigned int index;
     if (!options->page) return;
     if (show) {
+        HWND before_tab;
         for (index = 0; index < DLUMA_EDITOR_OPTIONS_STOCK_TABS; ++index)
             if (options->stock_pages[index])
                 (void)ShowWindow(
                     options->stock_pages[index], DLUMA_EDITOR_SW_HIDE);
         dluma_editor_presence_position_options_page();
+        before_tab = GetWindow(options->tab, DLUMA_EDITOR_GW_HWNDPREV);
+        if (before_tab != options->page)
+            (void)SetWindowPos(options->page, before_tab, 0, 0, 0, 0,
+                DLUMA_EDITOR_SWP_NOMOVE | DLUMA_EDITOR_SWP_NOSIZE |
+                DLUMA_EDITOR_SWP_NOACTIVATE);
         (void)ShowWindow(options->page, DLUMA_EDITOR_SW_SHOW);
     } else {
         (void)ShowWindow(options->page, DLUMA_EDITOR_SW_HIDE);
@@ -592,6 +651,11 @@ static LRESULT CALLBACK dluma_editor_presence_options_proc(
     WNDPROC predecessor = options->predecessor;
     LRESULT result;
     dluma_editor_presence_callback_enter();
+    if (message == DLUMA_EDITOR_PRESENCE_TEARDOWN) {
+        dluma_editor_presence_detach_windows();
+        dluma_editor_presence_callback_leave();
+        return 1;
+    }
     if (message == DLUMA_EDITOR_WM_NOTIFY &&
         options->tab && lparam) {
         DlumaEditorNmHdr* notification = (DlumaEditorNmHdr*)lparam;
@@ -671,6 +735,7 @@ static void dluma_editor_presence_options_clear_created(
     DlumaEditorOptionsState* options, int remove_tab)
 {
     if (!options) return;
+    if (options->page) dluma_editor_theme_options_detach(options->page);
     if (options->page && IsWindow(options->page))
         (void)DestroyWindow(options->page);
     if (remove_tab && options->tab && IsWindow(options->tab) &&
@@ -754,19 +819,28 @@ static int dluma_editor_presence_attach_options(HWND dialog)
     candidate.last_stock_index = selected;
     memset(&item, 0, sizeof(item));
     item.mask = DLUMA_EDITOR_TCIF_TEXT;
-    item.text = L"Workbench Mods";
+    item.text = L"DLUMA";
     if (SendMessageW(
             candidate.tab, DLUMA_EDITOR_TCM_INSERTITEMW,
             DLUMA_EDITOR_OPTIONS_TAB_INDEX, (LPARAM)&item) !=
         DLUMA_EDITOR_OPTIONS_TAB_INDEX)
         return 0;
-    candidate.page = CreateWindowExW(
-        WS_EX_CONTROLPARENT, L"STATIC", L"",
-        DLUMA_EDITOR_WS_CHILD | WS_CLIPCHILDREN,
-        0, 0, 1, 1, dialog,
-        (HMENU)(UINT_PTR)DLUMA_EDITOR_OPTIONS_CONTROL_PAGE,
-        GetModuleHandleW(0), 0);
+    {
+        __declspec(align(4)) const DlumaEditorOptionsPageTemplate page_template = {
+            DLUMA_EDITOR_WS_CHILD | WS_CLIPCHILDREN | DLUMA_EDITOR_DS_CONTROL,
+            WS_EX_CONTROLPARENT, 0, 0, 0, 1, 1, 0, 0, 0
+        };
+        candidate.page = CreateDialogIndirectParamW(
+            g_dluma.self_module, &page_template, dialog,
+            dluma_editor_presence_page_proc, 0);
+    }
     if (!candidate.page) {
+        dluma_editor_presence_options_clear_created(&candidate, 1);
+        return 0;
+    }
+    SetLastError(0);
+    if (!SetWindowLongPtrW(candidate.page, -12,
+            DLUMA_EDITOR_OPTIONS_CONTROL_PAGE) && GetLastError()) { /* GWLP_ID */
         dluma_editor_presence_options_clear_created(&candidate, 1);
         return 0;
     }
@@ -792,6 +866,10 @@ static int dluma_editor_presence_attach_options(HWND dialog)
         candidate.checkbox, DLUMA_EDITOR_BM_SETCHECK,
         g_dluma.config.editor_discord_rich_presence_enabled
             ? DLUMA_EDITOR_BST_CHECKED : 0, 0);
+    if (!dluma_editor_ui_request_enroll(dialog)) {
+        dluma_editor_presence_options_clear_created(&candidate, 1);
+        return 0;
+    }
     observed = (WNDPROC)GetWindowLongPtrW(dialog, GWLP_WNDPROC);
     if (!observed || observed == dluma_editor_presence_options_proc) {
         dluma_editor_presence_options_clear_created(&candidate, 1);
@@ -815,6 +893,7 @@ static int dluma_editor_presence_attach_options(HWND dialog)
                sizeof(g_dluma_editor_presence.options));
         return 0;
     }
+    (void)dluma_editor_theme_options_attach(candidate.page, dialog, 0x6D20U);
     dluma_editor_presence_position_options_page();
     dluma_log_event(
         "editor_presence", "INFO", "options_tab_attached", 0);
@@ -841,30 +920,33 @@ static void dluma_editor_presence_discover_options(void)
         dluma_editor_presence_find_options_dialog, 0);
 }
 
-static LRESULT CALLBACK dluma_editor_presence_main_proc(
-    HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+static int dluma_editor_presence_main_listener(
+    HWND window, unsigned int stage, UINT message, WPARAM wparam,
+    LPARAM lparam, LRESULT *result, void *context)
 {
-    WNDPROC predecessor = g_dluma_editor_presence.main_predecessor;
-    LRESULT result;
+    (void)wparam; (void)lparam; (void)result; (void)context;
+    if (window != g_dluma_editor_presence.main_window) return 0;
     dluma_editor_presence_callback_enter();
-    if (message == DLUMA_EDITOR_PRESENCE_DISCOVER_OPTIONS)
+    if (stage == DLUMA_EDITOR_UI_BEFORE && message == DLUMA_EDITOR_PRESENCE_TEARDOWN) {
+        dluma_editor_presence_detach_windows();
+        *result = 1;
+        dluma_editor_presence_callback_leave();
+        return 1;
+    }
+    if (stage == DLUMA_EDITOR_UI_BEFORE &&
+        message == DLUMA_EDITOR_PRESENCE_DISCOVER_OPTIONS)
         dluma_editor_presence_discover_options();
-    result = predecessor
-        ? CallWindowProcW(predecessor, window, message, wparam, lparam) : 0;
-    if (message == WM_NCDESTROY) {
+    if (stage == DLUMA_EDITOR_UI_DESTROY) {
         g_dluma_editor_presence.main_window = 0;
-        g_dluma_editor_presence.main_predecessor = 0;
         g_dluma_editor_presence.owner_thread_id = 0;
     }
     dluma_editor_presence_callback_leave();
-    return result;
+    return 0;
 }
 
 static int dluma_editor_presence_attach_main_window(void)
 {
     DlumaEditorWindowCandidate candidate;
-    WNDPROC observed;
-    WNDPROC installed;
     if (g_dluma_editor_presence.main_window ||
         g_dluma_editor_presence.stopping)
         return g_dluma_editor_presence.main_window ? 1 : 0;
@@ -873,24 +955,16 @@ static int dluma_editor_presence_attach_main_window(void)
     (void)EnumWindows(
         dluma_editor_presence_find_main_window, (LPARAM)&candidate);
     if (!candidate.window || !candidate.thread_id) return 0;
-    observed = (WNDPROC)GetWindowLongPtrW(
-        candidate.window, GWLP_WNDPROC);
-    if (!observed || observed == dluma_editor_presence_main_proc) return 0;
     g_dluma_editor_presence.main_window = candidate.window;
     g_dluma_editor_presence.owner_thread_id = candidate.thread_id;
-    g_dluma_editor_presence.main_predecessor = observed;
-    installed = (WNDPROC)SetWindowLongPtrW(
-        candidate.window, GWLP_WNDPROC,
-        (LONG_PTR)dluma_editor_presence_main_proc);
-    if (!installed) {
+    if (!dluma_editor_ui_subscribe(DLUMA_EDITOR_UI_OWNER_PRESENCE,
+                                    dluma_editor_presence_main_listener, 0) ||
+        !dluma_editor_ui_request_enroll(candidate.window)) {
         g_dluma_editor_presence.main_window = 0;
         g_dluma_editor_presence.owner_thread_id = 0;
-        g_dluma_editor_presence.main_predecessor = 0;
         return 0;
     }
-    /* Preserve any subclass installed between observation and installation. */
-    if (installed != dluma_editor_presence_main_proc)
-        g_dluma_editor_presence.main_predecessor = installed;
+    g_dluma_editor_presence.main_subscribed = 1U;
     return 1;
 }
 
@@ -1307,17 +1381,9 @@ static void dluma_editor_presence_detach_windows(void)
             (LONG_PTR)options->predecessor);
     dluma_editor_presence_options_clear_created(options, 1);
     memset(options, 0, sizeof(*options));
-    if (g_dluma_editor_presence.main_window &&
-        IsWindow(g_dluma_editor_presence.main_window) &&
-        g_dluma_editor_presence.main_predecessor &&
-        (WNDPROC)GetWindowLongPtrW(
-            g_dluma_editor_presence.main_window, GWLP_WNDPROC) ==
-            dluma_editor_presence_main_proc)
-        (void)SetWindowLongPtrW(
-            g_dluma_editor_presence.main_window, GWLP_WNDPROC,
-            (LONG_PTR)g_dluma_editor_presence.main_predecessor);
+    (void)dluma_editor_ui_unsubscribe(DLUMA_EDITOR_UI_OWNER_PRESENCE);
     g_dluma_editor_presence.main_window = 0;
-    g_dluma_editor_presence.main_predecessor = 0;
+    g_dluma_editor_presence.main_subscribed = 0;
     g_dluma_editor_presence.owner_thread_id = 0;
 }
 
@@ -1397,7 +1463,20 @@ int dluma_editor_presence_stop(void)
     dluma_editor_presence_playtest_unlock();
     if (process) CloseHandle(process);
     if (suspended) dluma_discord_presence_set_suspended(0);
-    dluma_editor_presence_detach_windows();
+    {
+        HWND target = g_dluma_editor_presence.options.dialog
+            ? g_dluma_editor_presence.options.dialog : g_dluma_editor_presence.main_window;
+        DWORD owner_thread = target ? GetWindowThreadProcessId(target, 0) : 0;
+        if (target && IsWindow(target) && owner_thread != GetCurrentThreadId()) {
+            ULONG_PTR completed = 0;
+            if (!SendMessageTimeoutW(target, DLUMA_EDITOR_PRESENCE_TEARDOWN, 0, 0,
+                                      0x0001U | 0x0002U | 0x0020U, 1000U, &completed) ||
+                !completed) return 0;
+        } else dluma_editor_presence_detach_windows();
+    }
+    if (g_dluma_editor_presence.callbacks_in_flight &&
+        GetCurrentThreadId() == g_dluma_editor_presence.owner_thread_id)
+        return 0;
     deadline = GetTickCount64() +
         DLUMA_EDITOR_PRESENCE_STOP_TIMEOUT_MS;
     while (g_dluma_editor_presence.callbacks_in_flight &&

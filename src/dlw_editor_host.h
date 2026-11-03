@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 int dluma_editor_host_start(void);
+void dluma_editor_host_request_shutdown(void);
 int dluma_editor_host_session_begin(ULONGLONG generation);
 int dluma_editor_host_session_end(ULONGLONG generation);
 void dluma_editor_host_crash_context_update(

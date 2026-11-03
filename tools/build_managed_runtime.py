@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 from dataclasses import dataclass
@@ -34,6 +35,10 @@ QUEST_GRAPH_ARTIFACTS = (
     "Nodify.dll",
     "THIRD_PARTY_NOTICES.md",
     "Licenses/Nodify-MIT.txt",
+)
+EDITOR_THEME_ARTIFACTS = (
+    "dluma_editor_theme_system.dll",
+    "Dluma.EditorTheme.Framework.dll",
 )
 
 
@@ -85,6 +90,7 @@ def collect_sources(
     managed_output: Path,
     runtime_version: str,
     quest_graph_output: Path,
+    editor_theme_output: Path,
     loader_symbol_manifest: Path | None = None,
 ) -> list[SourceFile]:
     hostfxr = require_regular_file(
@@ -206,6 +212,23 @@ def collect_sources(
                     f"visual quest editor artifact {name}",
                 ),
                 PurePosixPath("quest-graph") / PurePosixPath(name),
+            )
+        )
+    for name in EDITOR_THEME_ARTIFACTS:
+        files.append(
+            SourceFile(
+                require_regular_file(
+                    editor_theme_output / name, f"editor appearance artifact {name}"
+                ),
+                PurePosixPath("editor") / name,
+            )
+        )
+    splash = editor_theme_output / "startup.gif"
+    if splash.exists():
+        files.append(
+            SourceFile(
+                require_regular_file(splash, "custom Editor startup image"),
+                PurePosixPath("editor/startup.gif"),
             )
         )
     if loader_symbol_manifest is not None:
@@ -372,6 +395,13 @@ def verify_runtime(
             raise ValueError(f"runtime manifest contains unsafe path: {relative}")
         if not key or key == MANIFEST_NAME.casefold():
             raise ValueError(f"runtime manifest contains reserved path: {relative}")
+        if key in {"editor/quest_extensions.edf", "editor/quest_extensions.edf.tmp"}:
+            raise ValueError(f"runtime manifest contains generated Editor data: {relative}")
+        if key == "managed_mods.ini" or (
+            re.fullmatch(r"managed_mods\.ini\.tmp\.[1-9][0-9]{0,9}", key)
+            and int(key.rsplit(".", 1)[1]) <= 0xFFFFFFFF
+        ):
+            raise ValueError(f"runtime manifest contains managed settings: {relative}")
         if key in expected_paths:
             raise ValueError(f"runtime manifest contains duplicate path: {relative}")
         if previous_key and key < previous_key:
@@ -436,6 +466,10 @@ def verify_runtime(
             (PurePosixPath("quest-graph") / artifact).as_posix().casefold()
             for artifact in QUEST_GRAPH_ARTIFACTS
         },
+        *{
+            (PurePosixPath("editor") / artifact).as_posix().casefold()
+            for artifact in EDITOR_THEME_ARTIFACTS
+        },
     }
     missing_required = sorted(required_paths - expected_paths)
     if missing_required:
@@ -458,6 +492,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--managed-output", type=Path)
     parser.add_argument("--quest-graph-output", type=Path)
+    parser.add_argument("--editor-theme-output", type=Path)
     parser.add_argument("--prepare-runtime", action="store_true")
     parser.add_argument("--dotnet-root", type=Path)
     parser.add_argument(
@@ -475,13 +510,14 @@ def main() -> int:
         if args.prepare_runtime:
             print(f"Packaged runtime ready: {dotnet_root}")
             return 0
-        if not all((args.output_dir, args.managed_output, args.quest_graph_output)):
-            parser.error("--output-dir, --managed-output and --quest-graph-output are required")
+        if not all((args.output_dir, args.managed_output, args.quest_graph_output, args.editor_theme_output)):
+            parser.error("--output-dir, --managed-output, --quest-graph-output and --editor-theme-output are required")
         sources = collect_sources(
             dotnet_root,
             args.managed_output,
             args.runtime_version,
             args.quest_graph_output,
+            args.editor_theme_output,
             args.loader_symbol_manifest,
         )
         manifest = build_manifest(

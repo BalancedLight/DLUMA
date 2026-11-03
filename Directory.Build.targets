@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(MSBuildProjectExtension)' == '.csproj' and '$(PathMap)' == ''">
+    <PathMap>$(MSBuildThisFileDirectory)=/_/</PathMap>
+  </PropertyGroup>
   <!-- Compile the UI lifecycle wrapper once; it includes dlw_ui.c. -->
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'DLUMA'">
     <ClCompile Remove="src\dlw_ui.c" />

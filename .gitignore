@@ -51,6 +51,9 @@ examples/native-mods/**/mods/**/*.mod
 # Private Workshop publication metadata
 config/workshop.local.json
 
+# Optional custom startup artwork supplied for local builds.
+/assets/editor-splash/startup.gif
+
 # Linker export definition is source; other build contents are generated.
 !/build/
 /build/*

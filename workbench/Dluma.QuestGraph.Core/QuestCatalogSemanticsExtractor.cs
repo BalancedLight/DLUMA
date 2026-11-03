@@ -114,6 +114,10 @@ internal static partial class QuestCatalogSemanticsExtractor
             var category = Category(definition, resolvedPhaseType, childSlots);
             var style = ResolveStyle(definition.Name, resolvedPhaseType, state.Styles);
             var template = ResolveTemplate(definition, description);
+            var authoring = QuestCatalogAuthoringMetadata.Parse(
+                definition.Name, definition.Parameters, definition.AuthoringTemplate);
+            if (authoring is not null)
+                template = authoring.Template;
             var sources = Sources(
                 definition.Source,
                 description?.Source,
@@ -131,6 +135,8 @@ internal static partial class QuestCatalogSemanticsExtractor
                 inspectorMacros[definition.Name],
                 inspectorMacros,
                 inspectorPhases);
+            if (authoring is not null)
+                inspectorFields = authoring.Apply(inspectorFields);
 
             entries.Add(new QuestCatalogEntry(
                 definition.Name,
@@ -493,9 +499,15 @@ internal static partial class QuestCatalogSemanticsExtractor
     private static void ParseEdf(string text, string source, ExtractionState state)
     {
         var section = string.Empty;
+        string? authoringTemplate = null;
         EdfBuilder? current = null;
         foreach (var line in SplitLines(text))
         {
+            if (line.StartsWith(QuestCatalogAuthoringMetadata.CommentPrefix, StringComparison.Ordinal))
+            {
+                authoringTemplate = line[QuestCatalogAuthoringMetadata.CommentPrefix.Length..].Trim();
+                continue;
+            }
             var sectionMatch = SectionPattern().Match(line);
             if (sectionMatch.Success)
             {
@@ -515,7 +527,11 @@ internal static partial class QuestCatalogSemanticsExtractor
                     definitionMatch.Groups["name"].Value,
                     section,
                     ParseEdfParameters(definitionMatch.Groups["arguments"].Value),
-                    source);
+                    source)
+                {
+                    AuthoringTemplate = authoringTemplate
+                };
+                authoringTemplate = null;
                 continue;
             }
             current?.Body.Add(line);
@@ -564,7 +580,8 @@ internal static partial class QuestCatalogSemanticsExtractor
             directPhaseType,
             aliasTarget,
             producedObject,
-            builder.Source));
+            builder.Source,
+            builder.AuthoringTemplate));
     }
 
     private static IReadOnlyList<QuestCatalogParameter> ParseEdfParameters(string text)
@@ -886,6 +903,8 @@ internal static partial class QuestCatalogSemanticsExtractor
                     .Append('|').Append(field.EditorKind).Append('|').Append(field.Role)
                     .Append('|').Append(field.TypeName).Append('|').Append(field.IsRequired)
                     .Append('|').Append(field.Position).Append('|').Append(field.NamedArgument)
+                    .Append('|').Append(field.RequiresAngleBrackets)
+                    .Append('|').Append(field.AuthoringOrder)
                     .Append('|').AppendJoin(',', field.AllowedValues).Append('|')
                     .Append(field.PairedFieldId).Append('|').Append(field.Description)
                     .Append('\n');
@@ -942,6 +961,7 @@ internal static partial class QuestCatalogSemanticsExtractor
         public string Section { get; } = section;
         public IReadOnlyList<QuestCatalogParameter> Parameters { get; } = parameters;
         public string Source { get; } = source;
+        public string? AuthoringTemplate { get; init; }
         public List<string> Body { get; } = new();
     }
 
@@ -953,7 +973,8 @@ internal static partial class QuestCatalogSemanticsExtractor
         string? DirectPhaseType,
         string? AliasTarget,
         string? ProducedObjectType,
-        string Source);
+        string Source,
+        string? AuthoringTemplate);
 
     private sealed record DescriptionDefinition(
         string Name,

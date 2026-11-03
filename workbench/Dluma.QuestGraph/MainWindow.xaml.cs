@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using System.Runtime.InteropServices;
 using Dluma.QuestGraph.ViewModels;
 
 namespace Dluma.QuestGraph;
@@ -10,6 +11,9 @@ namespace Dluma.QuestGraph;
 public partial class MainWindow : Window
 {
     private bool _closingConfirmed;
+    private IntPtr _editorOwner;
+    private GraphCloseDialog? _closeDialog;
+    private FrameworkElement? _embeddedContent;
     private Point _paletteDragStart;
     private QuestPaletteItemViewModel? _paletteDragItem;
 
@@ -18,6 +22,46 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = viewModel;
     }
+
+    internal FrameworkElement ExtractPanelContent()
+    {
+        var root = (FrameworkElement)Content;
+        _embeddedContent = root;
+        Content = null;
+        root.DataContext = DataContext;
+        while (InputBindings.Count > 0)
+        {
+            var binding = InputBindings[0];
+            InputBindings.RemoveAt(0);
+            root.InputBindings.Add(binding);
+        }
+        return root;
+    }
+
+    internal void SetEditorOwner(IntPtr owner) => _editorOwner = owner;
+
+    internal void SetGraphInputEnabled(bool enabled)
+    {
+        if (_embeddedContent is not null) _embeddedContent.IsEnabled = enabled;
+    }
+
+    internal GraphCloseChoice PromptForGraphClose(int editorPid, bool includesSource)
+    {
+        if (_editorOwner == IntPtr.Zero || !IsWindow(_editorOwner) ||
+            GetWindowThreadProcessId(_editorOwner, out var pid) == 0 || pid != (uint)editorPid)
+            return GraphCloseChoice.Cancel;
+        var dialog = new GraphCloseDialog(_editorOwner, includesSource);
+        _closeDialog = dialog;
+        try { dialog.ShowDialog(); return dialog.Choice; }
+        finally { _closeDialog = null; }
+    }
+
+    internal void CancelGraphClosePrompt() => _closeDialog?.Close();
+
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+
+    internal void CloseEmbedded() { _closingConfirmed = true; Close(); }
 
     private async void OnClosing(object? sender, CancelEventArgs e)
     {

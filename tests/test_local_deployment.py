@@ -376,17 +376,22 @@ def test_native_runtime_admission_matches_loader_owned_mutable_root_contract():
         for path in deployment.PRESERVED_RUNTIME_DIAGNOSTIC_PATHS
     }
     expected_files = diagnostic_files | {
+        "asset_mods.ini",
         "custom_main_menu_activation.ini",
         "global_mods.ini",
+        "managed_mods.ini",
         "native_mods.ini",
         "startup_recovery.ini",
     }
     assert array_entries("g_dluma_runtime_mutable_root_files") == expected_files
     assert array_entries(
         "g_dluma_runtime_mutable_root_directories"
-    ) == {"crashes", "markers", "mod_config", "mod_data"}
+    ) == {"asset_mods", "cache", "developer_mode", "workshop_thumbnails", "crashes", "markers", "mod_config", "mod_data"}
     assert "depth == 0U" in source
     assert "dluma_runtime_tree_mutable_root_entry(" in source
+    assert 'L"quest_extensions.edf"' in source
+    assert 'L"quest_extensions.edf.tmp"' in source
+    assert 'L"managed_mods.ini.tmp."' in source
 
 
 def test_source_hash_mismatch_fails_before_any_destination_mutation(tmp_path):

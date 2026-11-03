@@ -147,7 +147,7 @@ def main() -> int:
         allowed_imports = {"KERNEL32.dll"}
     else:
         required = {"InitializeGameScriptDLL", "ShutdownGameScriptDLL", "DLUMA_GetVersion"}
-        allowed_imports = {"KERNEL32.dll", "USER32.dll", "WINHTTP.dll", "bcrypt.dll", "ADVAPI32.dll"}
+        allowed_imports = {"KERNEL32.dll", "USER32.dll", "GDI32.dll", "WINHTTP.dll", "bcrypt.dll", "ADVAPI32.dll"}
     errors = []
     if result["machine"] != "0x8664": errors.append("not x64")
     if args.profile == "nightly-launcher":

@@ -1,0 +1,14 @@
+{
+  "roles": [
+    ["Window", "#373737", "#E1E1E1"], ["Panel", "#323232", "#F0F0F0"],
+    ["Surface", "#161616", "#FAFAFA"], ["Alternate", "#1E1E1E", "#F0F0F0"],
+    ["Text", "#D2D2D2", "#1E1E1E"], ["ControlText", "#DCDCDC", "#1E1E1E"],
+    ["MutedText", "#AAAAAA", "#505050"], ["DisabledText", "#828282", "#737373"],
+    ["Border", "#232323", "#C8C8C8"], ["Hover", "#646464", "#E8E8E8"],
+    ["Accent", "#2A82DA", "#2A82DA"], ["Selection", "#236FB9", "#236FB9"],
+    ["SelectionText", "#FFFFFF", "#FFFFFF"], ["InactiveSelection", "#444F5D", "#D6DFE8"],
+    ["Error", "#FF7777", "#B42318"], ["Warning", "#E5A04B", "#8A4B00"],
+    ["Success", "#77C785", "#167A38"]
+  ],
+  "metrics": {"focus_border": 1, "separator": 1, "toolbar_padding": 4, "tab_padding_vertical": 4, "tab_padding_horizontal": 8, "dock_title_padding": 5, "selected_tab_edge": 3}
+}

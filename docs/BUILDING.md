@@ -6,7 +6,7 @@ The supported release build uses MSVC and produces a complete Workshop package. 
 - Python 3.11 or newer available as `python`.
 - .NET SDK **10.0.400** or a newer stable .NET 10 SDK feature band, as selected by `global.json`.
 
-The visual quest editor restores the pinned Nodify package through NuGet. A clean build may need network access for that restore.
+The visual quest editor restores the pinned Nodify package through NuGet. The Editor appearance helper also restores the pinned .NET Framework 4.0 reference assemblies for compilation. A clean build may need network access for these restores; the reference assemblies are not included in the package.
 
 The runtime packager maintains its own versioned cache under `build/dotnet-runtime`.
 It copies the pinned .NET and Windows Desktop runtimes from a complete installed
@@ -46,7 +46,7 @@ build/package/Release/
   dluma_runtime/
 ```
 
-`dluma_runtime/` contains the managed bootstrap and SDK, visual quest editor, pinned .NET and Windows Desktop runtime, runtime manifest, dependency notices, and release diagnostics. Distribute the complete package rather than copying only the `.mod` file.
+`dluma_runtime/` contains the managed bootstrap and SDK, visual quest editor, Editor appearance helpers, pinned .NET and Windows Desktop runtime, runtime manifest, dependency notices, and release diagnostics. Distribute the complete package rather than copying only the `.mod` file.
 
 ## Optional local deployment
 
@@ -78,6 +78,7 @@ Run the checks relevant to the components you changed:
 
 ```bat
 python tools/generate_api.py --check
+python tools/generate_editor_theme.py --check
 python tools/validate_localization.py
 python tools/verify_pe.py --json "bin/x64/Release/DLUMA (0.5.1).mod"
 python tools/verify_package_manifest.py --package-dir build/package/Release --mod-name "DLUMA (0.5.1).mod"

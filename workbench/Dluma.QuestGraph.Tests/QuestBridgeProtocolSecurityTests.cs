@@ -77,6 +77,19 @@ public sealed class QuestBridgeProtocolSecurityTests
     }
 
     [Fact]
+    public void PrivatePanelMessagesRequireValidHandlesAndTokens()
+    {
+        QuestBridgeClient.ValidateEnvelopeForSession(
+            Envelope("attachPanel", SessionToken, RequestId, new { parentWindow = 10, panelToken = 20 }), SessionToken);
+        QuestBridgePayloadValidator.Validate(new AttachPanelMessage(10, 20));
+        QuestBridgePayloadValidator.Validate(new PanelReadyRequest(10, 11, 20));
+        QuestBridgePayloadValidator.Validate(new PanelReadyResult(true, 1, ""));
+        Assert.Throws<InvalidDataException>(() => QuestBridgePayloadValidator.Validate(new AttachPanelMessage(0, 20)));
+        Assert.Throws<InvalidDataException>(() => QuestBridgePayloadValidator.Validate(new PanelReadyRequest(10, 11, 0)));
+        Assert.Throws<InvalidDataException>(() => QuestBridgePayloadValidator.Validate(new PanelReadyResult(true, 0, "")));
+    }
+
+    [Fact]
     public void ForgedDocumentHashAndTraversalAreRejected()
     {
         var bytes = Encoding.UTF8.GetBytes("quest synthetic");

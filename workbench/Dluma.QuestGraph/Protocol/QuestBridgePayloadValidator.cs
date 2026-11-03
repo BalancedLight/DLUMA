@@ -44,6 +44,39 @@ public static class QuestBridgePayloadValidator
                 }
                 RequireNonNegative(value.ContextGeneration, nameof(value.ContextGeneration));
                 break;
+            case AttachPanelMessage value:
+                if (value.ParentWindow <= 0 || value.PanelToken == 0)
+                    throw new InvalidDataException("Invalid panel attachment.");
+                break;
+            case PanelReadyRequest value:
+                if (value.ParentWindow <= 0 || value.ChildWindow <= 0 || value.PanelToken == 0)
+                    throw new InvalidDataException("Invalid panel binding.");
+                break;
+            case PanelReadyResult value:
+                if (value.Bound && value.BindingGeneration == 0)
+                    throw new InvalidDataException("Invalid panel binding generation.");
+                RequireString(value.Message, nameof(value.Message), allowEmpty: true);
+                break;
+            case ClosePreflightMessage value:
+                if (value.CloseToken == 0) throw new InvalidDataException("Invalid close token.");
+                ValidateCloseDocuments(value.Documents);
+                break;
+            case CompleteCloseRequest value:
+                if (value.CloseToken == 0) throw new InvalidDataException("Invalid close token.");
+                ValidateCloseDocuments(value.Documents);
+                break;
+            case CloseFinishedMessage value:
+                if (value.CloseToken == 0) throw new InvalidDataException("Invalid close token.");
+                if (value.ClosedDocumentIds is null) throw new InvalidDataException("Close documents are required.");
+                if (value.ClosedDocumentIds.Count > 16) throw new InvalidDataException("Too many close documents.");
+                var closedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var id in value.ClosedDocumentIds)
+                {
+                    if (id is null) throw new InvalidDataException("Invalid close document ID.");
+                    RequireHash(id, nameof(value.ClosedDocumentIds));
+                    if (!closedIds.Add(id)) throw new InvalidDataException("Duplicate close document.");
+                }
+                break;
             case OpenDocumentMessage value:
                 ValidateDocumentIdentity(
                     value.DocumentId,
@@ -74,6 +107,16 @@ public static class QuestBridgePayloadValidator
                     value.EncodingName,
                     value.Bytes,
                     value.Sha256);
+                break;
+            case SourceSavedMessage value:
+                ValidateDocumentIdentity(
+                    value.DocumentId,
+                    "sourceSaved",
+                    value.Revision,
+                    value.EncodingName,
+                    value.Bytes,
+                    value.Sha256);
+                OptionalAbsolutePath(value.DiskPath, nameof(value.DiskPath));
                 break;
             case SaveDocumentRequest value:
                 ValidateSourceRequest(
@@ -204,6 +247,22 @@ public static class QuestBridgePayloadValidator
             default:
                 throw new InvalidDataException(
                     $"Bridge payload type '{payload.GetType().Name}' is unsupported.");
+        }
+    }
+
+    private static void ValidateCloseDocuments(IReadOnlyList<CloseDocumentSnapshot> documents)
+    {
+        if (documents is null) throw new InvalidDataException("Close documents are required.");
+        if (documents.Count > 16) throw new InvalidDataException("Too many close documents.");
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in documents)
+        {
+            if (item is null || item.DocumentId is null || item.Sha256 is null)
+                throw new InvalidDataException("Invalid close document.");
+            RequireHash(item.DocumentId, nameof(item.DocumentId));
+            RequireHash(item.Sha256, nameof(item.Sha256));
+            RequireNonNegative(item.Revision, nameof(item.Revision));
+            if (!ids.Add(item.DocumentId)) throw new InvalidDataException("Duplicate close document.");
         }
     }
 

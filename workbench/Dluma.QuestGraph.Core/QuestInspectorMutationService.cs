@@ -91,7 +91,8 @@ public static class QuestInspectorMutationService
                 Encode(encoding, whole), $"Updated {field.DisplayName}.");
         }
 
-        if (value.Equals("_", StringComparison.Ordinal) && token.IsWrapped)
+        if (value.Equals("_", StringComparison.Ordinal) && token.IsWrapped &&
+            !field.RequiresAngleBrackets)
         {
             var placeholder = token.IsNamed
                 ? "-" + (field.NamedArgument ?? token.NamedArgument) + "=_"
@@ -130,6 +131,21 @@ public static class QuestInspectorMutationService
         var formatted = FormatWholeValue(field, value, string.Empty, preserveExistingWrapper: false);
         if (!string.IsNullOrWhiteSpace(field.NamedArgument))
         {
+            if (field.AuthoringOrder is int order)
+            {
+                var entry = document.Catalog!.Entries.First(value =>
+                    value.Kind == QuestCatalogEntryKind.Macro &&
+                    value.Name.Equals(node.Name, StringComparison.OrdinalIgnoreCase));
+                foreach (var later in entry.InspectorFields.Where(value =>
+                    value.AuthoringOrder > order).OrderBy(value => value.AuthoringOrder))
+                {
+                    var next = FindToken(node, later);
+                    if (next is not null)
+                        return Mutation(document, next.Span.Start, 0,
+                            Encode(encoding, "-" + field.NamedArgument + "=" + formatted + " "),
+                            $"Set {field.DisplayName}.");
+                }
+            }
             var insertion = " -" + field.NamedArgument + "=" + formatted;
             return Mutation(document, node.Span.End, 0, Encode(encoding, insertion),
                 $"Set {field.DisplayName}.");
@@ -180,6 +196,9 @@ public static class QuestInspectorMutationService
         string? value)
     {
         var normalized = value?.Trim() ?? string.Empty;
+        if (field.AuthoringOrder.HasValue && normalized.Length == 0)
+            throw new QuestInspectorException(QuestInspectorRejection.InvalidValue,
+                $"{field.DisplayName} is required.");
         if (normalized.Length == 0 &&
             field.Role is QuestInspectorFieldRole.PhaseName or QuestInspectorFieldRole.NodeName)
             return "_";
@@ -230,7 +249,7 @@ public static class QuestInspectorMutationService
         string existingRaw,
         bool preserveExistingWrapper)
     {
-        if (value.Equals("_", StringComparison.Ordinal))
+        if (value.Equals("_", StringComparison.Ordinal) && !field.RequiresAngleBrackets)
             return "_";
 
         // A phase name has exactly two legal forms: _ when blank, otherwise <<name>>.
@@ -242,6 +261,9 @@ public static class QuestInspectorMutationService
                 ? value
                 : PxslValueWrapping.Wrap(value, PxslValueWrapper.AngleBrackets);
         }
+
+        if (field.RequiresAngleBrackets)
+            return PxslValueWrapping.Wrap(UnwrapInput(value), PxslValueWrapper.AngleBrackets);
 
         if (IsExplicitlyWrapped(value))
             return value;

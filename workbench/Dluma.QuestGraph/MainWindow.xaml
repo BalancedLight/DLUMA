@@ -17,13 +17,17 @@
     <KeyBinding Key="F7" Command="{Binding CompileCommand}" />
   </Window.InputBindings>
 
-  <Grid>
+  <Grid Background="{DynamicResource EditorTheme.Window}"
+        TextElement.Foreground="{DynamicResource EditorTheme.Text}"
+        TextElement.FontFamily="Segoe UI"
+        TextElement.FontSize="{DynamicResource {x:Static SystemFonts.MessageFontSizeKey}}">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <Border Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,10">
+    <Border Grid.Row="0" Background="{DynamicResource EditorTheme.Panel}" BorderBrush="{DynamicResource EditorTheme.Border}" BorderThickness="0,0,0,1" Padding="12,10">
       <DockPanel LastChildFill="True">
         <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
           <Button Content="Open PXSL" Command="{Binding OpenCommand}" ToolTip="Open a persisted PXSL document (Ctrl+O)" />
@@ -35,9 +39,9 @@
           <Button Content="Load Definitions" Command="{Binding LoadCatalogCommand}" />
         </StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-          <Ellipse Width="9" Height="9" Fill="{StaticResource AccentBrush}" Margin="0,0,8,0" />
+          <Ellipse Width="9" Height="9" Fill="{DynamicResource EditorTheme.Accent}" Margin="0,0,8,0" />
           <TextBlock Text="{Binding ConnectionStatus}"
-                     Foreground="{StaticResource MutedBrush}" />
+                     Foreground="{DynamicResource EditorTheme.MutedText}" />
         </StackPanel>
       </DockPanel>
     </Border>
@@ -51,7 +55,7 @@
         <ColumnDefinition Width="310" MinWidth="250" />
       </Grid.ColumnDefinitions>
 
-      <Border Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0" Padding="10">
+      <Border Grid.Column="0" Background="{DynamicResource EditorTheme.Panel}" BorderBrush="{DynamicResource EditorTheme.Border}" BorderThickness="0,0,1,0" Padding="10">
         <Grid>
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -59,7 +63,7 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
-          <TextBlock Text="NODE PALETTE" FontSize="12" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" Margin="2,0,0,8" />
+          <TextBlock Text="NODE PALETTE" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource EditorTheme.MutedText}" Margin="2,0,0,8" />
           <TextBox Grid.Row="1" Text="{Binding PaletteSearch, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" ToolTip="Search all runtime-catalog macros" />
           <ListBox x:Name="PaletteList"
                    Grid.Row="2"
@@ -78,11 +82,11 @@
                         <ControlTemplate TargetType="GroupItem">
                           <Expander IsExpanded="True"
                                     Margin="0,2,0,4"
-                                    Foreground="{Binding Items[0].HeaderColor}">
+                                    Foreground="{DynamicResource EditorTheme.Text}">
                             <Expander.Header>
                               <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding ItemCount, StringFormat=  ({0})}" Foreground="{StaticResource MutedBrush}" />
+                                <TextBlock Text="{Binding ItemCount, StringFormat=  ({0})}" Foreground="{DynamicResource EditorTheme.MutedText}" />
                               </StackPanel>
                             </Expander.Header>
                             <ItemsPresenter Margin="10,3,0,0" />
@@ -99,7 +103,18 @@
                 <Border BorderBrush="{Binding HeaderColor}" BorderThickness="3,0,0,0" Padding="7,3,3,3">
                   <StackPanel>
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding Description}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                    <TextBlock Text="{Binding Description}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0">
+                      <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                          <Setter Property="Foreground" Value="{DynamicResource EditorTheme.MutedText}" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                              <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </TextBlock.Style>
+                    </TextBlock>
                   </StackPanel>
                 </Border>
               </DataTemplate>
@@ -116,7 +131,7 @@
         </Grid>
       </Border>
 
-      <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}" />
+      <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource EditorTheme.Border}" />
 
       <Grid Grid.Column="2">
         <TabControl ItemsSource="{Binding Documents}" SelectedItem="{Binding ActiveDocument}">
@@ -124,7 +139,20 @@
             <DataTemplate>
               <StackPanel Orientation="Horizontal">
                 <TextBlock Text="{Binding TabTitle}" />
-                <TextBlock Text="  &#x00D7;" Foreground="{StaticResource MutedBrush}" ToolTip="Use Ctrl+W to close" />
+                <Button Content="&#x00D7;" Width="18" Height="18" MinWidth="0" MinHeight="0" Padding="0" Margin="6,0,0,0"
+                        ToolTip="Close (Ctrl+W)"
+                        Command="{Binding DataContext.CloseCommand, RelativeSource={RelativeSource AncestorType=TabControl}}">
+                  <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                      <Setter Property="Visibility" Value="Collapsed" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TabItem}}" Value="True">
+                          <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Button.Style>
+                </Button>
               </StackPanel>
             </DataTemplate>
           </TabControl.ItemTemplate>
@@ -135,7 +163,7 @@
           </TabControl.ContentTemplate>
         </TabControl>
 
-        <Border Background="{StaticResource WindowBrush}">
+        <Border Background="{DynamicResource EditorTheme.Window}">
           <Border.Style>
             <Style TargetType="Border">
               <Setter Property="Visibility" Value="Collapsed" />
@@ -150,18 +178,36 @@
             <TextBlock Text="Visual PXSL Quest Editor" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
             <TextBlock Text="Open a PXSL quest to begin."
                        TextAlignment="Center"
-                       Foreground="{StaticResource MutedBrush}"
+                       Foreground="{DynamicResource EditorTheme.MutedText}"
                        Margin="0,12,0,22" />
             <Button Content="Open PXSL" Command="{Binding OpenCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Center" />
           </StackPanel>
         </Border>
       </Grid>
 
-      <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}" />
+      <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource EditorTheme.Border}" />
 
-      <Border Grid.Column="4" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+      <Border Grid.Column="4" Background="{DynamicResource EditorTheme.Panel}" BorderBrush="{DynamicResource EditorTheme.Border}" BorderThickness="1,0,0,0">
         <views:QuestInspectorPanel DataContext="{Binding ActiveDocument}" />
       </Border>
     </Grid>
+    <Border Grid.Row="2" Background="{DynamicResource EditorTheme.Panel}"
+            BorderBrush="{DynamicResource EditorTheme.Border}" BorderThickness="0,1,0,0" Padding="12,6">
+      <Border.Style>
+        <Style TargetType="Border">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding GlobalStatus}" Value="">
+              <Setter Property="Visibility" Value="Collapsed" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding GlobalStatus}" Value="{x:Null}">
+              <Setter Property="Visibility" Value="Collapsed" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Border.Style>
+      <ScrollViewer MaxHeight="80" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <TextBlock Text="{Binding GlobalStatus}" TextWrapping="Wrap" />
+      </ScrollViewer>
+    </Border>
   </Grid>
 </Window>

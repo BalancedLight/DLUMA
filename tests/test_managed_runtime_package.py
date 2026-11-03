@@ -18,7 +18,7 @@ def _write(path: Path, data: bytes) -> None:
     path.write_bytes(data)
 
 
-def _fake_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+def _fake_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
     dotnet = tmp_path / "dotnet"
     _write(dotnet / "dotnet.exe", b"dotnet")
     _write(
@@ -78,14 +78,17 @@ def _fake_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
             quest_graph.joinpath(*Path(name).parts),
             name.encode("ascii"),
         )
-    return dotnet, managed, quest_graph, catalog_hash
+    editor_theme = tmp_path / "editor-theme"
+    for name in build_managed_runtime.EDITOR_THEME_ARTIFACTS:
+        _write(editor_theme / name, name.encode("ascii"))
+    return dotnet, managed, quest_graph, editor_theme, catalog_hash
 
 
 def _assemble(tmp_path: Path) -> tuple[Path, dict[str, object]]:
-    dotnet, managed, quest_graph, catalog_hash = _fake_inputs(tmp_path)
+    dotnet, managed, quest_graph, editor_theme, catalog_hash = _fake_inputs(tmp_path)
     output = tmp_path / "package"
     sources = build_managed_runtime.collect_sources(
-        dotnet, managed, RUNTIME_VERSION, quest_graph
+        dotnet, managed, RUNTIME_VERSION, quest_graph, editor_theme
     )
     manifest = build_managed_runtime.build_manifest(
         sources,
@@ -96,8 +99,30 @@ def _assemble(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     return output, manifest
 
 
+@pytest.mark.parametrize("include_splash", [False, True])
+def test_optional_startup_image_remains_manifest_verified(tmp_path: Path, include_splash: bool) -> None:
+    dotnet, managed, quest_graph, editor_theme, catalog_hash = _fake_inputs(tmp_path)
+    if include_splash:
+        _write(editor_theme / "startup.gif", b"GIF89a")
+    sources = build_managed_runtime.collect_sources(
+        dotnet, managed, RUNTIME_VERSION, quest_graph, editor_theme
+    )
+    manifest = build_managed_runtime.build_manifest(
+        sources, RUNTIME_VERSION, build_managed_runtime.read_catalog_hash(catalog_hash)
+    )
+    output = tmp_path / "package"
+    build_managed_runtime.write_runtime(output, sources, manifest)
+    build_managed_runtime.verify_runtime(output)
+    splash = output / "dluma_runtime/editor/startup.gif"
+    assert splash.exists() == include_splash
+    if include_splash:
+        splash.write_bytes(b"GIF89b")
+        with pytest.raises(ValueError, match="SHA-256 changed"):
+            build_managed_runtime.verify_runtime(output)
+
+
 def test_runtime_cache_survives_installed_runtime_removal(tmp_path: Path) -> None:
-    installed, _, _, _ = _fake_inputs(tmp_path)
+    installed, _, _, _, _ = _fake_inputs(tmp_path)
     cache_parent = tmp_path / "cache"
     cached = dotnet_runtime_source.prepare_runtime(RUNTIME_VERSION, [installed], cache_parent)
     installed.rename(tmp_path / "removed-sdk")
@@ -106,7 +131,7 @@ def test_runtime_cache_survives_installed_runtime_removal(tmp_path: Path) -> Non
 
 
 def test_runtime_cache_restores_missing_runtime_once(tmp_path: Path, monkeypatch) -> None:
-    installed, _, _, _ = _fake_inputs(tmp_path)
+    installed, _, _, _, _ = _fake_inputs(tmp_path)
     restored = []
 
     def download(destination: Path, version: str) -> None:
@@ -148,6 +173,8 @@ def test_private_runtime_manifest_is_deterministic_and_exact(tmp_path: Path) -> 
     assert "quest-graph/Dluma.QuestGraph.exe" in paths
     assert "quest-graph/Nodify.dll" in paths
     assert "quest-graph/Licenses/Nodify-MIT.txt" in paths
+    assert "editor/dluma_editor_theme_system.dll" in paths
+    assert "editor/Dluma.EditorTheme.Framework.dll" in paths
     assert "managed/Dluma.Managed.Bootstrap.dll" in paths
     assert "managed/Dluma.Managed.Sdk.dll" in paths
     manifest_bytes = (
@@ -205,6 +232,17 @@ def test_runtime_verification_rejects_manifest_path_escape(
 
     with pytest.raises(ValueError, match="unsafe path"):
         build_managed_runtime.verify_runtime(output)
+
+    data["files"][0]["path"] = "editor/quest_extensions.edf"
+    manifest_path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="generated Editor data"):
+        build_managed_runtime.verify_runtime(output)
+
+    for mutable in ("managed_mods.ini", "managed_mods.ini.tmp.42"):
+        data["files"][0]["path"] = mutable
+        manifest_path.write_text(json.dumps(data), encoding="utf-8")
+        with pytest.raises(ValueError, match="managed settings"):
+            build_managed_runtime.verify_runtime(output)
 
 
 def test_manifest_hashes_are_sha256(tmp_path: Path) -> None:

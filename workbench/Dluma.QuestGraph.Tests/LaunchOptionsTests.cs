@@ -33,6 +33,20 @@ public sealed class LaunchOptionsTests
         Assert.Equal(new[] { "quests/first.pxsl", "quests/second.pxsl" }, options.Files);
     }
 
+    [Fact]
+    public void PanelLaunchRequiresAuthenticatedConnectionAndValidTuple()
+    {
+        var connected = new[] { "--pipe", "dluma.test", "--session-token", new string('a', 32), "--editor-pid", "42" };
+        var options = LaunchOptions.Parse(connected.Concat(new[] { "--panel-parent", "123", "--panel-token", "18446744073709551615" }).ToArray());
+        Assert.Equal(123, options.PanelParent);
+        Assert.Equal(ulong.MaxValue, options.PanelToken);
+        Assert.Throws<ArgumentException>(() => LaunchOptions.Parse(new[] { "--panel-parent", "123", "--panel-token", "1" }));
+        Assert.Throws<ArgumentException>(() => LaunchOptions.Parse(connected.Concat(new[] { "--panel-parent", "123" }).ToArray()));
+        Assert.Throws<ArgumentException>(() => LaunchOptions.Parse(connected.Concat(new[] { "--panel-parent", "0", "--panel-token", "1" }).ToArray()));
+        Assert.Throws<ArgumentException>(() => LaunchOptions.Parse(connected.Concat(new[] { "--panel-parent", "123", "--panel-token", "0" }).ToArray()));
+        Assert.Throws<ArgumentException>(() => LaunchOptions.Parse(new[] { "--smoke-test", "--panel-parent", "1", "--panel-token", "1" }));
+    }
+
     [Theory]
     [MemberData(nameof(HostileArguments))]
     public void HostileOrAmbiguousArgumentsFailClosed(string?[] arguments)

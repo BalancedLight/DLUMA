@@ -880,7 +880,14 @@ static int dluma_qp_append_macro(
     const char* command,
     int builtin)
 {
-    return dluma_qp_append(output, capacity, size, ",") &&
+    return dluma_qp_append(output, capacity, size, "# DLUMA authoring: ,") &&
+        dluma_qp_append(output, capacity, size, command) &&
+        dluma_qp_append(output, capacity, size, " <<phase_name>> ") &&
+        (!builtin || dluma_qp_append(output, capacity, size,
+            "-mod=<<mod.id>> -handler=<<handler>> ")) &&
+        dluma_qp_append(output, capacity, size,
+            "-arguments=<<{}>> -wait=0\r\n") &&
+        dluma_qp_append(output, capacity, size, ",") &&
         dluma_qp_append(output, capacity, size, command) &&
         dluma_qp_append(
             output, capacity, size,

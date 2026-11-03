@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Data;
@@ -26,8 +27,20 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly IFileDialogService _fileDialogs;
     private readonly QuestBridgeClient _bridge;
     private readonly LaunchOptions _launchOptions;
+    private sealed class SidecarWriteState
+    {
+        public SidecarWriteState() { }
+        public SemaphoreSlim Gate { get; } = new(1, 1);
+        public string? SourceHash { get; set; }
+        public string? Fingerprint { get; set; }
+    }
+
+    private readonly ConditionalWeakTable<QuestDocumentViewModel, SidecarWriteState> _sidecarWrites = new();
     private readonly object _bridgeNotificationGate = new();
     private Task _bridgeNotificationTail = Task.CompletedTask;
+    private ulong _closeToken;
+    private readonly HashSet<string> _closeDocumentIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _suppressCloseSidecars = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<QuestPaletteItemViewModel> _allPaletteItems = new();
     private QuestDocumentViewModel? _activeDocument;
     private QuestPaletteItemViewModel? _selectedPaletteItem;
@@ -234,7 +247,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 var processPath = Environment.ProcessPath ??
                     throw new InvalidOperationException("The companion executable path is unavailable.");
                 var executableHash = Convert.ToHexString(SHA256.HashData(
-                    await File.ReadAllBytesAsync(processPath).ConfigureAwait(false)));
+                    await File.ReadAllBytesAsync(processPath).ConfigureAwait(true)));
                 await _bridge.ConnectAsync(
                     _launchOptions.PipeName!,
                     _launchOptions.SessionToken!,
@@ -273,6 +286,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     ConnectionDetails = exception.Message;
                 }
                 GlobalStatus = ConnectionDetails;
+                // Embedded startup must report the original failure to App's
+                // diagnostic handler instead of continuing as an offline panel.
+                if (_launchOptions.PanelParent is not null)
+                    throw;
             }
         }
 
@@ -303,6 +320,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
+            var source = document.Model.Source;
+            var sourceBytes = source.ToArray();
             if (document.RequiresConnection)
             {
                 if (string.IsNullOrWhiteSpace(_projectRoot))
@@ -312,9 +331,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     document.SourcePath);
                 var request = new SaveDocumentWireRequest(
                     document.DocumentId,
-                    document.Revision,
-                    document.SourceSha256,
-                    document.SourceSha256);
+                    source.Revision,
+                    source.Sha256,
+                    source.Sha256);
                 var result = await _bridge.RequestAsync<SaveDocumentWireRequest, SaveDocumentResult>(
                     "saveDocument",
                     request,
@@ -324,8 +343,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     document.Status = result.Cancelled ? "Save was cancelled in Developer Tools." : result.Message;
                     return new(false, false, false, document.Status);
                 }
-                if (result.Revision != document.Revision ||
-                    !string.Equals(result.Sha256, document.SourceSha256, StringComparison.OrdinalIgnoreCase))
+                if (result.Revision != source.Revision ||
+                    !string.Equals(result.Sha256, source.Sha256, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("Developer Tools saved a different source revision.");
                 if (result.DiskPath is not null &&
                     !string.Equals(
@@ -336,32 +355,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
             else
             {
-                await _documentService.SaveSourceAsync(document.SourcePath, document.Model.Source)
+                await _documentService.SaveSourceAsync(document.SourcePath, source)
                     .ConfigureAwait(true);
             }
-            document.MarkSourceSaved();
-
-            if (document.PreserveExistingSidecar)
-            {
-                document.Status = "PXSL saved. The invalid or future layout sidecar was preserved, so the current layout was not published and Compile is blocked. Use Save Copy to publish a new layout safely.";
-                GlobalStatus = document.Status;
-                return new(true, false, true, document.Status);
-            }
-            try
-            {
-                await _documentService.SaveSidecarAsync(document.SourcePath, document.CreateSidecar())
-                    .ConfigureAwait(true);
-                document.MarkLayoutSaved();
-            }
-            catch (Exception exception) when (
-                exception is IOException or UnauthorizedAccessException or InvalidDataException)
-            {
-                document.Status = $"PXSL saved, but its layout sidecar could not be updated: {exception.Message}";
-                GlobalStatus = document.Status;
-                return new(true, false, false, document.Status);
-            }
-            GlobalStatus = document.Status;
-            return new(true, true, false, document.Status);
+            if (!string.Equals(document.DocumentId, source.DocumentId, StringComparison.Ordinal))
+                throw new InvalidDataException("The Developer Tools document changed while saving.");
+            document.MarkSourceSaved(source.Revision, source.Sha256, sourceBytes);
+            return await SaveCurrentSidecarAsync(document, source.Sha256).ConfigureAwait(true);
         }
         catch (Exception exception)
         {
@@ -373,6 +373,81 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             IsBusy = false;
         }
+    }
+
+    private async Task<QuestDocumentSaveReceipt> SaveCurrentSidecarAsync(
+        QuestDocumentViewModel document, string savedSourceHash)
+    {
+        if (document.PreserveExistingSidecar)
+        {
+            document.Status = "PXSL saved. The invalid or future layout sidecar was preserved, so the current layout was not published and Compile is blocked. Use Save Copy to publish a new layout safely.";
+            GlobalStatus = document.Status;
+            return new(true, false, true, document.Status);
+        }
+        var state = _sidecarWrites.GetOrCreateValue(document);
+        await state.Gate.WaitAsync().ConfigureAwait(true);
+        try
+        {
+            var path = document.SourcePath;
+            if (path is null || document.IsStaleSession ||
+                !string.Equals(document.SourceSha256, savedSourceHash, StringComparison.OrdinalIgnoreCase))
+            {
+                document.Status = "Source changed before its layout could be saved.";
+                GlobalStatus = document.Status;
+                return new(true, false, false, document.Status);
+            }
+            if (document.RequiresConnection)
+            {
+                if (string.IsNullOrWhiteSpace(_projectRoot))
+                    throw new InvalidDataException("The active Developer Tools project root is unavailable.");
+                SafeProjectPath.RequireContainedNonReparsePath(_projectRoot, path);
+            }
+            var snapshot = document.CaptureLayoutSave();
+            await using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                var diskHash = Convert.ToHexString(await SHA256.HashDataAsync(stream).ConfigureAwait(true));
+                if (!string.Equals(diskHash, savedSourceHash, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(document.SourceSha256, savedSourceHash, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(document.SourcePath, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    document.Status = "Source changed before its layout could be saved.";
+                    GlobalStatus = document.Status;
+                    return new(true, false, false, document.Status);
+                }
+            }
+            if (document.RequiresConnection)
+                SafeProjectPath.RequireContainedNonReparsePath(_projectRoot!, path);
+            if (!string.Equals(state.SourceHash, savedSourceHash, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(state.Fingerprint, snapshot.Fingerprint, StringComparison.Ordinal) ||
+                !File.Exists(QuestDocumentService.SidecarPath(path)))
+                await _documentService.SaveSidecarAsync(path, snapshot.Sidecar).ConfigureAwait(true);
+            await using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                var diskHash = Convert.ToHexString(await SHA256.HashDataAsync(stream).ConfigureAwait(true));
+                if (!string.Equals(diskHash, savedSourceHash, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(document.SourceSha256, savedSourceHash, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(document.SourcePath, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    document.Status = "Source changed while its layout was being saved.";
+                    GlobalStatus = document.Status;
+                    return new(true, false, false, document.Status);
+                }
+            }
+            state.SourceHash = savedSourceHash;
+            state.Fingerprint = snapshot.Fingerprint;
+            document.MarkLayoutSaved(snapshot);
+            if (document.IsLayoutDirty)
+                document.Status = "Layout changed while it was being saved.";
+            GlobalStatus = document.Status;
+            return new(true, !document.IsLayoutDirty, false, document.Status);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            document.Status = $"PXSL saved, but its layout sidecar could not be updated: {exception.Message}";
+            GlobalStatus = document.Status;
+            return new(true, false, false, document.Status);
+        }
+        finally { state.Gate.Release(); }
     }
 
     public async Task<bool> TryCloseDocumentAsync(QuestDocumentViewModel document, bool force = false)
@@ -893,9 +968,46 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                             StringComparison.OrdinalIgnoreCase));
                     if (document is null)
                         throw new InvalidDataException("The bridge sent sourceChanged before its admitted openDocument.");
+                    if (message.Revision < document.Revision)
+                        break;
+                    if (message.Revision == document.Revision)
+                    {
+                        if (!string.Equals(message.Sha256, document.SourceSha256, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidDataException("The bridge sent conflicting source for a revision.");
+                        break;
+                    }
                     document.ReplaceConnectedSnapshot(message, _catalog);
                     break;
                 }
+                case "sourceSaved":
+                {
+                    var message = QuestBridgeClient.DeserializePayload<SourceSavedMessage>(envelope);
+                    var document = Documents.FirstOrDefault(item =>
+                        string.Equals(item.DocumentId, message.DocumentId, StringComparison.Ordinal) &&
+                        string.Equals(item.ConnectedProjectRoot, _projectRoot, StringComparison.OrdinalIgnoreCase));
+                    if (document is null)
+                        throw new InvalidDataException("The bridge sent sourceSaved before its admitted openDocument.");
+                    if (message.DiskPath is not null && (document.SourcePath is null ||
+                        !string.Equals(Path.GetFullPath(message.DiskPath), Path.GetFullPath(document.SourcePath), StringComparison.OrdinalIgnoreCase)))
+                        throw new InvalidDataException("Developer Tools saved a different PXSL path.");
+                    if (message.Revision == document.Revision &&
+                        !string.Equals(message.Sha256, document.SourceSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException("The bridge sent conflicting source for a revision.");
+                    if (message.Revision > document.Revision)
+                        document.ReplaceConnectedSnapshot(new SourceChangedMessage(message.DocumentId, message.Revision,
+                            message.EncodingName, message.Bytes, message.Sha256), _catalog);
+                    if (document.MarkSourceSaved(message.Revision, message.Sha256, message.Bytes) &&
+                        !_suppressCloseSidecars.Contains(message.DocumentId) &&
+                        string.Equals(document.SourceSha256, message.Sha256, StringComparison.OrdinalIgnoreCase))
+                        _ = await SaveCurrentSidecarAsync(document, message.Sha256).ConfigureAwait(true);
+                    break;
+                }
+                case "closePreflight":
+                    await HandleClosePreflightAsync(QuestBridgeClient.DeserializePayload<ClosePreflightMessage>(envelope)).ConfigureAwait(true);
+                    break;
+                case "closeFinished":
+                    HandleCloseFinished(QuestBridgeClient.DeserializePayload<CloseFinishedMessage>(envelope));
+                    break;
                 case "activateDocument":
                 {
                     var message = QuestBridgeClient.DeserializePayload<ActivateDocumentRequest>(envelope);
@@ -933,8 +1045,100 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    private QuestDocumentViewModel? FindCloseDocument(string id) => Documents.FirstOrDefault(document =>
+        document.RequiresConnection && document.IsConnected &&
+        string.Equals(document.DocumentId, id, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(document.ConnectedProjectRoot, _projectRoot, StringComparison.OrdinalIgnoreCase));
+
+    private async Task HandleClosePreflightAsync(ClosePreflightMessage message)
+    {
+        if (_closeToken != 0)
+            throw new InvalidDataException("A close operation is already pending.");
+        _closeToken = message.CloseToken;
+        (Application.Current.MainWindow as MainWindow)?.SetGraphInputEnabled(false);
+        _closeDocumentIds.Clear();
+        _suppressCloseSidecars.Clear();
+        foreach (var snapshot in message.Documents) _closeDocumentIds.Add(snapshot.DocumentId);
+
+        var documents = message.Documents.Select(snapshot => (Snapshot: snapshot, Document: FindCloseDocument(snapshot.DocumentId))).ToArray();
+        var allow = documents.All(item => item.Document is not null &&
+            item.Document.Revision == item.Snapshot.Revision &&
+            string.Equals(item.Document.SourceSha256, item.Snapshot.Sha256, StringComparison.OrdinalIgnoreCase));
+        var dirty = message.CloseAll
+            ? Documents.Where(document => document.IsLayoutDirty).ToArray()
+            : documents.Where(item => item.Document?.IsLayoutDirty == true).Select(item => item.Document!).ToArray();
+        if (allow && dirty.Length > 0)
+        {
+            var editorPid = _bridge.AuthenticatedEditorProcessId;
+            var choice = editorPid is > 0 && Application.Current.MainWindow is MainWindow window
+                ? window.PromptForGraphClose(editorPid.Value, dirty.Any(document => document.MayHaveUnsavedSource))
+                : GraphCloseChoice.Cancel;
+            if (_bridge.AuthenticatedEditorProcessId != editorPid || editorPid is null)
+                return;
+            if (choice == GraphCloseChoice.Cancel)
+                allow = false;
+            else if (choice == GraphCloseChoice.Discard)
+            {
+                foreach (var document in dirty) _suppressCloseSidecars.Add(document.DocumentId);
+            }
+            else
+            {
+                foreach (var document in dirty)
+                {
+                    var receipt = await SaveDocumentAsync(document).ConfigureAwait(true);
+                    if (!receipt.CanCompile || document.IsDirty || (document.RequiresConnection && !document.IsConnected))
+                    {
+                        allow = false;
+                        break;
+                    }
+                }
+            }
+        }
+        if (_bridge.AuthenticatedEditorProcessId is null)
+            return;
+        var current = documents.Select(item => item.Document is { } document
+            ? new CloseDocumentSnapshot(document.DocumentId, document.Revision, document.SourceSha256)
+            : item.Snapshot).ToArray();
+        try
+        {
+            var result = await _bridge.CompleteCloseAsync(new CompleteCloseRequest(message.CloseToken, allow, current)).ConfigureAwait(true);
+            if (!result.Success)
+            {
+                GlobalStatus = result.Message;
+                _bridge.AbortProtocolSession(result.Message);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or OperationCanceledException)
+        {
+            GlobalStatus = exception.Message;
+            _bridge.AbortProtocolSession(exception.Message);
+        }
+    }
+
+    private void HandleCloseFinished(CloseFinishedMessage message)
+    {
+        if (_closeToken == 0 || message.CloseToken != _closeToken ||
+            message.ClosedDocumentIds.Any(id => !_closeDocumentIds.Contains(id)))
+            throw new InvalidDataException("The bridge returned an unexpected close result.");
+        foreach (var id in message.ClosedDocumentIds)
+        {
+            var document = Documents.FirstOrDefault(item => item.RequiresConnection &&
+                string.Equals(item.DocumentId, id, StringComparison.OrdinalIgnoreCase));
+            if (document is not null) Documents.Remove(document);
+        }
+        if (ActiveDocument is not null && !Documents.Contains(ActiveDocument))
+            ActiveDocument = Documents.LastOrDefault();
+        OnPropertyChanged(nameof(HasDocuments));
+        _closeToken = 0;
+        _closeDocumentIds.Clear();
+        _suppressCloseSidecars.Clear();
+        (Application.Current.MainWindow as MainWindow)?.SetGraphInputEnabled(true);
+    }
+
     private void OnBridgeDisconnected(object? sender, string reason)
     {
+        _ = Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+            (Application.Current.MainWindow as MainWindow)?.CancelGraphClosePrompt()));
         EnqueueBridgeAction(() =>
         {
             MarkDisconnected(reason);
@@ -944,6 +1148,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void MarkDisconnected(string reason)
     {
+        _closeToken = 0;
+        _closeDocumentIds.Clear();
+        _suppressCloseSidecars.Clear();
         ConnectionStatus = "Offline";
         ConnectionDetails = reason;
         GlobalStatus = reason;

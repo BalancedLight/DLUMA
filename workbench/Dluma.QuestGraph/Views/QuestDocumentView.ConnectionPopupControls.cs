@@ -98,9 +98,9 @@ public partial class QuestDocumentView
         var heading = new TextBlock
         {
             Text = "CREATE CONNECTED NODE",
-            FontWeight = FontWeights.SemiBold,
-            Foreground = new SolidColorBrush(Color.FromRgb(137, 199, 236))
+            FontWeight = FontWeights.SemiBold
         };
+        heading.SetResourceReference(TextBlock.ForegroundProperty, "EditorTheme.Accent");
         Grid.SetRow(heading, 0);
         Grid.SetRow(search, 1);
         Grid.SetRow(list, 2);
@@ -110,20 +110,21 @@ public partial class QuestDocumentView
         content.Children.Add(list);
         content.Children.Add(actions);
 
+        var border = new Border
+        {
+            Width = 340,
+            Padding = new Thickness(11),
+            CornerRadius = new CornerRadius(5),
+            BorderThickness = new Thickness(1),
+            Child = content
+        };
+        border.SetResourceReference(Border.BorderBrushProperty, "EditorTheme.Border");
+        border.SetResourceReference(Border.BackgroundProperty, "EditorTheme.Panel");
         var popup = new Popup
         {
             AllowsTransparency = true,
             StaysOpen = false,
-            Child = new Border
-            {
-                Width = 340,
-                Padding = new Thickness(11),
-                CornerRadius = new CornerRadius(5),
-                BorderThickness = new Thickness(1),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(82, 101, 122)),
-                Background = new SolidColorBrush(Color.FromRgb(24, 33, 43)),
-                Child = content
-            }
+            Child = border
         };
         cancel.Click += (_, _) => popup.IsOpen = false;
         popup.Closed += OnConnectionPopupClosed;

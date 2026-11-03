@@ -33,6 +33,20 @@ public sealed record HelloResult(
     IReadOnlyList<string> InstalledCatalogRoots,
     long ContextGeneration);
 
+public sealed record AttachPanelMessage(long ParentWindow, ulong PanelToken);
+
+public sealed record PanelReadyRequest(long ParentWindow, long ChildWindow, ulong PanelToken);
+
+public sealed record PanelReadyResult(bool Bound, ulong BindingGeneration, string Message);
+
+public sealed record CloseDocumentSnapshot(string DocumentId, [property: System.Text.Json.Serialization.JsonRequired] long Revision, string Sha256);
+
+public sealed record ClosePreflightMessage([property: System.Text.Json.Serialization.JsonRequired] ulong CloseToken, IReadOnlyList<CloseDocumentSnapshot> Documents, bool CloseAll = false);
+
+public sealed record CompleteCloseRequest([property: System.Text.Json.Serialization.JsonRequired] ulong CloseToken, [property: System.Text.Json.Serialization.JsonRequired] bool AllowClose, IReadOnlyList<CloseDocumentSnapshot> Documents);
+
+public sealed record CloseFinishedMessage([property: System.Text.Json.Serialization.JsonRequired] ulong CloseToken, [property: System.Text.Json.Serialization.JsonRequired] bool Cancelled, IReadOnlyList<string> ClosedDocumentIds);
+
 public sealed record OpenDocumentMessage(
     string DocumentId,
     string RelativePath,
@@ -49,6 +63,14 @@ public sealed record SourceChangedMessage(
     string EncodingName,
     byte[] Bytes,
     string Sha256);
+
+public sealed record SourceSavedMessage(
+    string DocumentId,
+    long Revision,
+    string EncodingName,
+    byte[] Bytes,
+    string Sha256,
+    string? DiskPath);
 
 public sealed record SaveDocumentRequest(
     string DocumentId,

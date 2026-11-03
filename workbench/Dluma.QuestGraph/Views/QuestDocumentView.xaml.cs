@@ -11,6 +11,16 @@ public partial class QuestDocumentView : UserControl
 {
     public QuestDocumentView() => InitializeComponent();
 
+    private void OnZoomInClick(object sender, RoutedEventArgs e) => SetZoom(1.2);
+
+    private void OnZoomOutClick(object sender, RoutedEventArgs e) => SetZoom(1 / 1.2);
+
+    private void SetZoom(double factor)
+    {
+        var zoom = Math.Clamp(Editor.ViewportZoom * factor, Editor.MinViewportZoom, Editor.MaxViewportZoom);
+        Editor.SetCurrentValue(Nodify.NodifyEditor.ViewportZoomProperty, zoom);
+    }
+
     private void OnEditorDragOver(object sender, DragEventArgs e)
     {
         e.Effects = DataContext is QuestDocumentViewModel { CanEditSource: true } &&

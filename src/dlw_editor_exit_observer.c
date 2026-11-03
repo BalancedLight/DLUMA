@@ -1,6 +1,8 @@
 #include "dlw_editor_exit_observer.h"
 #include "dlw_common.h"
 #include "dlw_log.h"
+#include "dlw_editor_ui.h"
+#include "dlw_editor_host.h"
 
 typedef struct DlumaEditorWindowCandidate {
     DWORD process_id;
@@ -13,7 +15,6 @@ typedef struct DlumaEditorExitObserver {
     volatile LONG snapshot_sequence;
     volatile LONG snapshot_active;
     HWND window;
-    WNDPROC original;
     DlumaEditorExitIntentSnapshot state;
     DlumaEditorExitIntentSnapshot snapshots[2];
 } DlumaEditorExitObserver;
@@ -110,31 +111,59 @@ static BOOL CALLBACK dluma_editor_exit_find_window(
     return TRUE;
 }
 
-static LRESULT CALLBACK dluma_editor_exit_window_proc(
-    HWND window, unsigned int message, WPARAM wparam, LPARAM lparam)
+static int dluma_editor_exit_listener(
+    HWND window, unsigned int stage, UINT message, WPARAM wparam,
+    LPARAM lparam, LRESULT *result, void *context)
 {
-    WNDPROC original = g_dluma_editor_exit_observer.original;
-    ULONGLONG generation = 0;
-    int resolve_close = 0;
-    LRESULT result;
+    uint64_t *generation;
+    (void)lparam; (void)result; (void)context;
+    if (!g_dluma_editor_exit_observer.window &&
+        stage == DLUMA_EDITOR_UI_BEFORE &&
+        (message == DLUMA_EDITOR_UI_ENROLLED || message == DLUMA_EDITOR_UI_REFRESH ||
+         message == 0x0018U) &&
+        dluma_editor_is_main_window(window, GetCurrentProcessId())) {
+        g_dluma_editor_exit_observer.window = window;
+        g_dluma_editor_exit_observer.state.observer_active = 1;
+        dluma_editor_exit_observer_publish();
+    }
+    if (window != g_dluma_editor_exit_observer.window) return 0;
+    generation = dluma_editor_ui_invocation_value(DLUMA_EDITOR_UI_OWNER_EXIT);
+    if (stage == DLUMA_EDITOR_UI_DESTROY) {
+        g_dluma_editor_exit_observer.window = 0;
+        if (!message) g_dluma_editor_exit_observer.state.observer_active = 0;
+        dluma_editor_exit_observer_publish();
+        if (message == WM_NCDESTROY) dluma_editor_host_request_shutdown();
+        return 0;
+    }
+    if (stage == DLUMA_EDITOR_UI_AFTER) {
+        if (generation && *generation &&
+            (message == WM_CLOSE || message == WM_SYSCOMMAND)) {
+            dluma_editor_exit_intent_resolve(
+                &g_dluma_editor_exit_observer.state, *generation,
+                !IsWindow(window) || !IsWindowVisible(window));
+            dluma_editor_exit_observer_publish();
+        }
+        return 0;
+    }
+    if (stage != DLUMA_EDITOR_UI_BEFORE) return 0;
     if (message == WM_SYSCOMMAND &&
         ((DWORD)wparam & 0xFFF0UL) == SC_CLOSE) {
         const int alt_f4 =
             (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 &&
             (GetAsyncKeyState(VK_F4) & 0x8000) != 0;
-        generation = dluma_editor_exit_intent_begin(
+        ULONGLONG close_generation = dluma_editor_exit_intent_begin(
             &g_dluma_editor_exit_observer.state,
             alt_f4 ? DLUMA_EDITOR_EXIT_REASON_ALT_F4
                    : DLUMA_EDITOR_EXIT_REASON_SYSTEM_MENU_CLOSE,
             GetTickCount64());
-        resolve_close = generation != 0;
+        if (generation) *generation = close_generation;
         dluma_editor_exit_observer_publish();
     } else if (message == WM_CLOSE) {
-        generation = dluma_editor_exit_intent_begin(
+        ULONGLONG close_generation = dluma_editor_exit_intent_begin(
             &g_dluma_editor_exit_observer.state,
             DLUMA_EDITOR_EXIT_REASON_WINDOW_CLOSE,
             GetTickCount64());
-        resolve_close = generation != 0;
+        if (generation) *generation = close_generation;
         dluma_editor_exit_observer_publish();
     } else if (message == WM_ENDSESSION && wparam) {
         dluma_editor_exit_intent_commit(
@@ -151,22 +180,7 @@ static LRESULT CALLBACK dluma_editor_exit_window_proc(
         dluma_editor_exit_observer_publish();
     }
 
-    result = original
-        ? CallWindowProcW(original, window, message, wparam, lparam) : 0;
-
-    if (resolve_close) {
-        const int accepted =
-            !IsWindow(window) || !IsWindowVisible(window);
-        dluma_editor_exit_intent_resolve(
-            &g_dluma_editor_exit_observer.state,
-            generation, accepted);
-        dluma_editor_exit_observer_publish();
-    }
-    if (message == WM_NCDESTROY) {
-        g_dluma_editor_exit_observer.window = 0;
-        g_dluma_editor_exit_observer.original = 0;
-    }
-    return result;
+    return 0;
 }
 
 int dluma_editor_exit_observer_dispatch_command(unsigned int command_id)
@@ -191,9 +205,6 @@ int dluma_editor_exit_observer_dispatch_command(unsigned int command_id)
 int dluma_editor_exit_observer_start(void)
 {
     DlumaEditorWindowCandidate candidate;
-    DWORD process_id = 0;
-    WNDPROC observed;
-    WNDPROC installed_predecessor;
     LONG state = dluma_atomic_compare_exchange(
         &g_dluma_editor_exit_observer.start_state, 1, 0);
     if (state != 0)
@@ -204,43 +215,13 @@ int dluma_editor_exit_observer_start(void)
     dluma_editor_exit_intent_initialize(
         &g_dluma_editor_exit_observer.state, 0U);
     dluma_editor_exit_observer_publish();
-    if (!EnumWindows(
-            dluma_editor_exit_find_window, (LPARAM)&candidate) ||
-        !candidate.window) {
+    if (!dluma_editor_ui_subscribe(DLUMA_EDITOR_UI_OWNER_EXIT,
+                                    dluma_editor_exit_listener, 0)) {
         dluma_atomic_exchange(&g_dluma_editor_exit_observer.start_state, 0);
         return 0;
     }
-    observed = (WNDPROC)GetWindowLongPtrW(
-        candidate.window, GWLP_WNDPROC);
-    if (!GetWindowThreadProcessId(candidate.window, &process_id) ||
-        process_id != candidate.process_id ||
-        !IsWindowVisible(candidate.window) ||
-        GetWindow(candidate.window, GW_OWNER) ||
-        !observed || observed == dluma_editor_exit_window_proc) {
-        dluma_atomic_exchange(&g_dluma_editor_exit_observer.start_state, 0);
-        return 0;
-    }
-    g_dluma_editor_exit_observer.window = candidate.window;
-    g_dluma_editor_exit_observer.original = observed;
-    installed_predecessor = (WNDPROC)SetWindowLongPtrW(
-        candidate.window, GWLP_WNDPROC,
-        (LONG_PTR)dluma_editor_exit_window_proc);
-    if (!installed_predecessor) {
-        g_dluma_editor_exit_observer.window = 0;
-        g_dluma_editor_exit_observer.original = 0;
-        dluma_atomic_exchange(&g_dluma_editor_exit_observer.start_state, 0);
-        return 0;
-    }
-    /* SetWindowLongPtrW returns the predecessor that was current at the
-     * instant of installation.  A same-process component may have subclassed
-     * the window after our earlier observation, so that return value is the
-     * authoritative chain target.  If this exact proc was already installed
-     * during the race, retain the independently observed predecessor instead
-     * of constructing a self-recursive chain. */
-    if (installed_predecessor != dluma_editor_exit_window_proc)
-        g_dluma_editor_exit_observer.original = installed_predecessor;
-    g_dluma_editor_exit_observer.state.observer_active = 1U;
-    dluma_editor_exit_observer_publish();
+    (void)EnumWindows(dluma_editor_exit_find_window, (LPARAM)&candidate);
+    if (candidate.window) (void)dluma_editor_ui_request_enroll(candidate.window);
     dluma_atomic_exchange(&g_dluma_editor_exit_observer.start_state, 2);
     dluma_log_line(
         "INFO",

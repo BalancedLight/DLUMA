@@ -44,7 +44,7 @@ def test_prebuilt_mod_exports_and_imports():
     assert result["is_dll"]
     assert {"InitializeGameScriptDLL", "ShutdownGameScriptDLL", "DLUMA_GetVersion"}.issubset(result["exports"])
     assert {name.lower() for name in result["imports"]} <= {
-        "kernel32.dll", "user32.dll", "winhttp.dll", "bcrypt.dll", "advapi32.dll"
+        "kernel32.dll", "user32.dll", "gdi32.dll", "winhttp.dll", "bcrypt.dll", "advapi32.dll"
     }
     assert result["dynamic_base"]
     assert result["nx_compatible"]
@@ -247,6 +247,9 @@ def test_package_manifest_rejects_extra_runtime_files(tmp_path):
             "managed/Dluma.Managed.Sdk.dll",
             "diagnostics/loader_address_ranges.json",
             "updater/apply_nightly_update.ps1",
+            "editor/dluma_editor_theme_system.dll",
+            "editor/Dluma.EditorTheme.Framework.dll",
+            "editor/startup.gif",
             "licenses/dotnet/LICENSE.txt",
             "licenses/dotnet/ThirdPartyNotices.txt",
             "quest-graph/Dluma.QuestGraph.exe",

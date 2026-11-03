@@ -4,10 +4,10 @@
              xmlns:vm="clr-namespace:Dluma.QuestGraph.ViewModels">
   <ScrollViewer VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled"
-                Padding="14">
+                Padding="12">
     <Grid>
       <TextBlock Text="Select a node"
-                 Foreground="{StaticResource MutedBrush}"
+                 Foreground="{DynamicResource EditorTheme.MutedText}"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"
                  Margin="12,30">
@@ -35,17 +35,17 @@
           </Style>
         </StackPanel.Style>
 
-        <TextBlock Text="INSPECTOR"
+        <TextBlock Text="Inspector"
                    FontSize="12"
                    FontWeight="Bold"
-                   Foreground="{StaticResource MutedBrush}"
-                   Margin="0,0,0,9" />
+                   Foreground="{DynamicResource EditorTheme.MutedText}"
+                   Margin="0,0,0,8" />
         <TextBlock Text="{Binding InspectorTitle}"
                    FontSize="18"
                    FontWeight="SemiBold"
                    TextWrapping="Wrap" />
         <TextBlock Text="{Binding InspectorSummary}"
-                   Foreground="{StaticResource MutedBrush}"
+                   Foreground="{DynamicResource EditorTheme.MutedText}"
                    TextWrapping="Wrap"
                    Margin="0,4,0,12" />
 
@@ -56,7 +56,7 @@
                 <DockPanel Margin="0,0,0,4">
                   <TextBlock Text="Optional"
                              DockPanel.Dock="Right"
-                             Foreground="{StaticResource MutedBrush}"
+                             Foreground="{DynamicResource EditorTheme.MutedText}"
                              FontSize="11">
                     <TextBlock.Style>
                       <Style TargetType="TextBlock">
@@ -71,6 +71,7 @@
                   </TextBlock>
                   <TextBlock Text="{Binding DisplayName}"
                              FontWeight="SemiBold"
+                             TextWrapping="Wrap"
                              ToolTip="{Binding Description}" />
                 </DockPanel>
 
@@ -122,7 +123,7 @@
                           Click="OnBooleanClick">
                   <CheckBox.Style>
                     <Style TargetType="CheckBox">
-                      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
                       <Setter Property="Visibility" Value="Collapsed" />
                       <Style.Triggers>
                         <DataTrigger Binding="{Binding IsBooleanEditor}" Value="True">
@@ -133,8 +134,8 @@
                   </CheckBox.Style>
                 </CheckBox>
 
-                <Border Background="{StaticResource WindowBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
+                <Border Background="{DynamicResource EditorTheme.Window}"
+                        BorderBrush="{DynamicResource EditorTheme.Border}"
                         BorderThickness="1"
                         Padding="8,6">
                   <Border.Style>
@@ -151,7 +152,7 @@
                 </Border>
 
                 <TextBlock Text="{Binding ValidationMessage}"
-                           Foreground="#E98A85"
+                           Foreground="{DynamicResource EditorTheme.Error}"
                            FontSize="11"
                            TextWrapping="Wrap"
                            Margin="0,4,0,0" />
@@ -162,7 +163,7 @@
 
         <Expander Header="Advanced" IsExpanded="False" Margin="0,4,0,10">
           <StackPanel Margin="0,8,0,0">
-            <TextBlock Text="Raw PXSL" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4" />
+            <TextBlock Text="Raw PXSL" Foreground="{DynamicResource EditorTheme.MutedText}" Margin="0,0,0,4" />
             <TextBox Text="{Binding SelectedNode.SourcePreview, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                      IsReadOnly="{Binding IsSelectedRawReadOnly}"
                      AcceptsReturn="True"

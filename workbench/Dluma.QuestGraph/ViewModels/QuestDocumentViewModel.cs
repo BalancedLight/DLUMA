@@ -8,6 +8,8 @@ using Dluma.QuestGraph.Services;
 
 namespace Dluma.QuestGraph.ViewModels;
 
+public sealed record QuestLayoutSaveSnapshot(QuestGraphSidecarV1 Sidecar, string Fingerprint);
+
 public sealed partial class QuestDocumentViewModel : ObservableObject
 {
     private const int MaximumUndoStates = 100;
@@ -25,6 +27,7 @@ public sealed partial class QuestDocumentViewModel : ObservableObject
     private string _savedSourceSha256;
     private byte[] _savedSourceBytes;
     private string _savedLayoutFingerprint = string.Empty;
+    private long _confirmedSavedRevision = -1;
     private QuestGraphSidecarV1 _savedSidecar = null!;
     private bool _isConnected;
     private bool _isStaleSession;
@@ -116,6 +119,7 @@ public sealed partial class QuestDocumentViewModel : ObservableObject
         _model.Source.Sha256,
         _savedSourceSha256,
         StringComparison.OrdinalIgnoreCase);
+    public bool MayHaveUnsavedSource => _savedWasModified || IsSourceDirty;
     public bool IsLayoutDirty => !string.Equals(
         LayoutFingerprint(),
         _savedLayoutFingerprint,
@@ -230,21 +234,35 @@ public sealed partial class QuestDocumentViewModel : ObservableObject
         OnPropertyChanged(nameof(TabTitle));
     }
 
-    public void MarkSourceSaved()
+    public void MarkSourceSaved() => MarkSourceSaved(Revision, SourceSha256, _model.Source.ToArray());
+
+    public bool MarkSourceSaved(long revision, string sha256, byte[] bytes)
     {
-        _savedSourceSha256 = _model.Source.Sha256;
-        _savedSourceBytes = _model.Source.ToArray();
+        if (revision < _confirmedSavedRevision)
+            return false;
+        if (revision == _confirmedSavedRevision &&
+            !string.Equals(_savedSourceSha256, sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Conflicting saved source for the same revision.");
+        _confirmedSavedRevision = revision;
+        _savedSourceSha256 = sha256;
+        _savedSourceBytes = (byte[])bytes.Clone();
         _savedWasModified = false;
         NotifyDirty();
-        Status = "Saved";
+        Status = IsSourceDirty ? "Source has newer changes." : "Saved";
+        return true;
     }
 
-    public void MarkLayoutSaved()
+    public QuestLayoutSaveSnapshot CaptureLayoutSave() =>
+        new(CreateSidecar(), LayoutFingerprint());
+
+    public void MarkLayoutSaved() => MarkLayoutSaved(CaptureLayoutSave());
+
+    public void MarkLayoutSaved(QuestLayoutSaveSnapshot snapshot)
     {
-        _savedSidecar = CreateSidecar();
-        _savedLayoutFingerprint = LayoutFingerprint();
+        _savedSidecar = snapshot.Sidecar;
+        _savedLayoutFingerprint = snapshot.Fingerprint;
         NotifyDirty();
-        Status = "Saved";
+        Status = IsDirty ? "Document has newer changes." : "Saved";
     }
 
     public async Task<bool> DiscardUnsavedChangesAsync()

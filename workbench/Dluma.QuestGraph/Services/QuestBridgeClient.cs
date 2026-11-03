@@ -27,16 +27,38 @@ public sealed partial class QuestBridgeClient : IDisposable
     private Task? _reader;
     private string? _sessionToken;
     private bool _disposed;
+    private int _authenticatedEditorProcessId;
+    private readonly object _authenticationGate = new();
+    private bool _readerEnded;
+    private readonly TaskCompletionSource<int> _authentication = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task<int> WaitForAuthenticatedEditorAsync() => _authentication.Task;
+
+    public int? AuthenticatedEditorProcessId => Volatile.Read(ref _authenticatedEditorProcessId) is var pid && pid > 0 ? pid : null;
 
     public bool IsConnected => _pipe?.IsConnected == true && !_lifetime.IsCancellationRequested;
 
     public event EventHandler<QuestBridgeEnvelope>? NotificationReceived;
     public event EventHandler<string>? Disconnected;
 
+    private void TraceFailure(string stage, string? detail)
+    {
+        try
+        {
+            var message = detail ?? string.Empty;
+            if (!string.IsNullOrEmpty(_sessionToken))
+                message = message.Replace(_sessionToken, "[session token]", StringComparison.Ordinal);
+            Trace.WriteLine($"Quest bridge {stage}: {message}");
+        }
+        catch { /* Diagnostics must not replace the original bridge failure. */ }
+    }
+
     public void AbortProtocolSession(string reason)
     {
         if (_disposed)
             return;
+        TraceFailure("aborted", reason + Environment.NewLine + Environment.StackTrace);
+        lock (_authenticationGate) { _readerEnded = true; Volatile.Write(ref _authenticatedEditorProcessId, 0); _authentication.TrySetCanceled(); }
         var exception = new InvalidDataException(reason);
         foreach (var completion in _pending.Values)
             completion.TrySetException(exception);
@@ -126,19 +148,32 @@ public sealed partial class QuestBridgeClient : IDisposable
         }
     }
 
-    public Task<HelloResult> HelloAsync(
+    public async Task<HelloResult> HelloAsync(
         int editorProcessId,
         string executableSha256,
-        CancellationToken cancellationToken = default) =>
-        RequestAsync<HelloRequest, HelloResult>(
+        CancellationToken cancellationToken = default)
+    {
+        var result = await RequestAsync<HelloRequest, HelloResult>(
             "hello",
-            new HelloRequest(
-                QuestBridgeProtocol.SchemaVersion,
-                Environment.ProcessId,
-                editorProcessId,
-                executableSha256),
-            TimeSpan.FromSeconds(5),
-            cancellationToken);
+            new HelloRequest(QuestBridgeProtocol.SchemaVersion, Environment.ProcessId, editorProcessId, executableSha256),
+            TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+        if (result.EditorProcessId != editorProcessId)
+            throw new InvalidDataException("The bridge Editor process ID did not match this launch.");
+        lock (_authenticationGate)
+        {
+            if (_readerEnded || !IsConnected)
+                throw new InvalidDataException("The bridge disconnected during authentication.");
+            Volatile.Write(ref _authenticatedEditorProcessId, editorProcessId);
+            _authentication.TrySetResult(editorProcessId);
+        }
+        return result;
+    }
+
+    public Task<QuestBridgeResult> CompleteCloseAsync(CompleteCloseRequest request, CancellationToken cancellationToken = default) =>
+        RequestAsync<CompleteCloseRequest, QuestBridgeResult>("completeClose", request, TimeSpan.FromSeconds(15), cancellationToken);
+
+    public Task<PanelReadyResult> PanelReadyAsync(PanelReadyRequest request, CancellationToken cancellationToken = default) =>
+        RequestAsync<PanelReadyRequest, PanelReadyResult>("panelReady", request, TimeSpan.FromSeconds(15), cancellationToken);
 
     public Task<SaveDocumentResult> SaveDocumentAsync(
         SaveDocumentRequest request,
@@ -264,11 +299,14 @@ public sealed partial class QuestBridgeClient : IDisposable
         catch (Exception exception)
         {
             disconnectReason = exception.Message;
+            TraceFailure("reader failed", exception.ToString());
             foreach (var completion in _pending.Values)
                 completion.TrySetException(exception);
         }
         finally
         {
+            TraceFailure("disconnected", disconnectReason);
+            lock (_authenticationGate) { _readerEnded = true; Volatile.Write(ref _authenticatedEditorProcessId, 0); _authentication.TrySetCanceled(); }
             Disconnected?.Invoke(this, disconnectReason);
         }
     }
@@ -299,8 +337,12 @@ public sealed partial class QuestBridgeClient : IDisposable
         if (envelope.Type is not (
                 "result" or
                 "error" or
+                "attachPanel" or
                 "openDocument" or
                 "sourceChanged" or
+                "sourceSaved" or
+                "closePreflight" or
+                "closeFinished" or
                 "activateDocument" or
                 "contextSnapshot" or
                 "disconnected"))
@@ -342,6 +384,7 @@ public sealed partial class QuestBridgeClient : IDisposable
         if (_disposed)
             return;
         _disposed = true;
+        lock (_authenticationGate) { _readerEnded = true; Volatile.Write(ref _authenticatedEditorProcessId, 0); _authentication.TrySetCanceled(); }
         _lifetime.Cancel();
         _pipe?.Dispose();
         _writeGate.Dispose();

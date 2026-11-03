@@ -1,6 +1,7 @@
 #include "dlw_quest_editor.h"
 #include "dlw_editor_host.h"
 #include "dlw_editor_launch.h"
+#include "dlw_editor_quest_graph_bridge.h"
 #include "dlw_build_identity.h"
 #include "dlw_dual_host_runtime.h"
 #include "dlw_log.h"
@@ -17,6 +18,12 @@
 #define DLUMA_QUEST_EDITOR_INIT_RVA 0x00098310UL
 #define DLUMA_QUEST_EDITOR_COMPILE_RVA 0x000984A0UL
 #define DLUMA_QUEST_EDITOR_DEFINITION_RVA 0x000A0230UL
+#define DLUMA_QUEST_EDITOR_UI_LOAD_RVA 0x00017DA0UL
+#define DLUMA_QUEST_EDITOR_UI_CATEGORY_RVA 0x00017F00UL
+#define DLUMA_QUEST_EDITOR_UI_REGISTER_RVA 0x00018020UL
+#define DLUMA_QUEST_EDITOR_UI_LOAD_STOLEN 15U
+#define DLUMA_QUEST_EDITOR_NAMES_RVA 0x0009E5F0UL
+#define DLUMA_QUEST_EDITOR_NAMES_STOLEN 18U
 #define DLUMA_QUEST_EDITOR_JUMP_SIZE 14U
 #define DLUMA_QUEST_EDITOR_INIT_STOLEN 14U
 #define DLUMA_QUEST_EDITOR_COMPILE_STOLEN 15U
@@ -43,6 +50,19 @@ typedef __int64 (__fastcall* DlumaQuestEditorDefinitionFn)(
     const char** definition_path);
 typedef HMODULE (WINAPI* DlumaQuestEditorLoadLibraryAFn)(LPCSTR file_name);
 
+typedef struct DlumaQuestEditorString {
+    const char* bytes;
+    unsigned int size;
+    unsigned int capacity;
+} DlumaQuestEditorString;
+
+typedef char (__fastcall* DlumaQuestEditorUiLoadFn)(__int64 parser);
+typedef char (__fastcall* DlumaQuestEditorUiCategoryFn)(
+    __int64 parser, const DlumaQuestEditorString* marker);
+typedef void (__fastcall* DlumaQuestEditorUiRegisterFn)(
+    __int64 parser, const DlumaQuestEditorString* header);
+typedef void (__fastcall* DlumaQuestEditorNamesFn)(void* definition, void* names);
+
 typedef struct DlumaQuestEditorDetour {
     BYTE* target;
     BYTE* trampoline;
@@ -59,7 +79,11 @@ typedef struct DlumaQuestEditorState {
     DlumaQuestEditorLoadLibraryAFn original_load_library;
     DlumaQuestEditorDetour initialize_detour;
     DlumaQuestEditorDetour compile_detour;
+    DlumaQuestEditorDetour ui_load_detour;
+    DlumaQuestEditorDetour names_detour;
     DlumaQuestEditorDefinitionFn definition_loader;
+    DlumaQuestEditorUiCategoryFn ui_category;
+    DlumaQuestEditorUiRegisterFn ui_register;
     volatile LONG start_state;
     volatile LONG load_library_hook_installed;
     volatile LONG stopping;
@@ -67,6 +91,13 @@ typedef struct DlumaQuestEditorState {
     volatile LONG edf_lock;
     volatile LONG edf_ready;
     __int64* loaded_compiler;
+    void* public_definition;
+    void* extension_definition;
+    HANDLE edf_guard;
+    ULONGLONG edf_native_revision;
+    ULONGLONG edf_lua_fingerprint;
+    unsigned int definition_reported;
+    unsigned int completion_reported;
     WCHAR edf_path[DLUMA_MAX_WPATH];
     char edf_path_utf8[DLUMA_MAX_WPATH * 2U];
     char edf_sha256[DLUMA_SHA256_HEX_CAPACITY];
@@ -93,7 +124,29 @@ static const BYTE g_dluma_quest_editor_definition_prefix[16] = {
     0x44, 0x24, 0x20, 0xFE, 0xFF, 0xFF, 0xFF, 0x48
 };
 
+/* QuestEditor's source validator has its own public-macro table, separate
+ * from the PXSL compiler definitions. These functions belong to the same
+ * SHA-256 profile checked below. */
+static const BYTE g_dluma_quest_editor_ui_load_prefix[15] = {
+    0x40, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x48, 0xC7,
+    0x44, 0x24, 0x20, 0xFE, 0xFF, 0xFF, 0xFF
+};
+static const BYTE g_dluma_quest_editor_ui_category_prefix[15] = {
+    0x48, 0x89, 0x7C, 0x24, 0x20, 0x41, 0x54, 0x41,
+    0x55, 0x41, 0x56, 0x48, 0x8B, 0x3A, 0x45
+};
+static const BYTE g_dluma_quest_editor_ui_register_prefix[16] = {
+    0x40, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55,
+    0x48, 0x83, 0xEC, 0x40, 0x48, 0xC7, 0x44, 0x24
+};
+static const BYTE g_dluma_quest_editor_names_prefix[DLUMA_QUEST_EDITOR_NAMES_STOLEN] = {
+    0x40, 0x56, 0x57, 0x41, 0x54, 0x48, 0x83, 0xEC, 0x30,
+    0x48, 0xC7, 0x44, 0x24, 0x20, 0xFE, 0xFF, 0xFF, 0xFF
+};
+
 static __int64 __fastcall dluma_quest_editor_initialize_hook(__int64 context);
+static char __fastcall dluma_quest_editor_ui_load_hook(__int64 parser);
+static void __fastcall dluma_quest_editor_names_hook(void* definition, void* names);
 static void __fastcall dluma_quest_editor_compile_hook(
     __int64 context,
     const char** source_path,
@@ -430,7 +483,19 @@ static int dluma_quest_editor_validate_module(HMODULE module)
             sizeof(g_dluma_quest_editor_compile_prefix)) ||
         !dluma_quest_editor_target_section(
             base, loaded_image_size, DLUMA_QUEST_EDITOR_DEFINITION_RVA,
-            sizeof(g_dluma_quest_editor_definition_prefix))) {
+            sizeof(g_dluma_quest_editor_definition_prefix)) ||
+        !dluma_quest_editor_target_section(
+            base, loaded_image_size, DLUMA_QUEST_EDITOR_UI_LOAD_RVA,
+            sizeof(g_dluma_quest_editor_ui_load_prefix)) ||
+        !dluma_quest_editor_target_section(
+            base, loaded_image_size, DLUMA_QUEST_EDITOR_UI_CATEGORY_RVA,
+            sizeof(g_dluma_quest_editor_ui_category_prefix)) ||
+        !dluma_quest_editor_target_section(
+            base, loaded_image_size, DLUMA_QUEST_EDITOR_UI_REGISTER_RVA,
+            sizeof(g_dluma_quest_editor_ui_register_prefix)) ||
+        !dluma_quest_editor_target_section(
+            base, loaded_image_size, DLUMA_QUEST_EDITOR_NAMES_RVA,
+            sizeof(g_dluma_quest_editor_names_prefix))) {
         dluma_log_pair("WARN", "quest_editor_validation_failure",
                      "target section ownership");
         goto done;
@@ -443,7 +508,19 @@ static int dluma_quest_editor_validate_module(HMODULE module)
                sizeof(g_dluma_quest_editor_compile_prefix)) != 0 ||
         memcmp(base + DLUMA_QUEST_EDITOR_DEFINITION_RVA,
                g_dluma_quest_editor_definition_prefix,
-               sizeof(g_dluma_quest_editor_definition_prefix)) != 0) {
+               sizeof(g_dluma_quest_editor_definition_prefix)) != 0 ||
+        memcmp(base + DLUMA_QUEST_EDITOR_UI_LOAD_RVA,
+               g_dluma_quest_editor_ui_load_prefix,
+               sizeof(g_dluma_quest_editor_ui_load_prefix)) != 0 ||
+        memcmp(base + DLUMA_QUEST_EDITOR_UI_CATEGORY_RVA,
+               g_dluma_quest_editor_ui_category_prefix,
+               sizeof(g_dluma_quest_editor_ui_category_prefix)) != 0 ||
+        memcmp(base + DLUMA_QUEST_EDITOR_UI_REGISTER_RVA,
+               g_dluma_quest_editor_ui_register_prefix,
+               sizeof(g_dluma_quest_editor_ui_register_prefix)) != 0 ||
+        memcmp(base + DLUMA_QUEST_EDITOR_NAMES_RVA,
+               g_dluma_quest_editor_names_prefix,
+               sizeof(g_dluma_quest_editor_names_prefix)) != 0) {
         dluma_log_pair("WARN", "quest_editor_validation_failure",
                      "target instruction prefixes");
         goto done;
@@ -1091,6 +1168,129 @@ done:
     return result;
 }
 
+static int dluma_quest_editor_cached_edf(const char* const stock_paths[3])
+{
+    ULONGLONG native_revision = 0;
+    ULONGLONG lua_fingerprint = 14695981039346656037ULL;
+    const BYTE* provider_bytes;
+    unsigned int provider_size;
+    unsigned int index;
+    char hash[DLUMA_SHA256_HEX_CAPACITY];
+    HANDLE file;
+    (void)dluma_native_mods_snapshot(0, 0U, &native_revision);
+    dluma_lua_registry_lock();
+    provider_size = g_dluma.lua_discovery.editor_phase_provider_count;
+    if (provider_size > DLUMA_MAX_LUA_FILES) {
+        dluma_lua_registry_unlock();
+        return 0;
+    }
+    provider_size *= sizeof(DlumaLuaQuestPhaseProviderMetadata);
+    provider_bytes = (const BYTE*)g_dluma.lua_discovery.editor_phase_providers;
+    for (index = 0; index < provider_size; ++index) {
+        lua_fingerprint ^= provider_bytes[index];
+        lua_fingerprint *= 1099511628211ULL;
+    }
+    dluma_lua_registry_unlock();
+    if (g_dluma_quest_editor.edf_guard &&
+        g_dluma_quest_editor.edf_guard != INVALID_HANDLE_VALUE &&
+        native_revision == g_dluma_quest_editor.edf_native_revision &&
+        lua_fingerprint == g_dluma_quest_editor.edf_lua_fingerprint)
+        return 1;
+    if (g_dluma_quest_editor.edf_guard &&
+        g_dluma_quest_editor.edf_guard != INVALID_HANDLE_VALUE)
+        CloseHandle(g_dluma_quest_editor.edf_guard);
+    g_dluma_quest_editor.edf_guard = 0;
+    if (!dluma_quest_editor_write_edf(stock_paths)) return 0;
+    file = CreateFileW(g_dluma_quest_editor.edf_path, GENERIC_READ,
+        FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (file == INVALID_HANDLE_VALUE) return 0;
+    if (!dluma_sha256_handle_hex(file, DLUMA_QUEST_EDITOR_MAX_EDF_BYTES, hash) ||
+        dluma_stricmp(hash, g_dluma_quest_editor.edf_sha256)) {
+        CloseHandle(file);
+        return 0;
+    }
+    g_dluma_quest_editor.edf_guard = file;
+    g_dluma_quest_editor.edf_native_revision = native_revision;
+    g_dluma_quest_editor.edf_lua_fingerprint = lua_fingerprint;
+    g_dluma_quest_editor.definition_reported = 0;
+    g_dluma_quest_editor.completion_reported = 0;
+    return 1;
+}
+
+static char __fastcall dluma_quest_editor_ui_load_hook(__int64 parser)
+{
+    static const char* stock_paths[3] = {
+        "quest-shortcuts.edf", "quest-macros-public.edf", "quest-macros-private.edf"
+    };
+    static const char marker_text[] = "### SimplePhase ###";
+    DlumaQuestEditorString marker;
+    DlumaQuestEditorUiLoadFn original =
+        (DlumaQuestEditorUiLoadFn)g_dluma_quest_editor.ui_load_detour.trampoline;
+    char result;
+    char* edf = 0;
+    unsigned char* accepted = 0;
+    unsigned int edf_size = 0;
+    unsigned int cursor = 0;
+    unsigned int registered = 0;
+    unsigned int saved_category = 0;
+    int category_changed = 0;
+    int tracked = dluma_editor_host_callback_enter();
+    dluma_atomic_increment(&g_dluma_quest_editor.callbacks_in_flight);
+    result = original ? original(parser) : 0;
+    if (!result || !dluma_is_readable((const void*)parser, 168U) ||
+        dluma_atomic_compare_exchange(&g_dluma_quest_editor.stopping, 0, 0))
+        goto leave;
+    dluma_quest_editor_lock();
+    /* The UI parser can be constructed before the compiler context exists.
+     * Both consumers use the same filtered declarations and EDF builder. */
+    if (!dluma_quest_editor_cached_edf(stock_paths)) goto done;
+    edf = (char*)dluma_alloc(DLUMA_QUEST_EDITOR_MAX_EDF_BYTES);
+    accepted = (unsigned char*)dluma_alloc(
+        g_dluma_quest_editor.accepted_alias_count + 1U);
+    if (!edf || !accepted) goto done;
+    memset(accepted, 1, g_dluma_quest_editor.accepted_alias_count + 1U);
+    if (!dluma_quest_phase_build_edf(
+            g_dluma_quest_editor.accepted_aliases, accepted,
+            g_dluma_quest_editor.accepted_alias_count,
+            edf, DLUMA_QUEST_EDITOR_MAX_EDF_BYTES, &edf_size))
+        goto done;
+    marker.bytes = marker_text;
+    marker.size = sizeof(marker_text) - 1U;
+    marker.capacity = marker.size;
+    saved_category = *(unsigned int*)(parser + 64U);
+    __try {
+        if (!g_dluma_quest_editor.ui_category(parser, &marker)) goto done;
+        category_changed = 1;
+        while (cursor < edf_size) {
+            unsigned int start = cursor;
+            DlumaQuestEditorString header;
+            while (cursor < edf_size && edf[cursor] != '\r' && edf[cursor] != '\n')
+                ++cursor;
+            header.bytes = edf + start;
+            header.size = cursor - start;
+            header.capacity = header.size;
+            if (header.size && edf[start] == ',') {
+                g_dluma_quest_editor.ui_register(parser, &header);
+                ++registered;
+            }
+            while (cursor < edf_size && (edf[cursor] == '\r' || edf[cursor] == '\n'))
+                ++cursor;
+        }
+    } __except(1) {
+        registered = 0;
+    }
+done:
+    if (category_changed) *(unsigned int*)(parser + 64U) = saved_category;
+    if (accepted) dluma_free(accepted);
+    if (edf) dluma_free(edf);
+    dluma_quest_editor_unlock();
+    dluma_log_u64("INFO", "quest_editor_ui_extension_count", registered);
+leave:
+    dluma_atomic_decrement(&g_dluma_quest_editor.callbacks_in_flight);
+    dluma_editor_host_callback_leave(tracked);
+    return result;
+}
+
 static const char* dluma_quest_editor_bounded_path(const char* value);
 
 static const char* dluma_quest_editor_context_path(
@@ -1115,64 +1315,17 @@ static const char* dluma_quest_editor_bounded_path(const char* value)
     return size && size < DLUMA_MAX_WPATH * 2U ? value : 0;
 }
 
-static int dluma_quest_editor_resolve_compile_path(
-    const char* configured,
-    const WCHAR* project_root,
-    char* output,
-    unsigned int output_capacity)
-{
-    char normalized[DLUMA_MOD_RELATIVE_PATH_CAPACITY];
-    WCHAR wide[DLUMA_MAX_WPATH];
-    WCHAR relative[DLUMA_MAX_WPATH];
-    unsigned int index;
-    int absolute;
-    if (!configured || !configured[0] || !project_root ||
-        !project_root[0] || !output || !output_capacity ||
-        !dluma_utf8_to_wide(
-            configured, wide, DLUMA_ARRAY_COUNT(wide)))
-        return 0;
-    for (index = 0; wide[index]; ++index)
-        if (wide[index] == L'/') wide[index] = L'\\';
-    absolute = (wide[0] && wide[1] == L':') ||
-        (wide[0] == L'\\' && wide[1] == L'\\');
-    if (!absolute) {
-        if (!dluma_mod_relative_path_validate_and_normalize(
-                configured, normalized, DLUMA_ARRAY_COUNT(normalized)) ||
-            !dluma_utf8_to_wide(
-                normalized, relative, DLUMA_ARRAY_COUNT(relative)) ||
-            !dluma_checked_path_join(
-                wide, DLUMA_ARRAY_COUNT(wide), project_root, relative))
-            return 0;
-        for (index = 0; wide[index]; ++index)
-            if (wide[index] == L'/') wide[index] = L'\\';
-    }
-    return dluma_wide_to_utf8(wide, output, output_capacity);
-}
-
 static int dluma_quest_editor_resolve_compile_paths(
-    const char* source_path,
-    const char* output_path,
-    WCHAR* project_root,
-    unsigned int project_capacity,
-    char* source_absolute,
-    unsigned int source_capacity,
-    char* output_absolute,
-    unsigned int output_capacity)
+    const char* source_path, const char* output_path,
+    WCHAR* project_root, unsigned int project_capacity,
+    char* source_absolute, unsigned int source_capacity,
+    char* output_absolute, unsigned int output_capacity,
+    int editor_callback_tracked)
 {
-    char map_name[DLUMA_MAX_MAP_NAME];
-    if (!source_path || !output_path || !project_root ||
-        !source_absolute || !output_absolute ||
-        !dluma_editor_launch_resolve_current_project(
-            project_root, project_capacity,
-            map_name, DLUMA_ARRAY_COUNT(map_name)) ||
-        !dluma_quest_editor_resolve_compile_path(
-            source_path, project_root,
-            source_absolute, source_capacity) ||
-        !dluma_quest_editor_resolve_compile_path(
-            output_path, project_root,
-            output_absolute, output_capacity))
-        return 0;
-    return 1;
+    return dluma_editor_quest_resolve_compile_paths(
+        source_path, output_path, editor_callback_tracked,
+        project_root, project_capacity, source_absolute, source_capacity,
+        output_absolute, output_capacity);
 }
 
 static int dluma_quest_editor_definition_snapshot(
@@ -1222,14 +1375,16 @@ static int dluma_quest_editor_validate_loaded_definition(
     macro_entries = *(BYTE**)(parse_state + 152U);
     macro_count = *(const unsigned int*)(parse_state + 160U);
     published_count = *(const unsigned int*)(definition + 112U);
-    dluma_log_u64("INFO", "quest_editor_definition_count_before",
-                count_before);
-    dluma_log_u64("INFO", "quest_editor_definition_count_after",
-                count_after);
-    dluma_log_u64("INFO", "quest_editor_definition_macro_count",
-                macro_count);
-    dluma_log_u64("INFO", "quest_editor_definition_published_count",
-                published_count);
+    if (!g_dluma_quest_editor.definition_reported) {
+        dluma_log_u64("INFO", "quest_editor_definition_count_before",
+                    count_before);
+        dluma_log_u64("INFO", "quest_editor_definition_count_after",
+                    count_after);
+        dluma_log_u64("INFO", "quest_editor_definition_macro_count",
+                    macro_count);
+        dluma_log_u64("INFO", "quest_editor_definition_published_count",
+                    published_count);
+    }
     if (macro_count != expected_macro_count ||
         published_count != expected_macro_count ||
         !macro_entries || !dluma_is_readable(
@@ -1247,10 +1402,12 @@ static int dluma_quest_editor_validate_loaded_definition(
             return 0;
         memcpy(logged_name, name, name_size);
         logged_name[name_size] = 0;
-        dluma_log_pair(
-            "INFO", "quest_editor_definition_macro_name", logged_name);
-        dluma_log_u64(
-            "INFO", "quest_editor_definition_macro_name_bytes", name_size);
+        if (!g_dluma_quest_editor.definition_reported) {
+            dluma_log_pair(
+                "INFO", "quest_editor_definition_macro_name", logged_name);
+            dluma_log_u64(
+                "INFO", "quest_editor_definition_macro_name_bytes", name_size);
+        }
         if (dluma_stricmp(logged_name, "call-lua") == 0 ||
             dluma_stricmp(logged_name, "call-native") == 0)
             expected = 1;
@@ -1269,6 +1426,34 @@ static int dluma_quest_editor_validate_loaded_definition(
     return 1;
 }
 
+static void __fastcall dluma_quest_editor_names_hook(void* definition, void* names)
+{
+    DlumaQuestEditorNamesFn original =
+        (DlumaQuestEditorNamesFn)g_dluma_quest_editor.names_detour.trampoline;
+    void* extension = 0;
+    unsigned int report = 0;
+    int tracked = dluma_editor_host_callback_enter();
+    dluma_atomic_increment(&g_dluma_quest_editor.callbacks_in_flight);
+    dluma_quest_editor_lock();
+    if (!dluma_atomic_compare_exchange(&g_dluma_quest_editor.stopping, 0, 0) &&
+        definition == g_dluma_quest_editor.public_definition)
+        extension = g_dluma_quest_editor.extension_definition;
+    if (extension && !g_dluma_quest_editor.completion_reported) {
+        g_dluma_quest_editor.completion_reported = 1U;
+        report = 1U;
+    }
+    dluma_quest_editor_unlock();
+    /* The stock command completion fallback enumerates only the public EDF
+     * (definition slot 1). Use its own name copier for our separate EDF too. */
+    if (original) {
+        original(definition, names);
+        if (extension && extension != definition) original(extension, names);
+    }
+    if (report) dluma_log_line("INFO", "quest_editor_completion_extensions_added");
+    dluma_atomic_decrement(&g_dluma_quest_editor.callbacks_in_flight);
+    dluma_editor_host_callback_leave(tracked);
+}
+
 static int dluma_quest_editor_ensure_edf(__int64 context)
 {
     __int64* compiler;
@@ -1277,8 +1462,6 @@ static int dluma_quest_editor_ensure_edf(__int64 context)
     unsigned int expected_macro_count;
     const char* stock_paths[3];
     const char* edf_path;
-    WCHAR project_root[DLUMA_MAX_WPATH];
-    char map_name[DLUMA_MAX_MAP_NAME];
     int result = 0;
     if (!context || !g_dluma_quest_editor.definition_loader ||
         dluma_atomic_compare_exchange(&g_dluma_quest_editor.stopping, 0, 0))
@@ -1290,10 +1473,8 @@ static int dluma_quest_editor_ensure_edf(__int64 context)
         !*compiler || !dluma_is_readable((const void*)*compiler, 128U))
         return 0;
     compiler = (__int64*)*compiler;
-    if (!dluma_editor_launch_resolve_current_project(
-            project_root, DLUMA_ARRAY_COUNT(project_root),
-            map_name, DLUMA_ARRAY_COUNT(map_name)))
-        return 0;
+    /* Command definitions also serve the Editor before a map is open.
+     * Compile transactions validate their project paths separately. */
     dluma_quest_editor_lock();
     if (g_dluma_quest_editor.loaded_compiler == compiler) {
         result = dluma_atomic_compare_exchange(
@@ -1304,7 +1485,7 @@ static int dluma_quest_editor_ensure_edf(__int64 context)
     stock_paths[1] = dluma_quest_editor_context_path(context, 88U);
     stock_paths[2] = dluma_quest_editor_context_path(context, 104U);
     if (!stock_paths[0] || !stock_paths[1] || !stock_paths[2] ||
-        !dluma_quest_editor_write_edf(stock_paths) ||
+        !dluma_quest_editor_cached_edf(stock_paths) ||
         !dluma_quest_editor_definition_snapshot(
             compiler, &definitions, &definition_count))
         goto done;
@@ -1315,19 +1496,25 @@ static int dluma_quest_editor_ensure_edf(__int64 context)
         (void)g_dluma_quest_editor.definition_loader(compiler, &edf_path);
         result = dluma_quest_editor_validate_loaded_definition(
             compiler, definition_count, expected_macro_count);
+        if (result && dluma_quest_editor_definition_snapshot(
+                compiler, &definitions, &definition_count) && definition_count >= 3U) {
+            g_dluma_quest_editor.public_definition = definitions[1];
+            g_dluma_quest_editor.extension_definition = definitions[definition_count - 1U];
+        } else result = 0;
     } __except(1) {
         result = 0;
     }
     g_dluma_quest_editor.loaded_compiler = compiler;
     dluma_atomic_exchange(
         &g_dluma_quest_editor.edf_ready, result ? 1 : -1);
-    if (result) {
+    if (result && !g_dluma_quest_editor.definition_reported) {
         dluma_log_pair("INFO", "quest_editor_edf_sha256",
                      g_dluma_quest_editor.edf_sha256);
         dluma_log_u64(
             "INFO", "quest_editor_alias_count",
             g_dluma_quest_editor.accepted_alias_count);
-    } else
+        g_dluma_quest_editor.definition_reported = 1U;
+    } else if (!result)
         dluma_log_pair(
             "ERROR", "quest_editor_validation_failure",
             "generated definition structure or macro count");
@@ -1343,6 +1530,14 @@ static __int64 __fastcall dluma_quest_editor_initialize_hook(__int64 context)
     __int64 result;
     int tracked = dluma_editor_host_callback_enter();
     dluma_atomic_increment(&g_dluma_quest_editor.callbacks_in_flight);
+    /* The stock completion path destroys and recreates the compiler on each
+     * refresh. Allocator reuse must not make a new compiler appear loaded. */
+    dluma_quest_editor_lock();
+    g_dluma_quest_editor.loaded_compiler = 0;
+    g_dluma_quest_editor.public_definition = 0;
+    g_dluma_quest_editor.extension_definition = 0;
+    dluma_atomic_exchange(&g_dluma_quest_editor.edf_ready, 0);
+    dluma_quest_editor_unlock();
     result = original ? original(context) : 0;
     /* Managed QuestEditor startup can replace the process top-level filter.
      * Reassert the Editor-only fallback after InitializeMe while retaining
@@ -1374,6 +1569,8 @@ static void __fastcall dluma_quest_editor_compile_hook(
     const char* source_value = 0;
     const char* output_value = 0;
     const char* compiler_source = 0;
+    char native_compiler_source[260];
+    const char* native_compiler_source_value = native_compiler_source;
     int definitions_ready;
     int authoring_ready = 0;
     int tracked = dluma_editor_host_callback_enter();
@@ -1398,7 +1595,7 @@ static void __fastcall dluma_quest_editor_compile_hook(
             source_value, output_value,
             project_root, DLUMA_ARRAY_COUNT(project_root),
             source_absolute, DLUMA_ARRAY_COUNT(source_absolute),
-            output_absolute, DLUMA_ARRAY_COUNT(output_absolute))) {
+            output_absolute, DLUMA_ARRAY_COUNT(output_absolute), tracked)) {
         dluma_log_pair(
             "INFO", "quest_compile_source_resolved", source_absolute);
         dluma_log_pair(
@@ -1412,7 +1609,13 @@ static void __fastcall dluma_quest_editor_compile_hook(
             compiler_source =
                 dluma_quest_authoring_compiler_source(transaction);
             if (!compiler_source) authoring_ready = 0;
-            else {
+            else if (!dluma_editor_quest_native_filename_from_utf8(
+                    compiler_source, native_compiler_source,
+                    DLUMA_ARRAY_COUNT(native_compiler_source))) {
+                authoring_ready = 0;
+                dluma_log_pair("ERROR", "quest_compile_rejected",
+                    "lowered source path is not representable in the native file-API codepage");
+            } else {
                 const char* compiler_sha256 =
                     dluma_quest_authoring_compiler_source_sha256(transaction);
                 dluma_log_pair(
@@ -1427,7 +1630,7 @@ static void __fastcall dluma_quest_editor_compile_hook(
     if (!definitions_ready || authoring_ready) {
         if (original) {
             if (prepare == DLUMA_QUEST_AUTHORING_CUSTOM)
-                original(context, &compiler_source, output_path);
+                original(context, &native_compiler_source_value, output_path);
             else
                 original(context, source_path, output_path);
         }
@@ -1474,6 +1677,10 @@ static int dluma_quest_editor_install_module(HMODULE module)
     g_dluma_quest_editor.definition_loader =
         (DlumaQuestEditorDefinitionFn)(
             base + DLUMA_QUEST_EDITOR_DEFINITION_RVA);
+    g_dluma_quest_editor.ui_category =
+        (DlumaQuestEditorUiCategoryFn)(base + DLUMA_QUEST_EDITOR_UI_CATEGORY_RVA);
+    g_dluma_quest_editor.ui_register =
+        (DlumaQuestEditorUiRegisterFn)(base + DLUMA_QUEST_EDITOR_UI_REGISTER_RVA);
     if (!dluma_quest_editor_detour_install(
             &g_dluma_quest_editor.initialize_detour,
             base + DLUMA_QUEST_EDITOR_INIT_RVA,
@@ -1494,6 +1701,29 @@ static int dluma_quest_editor_install_module(HMODULE module)
                      "compile detour install");
         (void)dluma_quest_editor_detour_restore(
             &g_dluma_quest_editor.initialize_detour);
+        goto failed;
+    }
+    if (!dluma_quest_editor_detour_install(
+            &g_dluma_quest_editor.ui_load_detour,
+            base + DLUMA_QUEST_EDITOR_UI_LOAD_RVA,
+            g_dluma_quest_editor_ui_load_prefix,
+            DLUMA_QUEST_EDITOR_UI_LOAD_STOLEN,
+            (const void*)dluma_quest_editor_ui_load_hook)) {
+        (void)dluma_quest_editor_detour_restore(
+            &g_dluma_quest_editor.compile_detour);
+        (void)dluma_quest_editor_detour_restore(
+            &g_dluma_quest_editor.initialize_detour);
+        goto failed;
+    }
+    if (!dluma_quest_editor_detour_install(
+            &g_dluma_quest_editor.names_detour,
+            base + DLUMA_QUEST_EDITOR_NAMES_RVA,
+            g_dluma_quest_editor_names_prefix,
+            DLUMA_QUEST_EDITOR_NAMES_STOLEN,
+            (const void*)dluma_quest_editor_names_hook)) {
+        (void)dluma_quest_editor_detour_restore(&g_dluma_quest_editor.ui_load_detour);
+        (void)dluma_quest_editor_detour_restore(&g_dluma_quest_editor.compile_detour);
+        (void)dluma_quest_editor_detour_restore(&g_dluma_quest_editor.initialize_detour);
         goto failed;
     }
     dluma_atomic_exchange(&g_dluma_quest_editor.stopping, 0);
@@ -1632,6 +1862,10 @@ int dluma_quest_editor_stop(void)
         }
     }
     if (!dluma_quest_editor_detour_restore(
+            &g_dluma_quest_editor.names_detour) ||
+        !dluma_quest_editor_detour_restore(
+            &g_dluma_quest_editor.ui_load_detour) ||
+        !dluma_quest_editor_detour_restore(
             &g_dluma_quest_editor.compile_detour) ||
         !dluma_quest_editor_detour_restore(
             &g_dluma_quest_editor.initialize_detour))
@@ -1643,6 +1877,12 @@ int dluma_quest_editor_stop(void)
         Sleep(1);
     if (dluma_atomic_compare_exchange(
             &g_dluma_quest_editor.callbacks_in_flight, 0, 0) != 0)
+        return 0;
+    if (g_dluma_quest_editor.names_detour.trampoline &&
+        !VirtualFree(g_dluma_quest_editor.names_detour.trampoline, 0, MEM_RELEASE))
+        return 0;
+    if (g_dluma_quest_editor.ui_load_detour.trampoline &&
+        !VirtualFree(g_dluma_quest_editor.ui_load_detour.trampoline, 0, MEM_RELEASE))
         return 0;
     if (g_dluma_quest_editor.compile_detour.trampoline &&
         !VirtualFree(
@@ -1658,8 +1898,22 @@ int dluma_quest_editor_stop(void)
            sizeof(g_dluma_quest_editor.compile_detour));
     memset(&g_dluma_quest_editor.initialize_detour, 0,
            sizeof(g_dluma_quest_editor.initialize_detour));
+    memset(&g_dluma_quest_editor.ui_load_detour, 0,
+           sizeof(g_dluma_quest_editor.ui_load_detour));
+    memset(&g_dluma_quest_editor.names_detour, 0,
+           sizeof(g_dluma_quest_editor.names_detour));
     g_dluma_quest_editor.definition_loader = 0;
+    g_dluma_quest_editor.ui_category = 0;
+    g_dluma_quest_editor.ui_register = 0;
     g_dluma_quest_editor.loaded_compiler = 0;
+    g_dluma_quest_editor.public_definition = 0;
+    g_dluma_quest_editor.extension_definition = 0;
+    if (g_dluma_quest_editor.edf_guard &&
+        g_dluma_quest_editor.edf_guard != INVALID_HANDLE_VALUE)
+        CloseHandle(g_dluma_quest_editor.edf_guard);
+    g_dluma_quest_editor.edf_guard = 0;
+    g_dluma_quest_editor.definition_reported = 0;
+    g_dluma_quest_editor.completion_reported = 0;
     g_dluma_quest_editor.module = 0;
     g_dluma_quest_editor.load_library_iat_slot = 0;
     g_dluma_quest_editor.original_load_library = 0;

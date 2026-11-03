@@ -18,4 +18,6 @@ The visual quest editor uses Nodify 7.3.0, copyright Miroiu Emanuel, under the M
 
 The source-code license does not grant rights to Dying Light game data or to separately licensed mod content. Stock-derived menu and camera resources remain subject to their original rights, including `PakAssets/Camera/menubackgroundcameraactions_menu_lvl_new.scr`, `PakAssets/Camera/menuscreen3dplacement_menu_lvl_new.scr`, and the main-menu, options, and extras XUI resources. They are excluded from the project's MIT license. Confirm redistribution permission for these resources before publishing a package that includes them.
 
+The startup illustration in `assets/editor-splash/startup.gif` contains Dying Light game artwork, characters, and Techland branding. These elements remain subject to their original rights and are excluded from DLUMA's MIT license. The theme palette in `assets/editor-theme/palette.json` is part of DLUMA.
+
 Check the ownership and license of any additional artwork, audio, or game content before adding it to a public source repository or Workshop item.

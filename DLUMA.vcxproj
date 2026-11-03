@@ -49,6 +49,7 @@
     <DlumaLoaderMapPath>$(OutDir)$(TargetName).map</DlumaLoaderMapPath>
     <DlumaManagedOutputDir>$(ProjectDir)sdk\dotnet\Dluma.Managed.Bootstrap\bin\$(Configuration)\net10.0\</DlumaManagedOutputDir>
     <DlumaQuestGraphOutputDir>$(ProjectDir)build\quest-graph\$(Configuration)\</DlumaQuestGraphOutputDir>
+    <DlumaEditorThemeOutputDir>$(ProjectDir)build\editor-theme\$(Configuration)\</DlumaEditorThemeOutputDir>
     <DlumaLocalPropsPath>$(ProjectDir)DLUMA.local.props</DlumaLocalPropsPath>
     <DlumaAutoDeployLocal Condition="'$(DlumaAutoDeployLocal)' == ''">false</DlumaAutoDeployLocal>
     <DlumaPlayerDiOnDestroyObserverDiagnosticOptIn
@@ -86,13 +87,13 @@
       <EntryPointSymbol>DllMain</EntryPointSymbol>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
       <ModuleDefinitionFile>$(ProjectDir)build\exports.def</ModuleDefinitionFile>
-      <AdditionalDependencies>kernel32.lib;user32.lib;winhttp.lib;bcrypt.lib;advapi32.lib;BufferOverflowU.lib;libvcruntime.lib;libcmt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winhttp.lib;bcrypt.lib;advapi32.lib;BufferOverflowU.lib;libvcruntime.lib;libcmt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <GenerateMapFile>true</GenerateMapFile>
       <MapFileName>$(DlumaLoaderMapPath)</MapFileName>
       <DataExecutionPrevention>true</DataExecutionPrevention>
       <RandomizedBaseAddress>true</RandomizedBaseAddress>
-      <AdditionalOptions>/HIGHENTROPYVA /GUARD:CF %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/HIGHENTROPYVA /GUARD:CF /PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -151,6 +152,18 @@
     <ClCompile Include="src\dlw_editor_presence.c" />
     <ClCompile Include="src\dlw_editor_presence_core.c" />
     <ClCompile Include="src\dlw_editor_host.c" />
+    <ClCompile Include="src\dlw_editor_ui.c" />
+    <ClCompile Include="src\dlw_editor_splash.c" />
+    <ClCompile Include="src\dlw_editor_theme.c" />
+    <ClCompile Include="src\dlw_editor_theme_controls.c" />
+    <ClCompile Include="src\dlw_editor_theme_scintilla.c" />
+    <ClCompile Include="src\dlw_editor_theme_profile.c" />
+    <ClCompile Include="src\dlw_editor_theme_framework.c" />
+    <ClCompile Include="src\dlw_editor_theme_grid.c" />
+    <ClCompile Include="src\dlw_editor_theme_properties.c" />
+    <ClCompile Include="src\dlw_editor_theme_mfc.c" />
+    <ClCompile Include="src\dlw_editor_panel_host.c" />
+    <ClCompile Include="src\core\dlw_editor_theme_core.c" />
     <ClCompile Include="src\dlw_editor_quest_graph_bridge.c" />
     <ClCompile Include="src\dlw_editor_exit_observer.c" />
     <ClCompile Include="src\dlw_editor_animation_bridge.c" />
@@ -972,6 +985,19 @@
     <ClInclude Include="src\dlw_editor_presence.h" />
     <ClInclude Include="src\dlw_editor_presence_core.h" />
     <ClInclude Include="src\dlw_editor_host.h" />
+    <ClInclude Include="src\dlw_editor_ui.h" />
+    <ClInclude Include="src\dlw_editor_splash.h" />
+    <ClInclude Include="src\dlw_editor_theme.h" />
+    <ClInclude Include="src\dlw_editor_theme_controls.h" />
+    <ClInclude Include="src\dlw_editor_theme_scintilla.h" />
+    <ClInclude Include="src\dlw_editor_theme_profile.h" />
+    <ClInclude Include="src\dlw_editor_theme_framework.h" />
+    <ClInclude Include="src\dlw_editor_theme_grid.h" />
+    <ClInclude Include="src\dlw_editor_theme_properties.h" />
+    <ClInclude Include="src\dlw_editor_theme_mfc.h" />
+    <ClInclude Include="src\dlw_editor_panel_host.h" />
+    <ClInclude Include="src\dlw_editor_theme_system.h" />
+    <ClInclude Include="src\core\dlw_editor_theme_core.h" />
     <ClInclude Include="src\dlw_editor_quest_graph_bridge.h" />
     <ClInclude Include="src\dlw_editor_exit_observer.h" />
     <ClInclude Include="src\dlw_editor_animation_bridge.h" />
@@ -1193,6 +1219,11 @@
           Condition="'$(DesignTimeBuild)' != 'true'">
     <Exec Command="python &quot;$(ProjectDir)tools\generate_nightly_popup.py&quot;" />
   </Target>
+  <Target Name="GenerateDlumaEditorTheme"
+          BeforeTargets="ClCompile"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="python &quot;$(ProjectDir)tools\generate_editor_theme.py&quot;" />
+  </Target>
   <Target Name="GenerateLoaderSymbolManifest"
           AfterTargets="Link"
           Condition="'$(DesignTimeBuild)' != 'true'">
@@ -1205,6 +1236,12 @@
     <MakeDir Directories="$(DlumaPackageDir)" />
     <Exec Command="call &quot;$(ProjectDir)tools\build_lua54_helper_msvc.bat&quot; $(Configuration) &quot;$(OutDir).&quot;" />
     <Exec Command="call &quot;$(ProjectDir)tools\build_discord_presence_helper_msvc.bat&quot; $(Configuration) &quot;$(OutDir).&quot;" />
+    <RemoveDir Directories="$(DlumaEditorThemeOutputDir)" />
+    <MakeDir Directories="$(DlumaEditorThemeOutputDir)" />
+    <Exec Command="call &quot;$(ProjectDir)tools\build_editor_theme_helper_msvc.bat&quot; $(Configuration) &quot;$(DlumaEditorThemeOutputDir).&quot;" />
+    <Exec Command="dotnet build &quot;$(ProjectDir)tools\editor-theme\Dluma.EditorTheme.Framework\Dluma.EditorTheme.Framework.csproj&quot; -c $(Configuration) --nologo -p:Platform=&quot;Any CPU&quot; -o &quot;$(DlumaEditorThemeOutputDir).&quot;" />
+    <Copy Condition="Exists('$(ProjectDir)assets\editor-splash\startup.gif')"
+          SourceFiles="$(ProjectDir)assets\editor-splash\startup.gif" DestinationFolder="$(DlumaEditorThemeOutputDir)" />
     <Exec Command="dotnet build &quot;$(ProjectDir)sdk\dotnet\Dluma.Managed.slnx&quot; -c $(Configuration) --nologo -p:Platform=&quot;Any CPU&quot;" />
     <RemoveDir Directories="$(DlumaQuestGraphOutputDir)" />
     <Exec Command="dotnet restore &quot;$(ProjectDir)workbench\Dluma.QuestGraph\Dluma.QuestGraph.csproj&quot; --locked-mode --nologo" />
@@ -1218,7 +1255,7 @@
           SourceFiles="$(OutDir)dluma_lua54.dll;$(OutDir)LICENSE_LUA_5.4.8.txt;$(OutDir)dluma_discord_presence.dll"
           DestinationFolder="$(DlumaPackageDir)" />
     <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\build_content_pack.ps1&quot; -OutputPath &quot;$(DlumaContentPackPath)&quot;" />
-    <Exec Command="python &quot;$(ProjectDir)tools\build_managed_runtime.py&quot; --output-dir &quot;$(DlumaPackageDir).&quot; --managed-output &quot;$(DlumaManagedOutputDir).&quot; --quest-graph-output &quot;$(DlumaQuestGraphOutputDir).&quot; --catalog-hash &quot;$(ProjectDir)api\generated\dluma_api_catalog.sha256&quot; --loader-symbol-manifest &quot;$(DlumaLoaderAddressManifestPath)&quot;" />
+    <Exec Command="python &quot;$(ProjectDir)tools\build_managed_runtime.py&quot; --output-dir &quot;$(DlumaPackageDir).&quot; --managed-output &quot;$(DlumaManagedOutputDir).&quot; --quest-graph-output &quot;$(DlumaQuestGraphOutputDir).&quot; --editor-theme-output &quot;$(DlumaEditorThemeOutputDir).&quot; --catalog-hash &quot;$(ProjectDir)api\generated\dluma_api_catalog.sha256&quot; --loader-symbol-manifest &quot;$(DlumaLoaderAddressManifestPath)&quot;" />
     <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot;" />
     <Exec Condition="'$(Configuration)' == 'Release'" Command="python &quot;$(ProjectDir)tools\prepare_release.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --output-dir &quot;$(ProjectDir)release&quot; --refresh-workshop" />
     <Message Importance="high"

@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Text;
 using System.Windows;
 using Dluma.QuestGraph.Core;
+using Dluma.QuestGraph.Services;
+using Dluma.EditorTheme;
 
 namespace Dluma.QuestGraph.ViewModels;
 
@@ -16,6 +18,8 @@ public sealed class QuestNodeViewModel : ObservableObject
     private string _headerEditText = string.Empty;
     private bool _isHeaderEditing;
     private bool _isHeaderCommitting;
+    private readonly string _headerColor;
+    private readonly string _headerForegroundColor;
 
     public QuestNodeViewModel(
         QuestGraphNode graphNode,
@@ -41,8 +45,10 @@ public sealed class QuestNodeViewModel : ObservableObject
         _isCollapsed = isCollapsed;
         _note = note;
         _layoutChanging = layoutChanging;
-        HeaderColor = headerColor;
-        HeaderForegroundColor = headerForegroundColor;
+        _headerColor = headerColor;
+        _headerForegroundColor = headerForegroundColor;
+        if (EditorThemeService.Current is { } theme)
+            WeakEventManager<EditorThemeService, EventArgs>.AddHandler(theme, nameof(EditorThemeService.ThemeChanged), OnThemeChanged);
         IEnumerable<QuestGraphPort> visiblePorts = graphNode.Ports;
         Inputs = new ObservableCollection<QuestPortViewModel>(
             visiblePorts
@@ -63,10 +69,17 @@ public sealed class QuestNodeViewModel : ObservableObject
     public string Kind => GraphNode.Kind.ToString();
     public bool IsOpaque => GraphNode.IsOpaque;
     public bool IsDetached => GraphNode.IsDetached;
-    public string HeaderColor { get; }
-    public string HeaderForegroundColor { get; }
-    public string BorderColor => IsDetached ? "#C9825B" : "#52657A";
-    public double NodeOpacity => IsDetached ? 0.78 : 1.0;
+    public string HeaderColor => EditorThemeService.Current?.GraphColor(_headerColor, ThemeRole.Panel) ?? _headerColor;
+    public string HeaderForegroundColor => EditorThemeService.Current?.GraphColor(_headerForegroundColor, ThemeRole.Text) ?? _headerForegroundColor;
+    public string BorderColor => EditorThemeService.Current?.GraphColor(IsDetached ? "#C9825B" : "#52657A", ThemeRole.Border) ?? (IsDetached ? "#C9825B" : "#52657A");
+    public double NodeOpacity => IsDetached && !(EditorThemeService.Current?.IsHighContrast ?? SystemParameters.HighContrast) ? 0.78 : 1.0;
+    private void OnThemeChanged(object? sender, EventArgs args)
+    {
+        OnPropertyChanged(nameof(HeaderColor));
+        OnPropertyChanged(nameof(HeaderForegroundColor));
+        OnPropertyChanged(nameof(BorderColor));
+        OnPropertyChanged(nameof(NodeOpacity));
+    }
     public int Line => SemanticNode.Span.Line;
     public int Column => SemanticNode.Span.Column;
     public ObservableCollection<QuestPortViewModel> Inputs { get; }

@@ -13,6 +13,10 @@
 #include "dlw_lua_discovery_internal.h"
 #include "dlw_native_mods.h"
 #include "dlw_quest_editor.h"
+#include "dlw_editor_ui.h"
+#include "dlw_editor_theme.h"
+#include "dlw_editor_panel_host.h"
+#include "dlw_editor_splash.h"
 
 #define DLUMA_EDITOR_CALLBACK_THREAD_CAPACITY 256U
 
@@ -27,6 +31,8 @@ typedef struct DlumaEditorHostState {
     volatile LONG callbacks_in_flight;
     volatile LONG untracked_callbacks_in_flight;
     volatile LONG callback_thread_lock;
+    volatile LONG shutdown_requested;
+    volatile LONG shutdown_finished;
     HANDLE animation_refresh_stop_event;
     HANDLE animation_refresh_worker_thread;
     ULONGLONG session_generation;
@@ -229,6 +235,9 @@ int dluma_editor_host_start(void)
         return 0;
     }
     dluma_load_config();
+    if (!dluma_editor_ui_start())
+        dluma_log_line("WARN", "Editor window service could not start.");
+    (void)dluma_editor_splash_start();
     dluma_editor_host_crash_context_update("host_start", 0, 0);
     if (!dluma_crash_reporting_start() ||
         !dluma_crash_reporting_start_editor_filter()) {
@@ -240,6 +249,8 @@ int dluma_editor_host_start(void)
         dluma_log_line(
             "WARN",
             "Editor exit observer was unavailable; crash dialogs will remain fail-open during shutdown.");
+    if (!dluma_editor_theme_start())
+        dluma_log_line("WARN", "Editor appearance could not be initialized.");
     if (!dluma_discord_presence_start())
         dluma_log_line("WARN", "Editor Discord Rich Presence controller could not start.");
     if (!dluma_editor_presence_start())
@@ -405,5 +416,46 @@ int dluma_editor_host_callbacks_drained(void)
         dluma_editor_launch_hook_callbacks_drained() &&
         dluma_editor_quest_graph_bridge_callbacks_drained() &&
         dluma_quest_editor_callbacks_drained() &&
-        dluma_native_mods_editor_callbacks_drained();
+        dluma_native_mods_editor_callbacks_drained() &&
+        (!g_dluma_editor_host.shutdown_requested ||
+         (g_dluma_editor_host.shutdown_finished &&
+          dluma_editor_theme_callbacks_drained() &&
+          dluma_editor_splash_callbacks_drained() &&
+          dluma_editor_ui_callbacks_drained() &&
+          dluma_editor_panel_host_callbacks_drained()));
+}
+
+static DWORD WINAPI dluma_editor_host_shutdown_worker(LPVOID context)
+{
+    ULONGLONG started = GetTickCount64();
+    int graph_stopped = 0, presence_stopped = 0, theme_stopped = 0, ui_stopped = 0;
+    (void)context;
+    (void)dluma_editor_animation_refresh_watcher_stop();
+    while (GetTickCount64() - started < 5000ULL) {
+        if (!graph_stopped) graph_stopped = dluma_editor_quest_graph_bridge_stop();
+        if (!presence_stopped) presence_stopped = dluma_editor_presence_stop();
+        if (!theme_stopped) theme_stopped = dluma_editor_theme_stop();
+        dluma_editor_splash_stop();
+        if (!ui_stopped) ui_stopped = dluma_editor_ui_stop();
+        if (graph_stopped && presence_stopped && theme_stopped && ui_stopped &&
+            dluma_editor_panel_host_callbacks_drained() &&
+            dluma_editor_splash_callbacks_drained()) {
+            dluma_atomic_exchange(&g_dluma_editor_host.shutdown_finished, 1);
+            return 0;
+        }
+        Sleep(10U);
+    }
+    dluma_log_line("WARN", "Editor callbacks are still completing during shutdown.");
+    return 0;
+}
+
+void dluma_editor_host_request_shutdown(void)
+{
+    HANDLE worker;
+    if (!dluma_dual_host_runtime_is_editor() ||
+        dluma_atomic_compare_exchange(&g_dluma_editor_host.shutdown_requested, 1, 0))
+        return;
+    worker = CreateThread(0, 0, dluma_editor_host_shutdown_worker, 0, 0, 0);
+    if (worker) CloseHandle(worker);
+    else dluma_atomic_exchange(&g_dluma_editor_host.shutdown_requested, 0);
 }

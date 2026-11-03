@@ -43,6 +43,8 @@ public sealed partial class QuestDocumentViewModel
             throw new InvalidDataException("The refreshed Developer Tools bytes do not match their source identity.");
 
         var layout = CreateSidecar();
+        if (!string.Equals(DocumentId, message.DocumentId, StringComparison.Ordinal))
+            _confirmedSavedRevision = -1;
         _catalog = catalog;
         _model = PxslParser.Parse(snapshot, _catalog);
         RebuildGraph(layout);

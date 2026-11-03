@@ -4,41 +4,27 @@
              Startup="OnStartup"
              ShutdownMode="OnMainWindowClose">
   <Application.Resources>
-    <Color x:Key="WindowColor">#0E131A</Color>
-    <Color x:Key="PanelColor">#171E28</Color>
-    <Color x:Key="PanelAltColor">#202B38</Color>
-    <Color x:Key="BorderColor">#334255</Color>
-    <Color x:Key="AccentColor">#F08B2D</Color>
-    <Color x:Key="TextColor">#F2F5F8</Color>
-    <Color x:Key="MutedColor">#9FAEBD</Color>
-
-    <SolidColorBrush x:Key="WindowBrush" Color="{StaticResource WindowColor}" />
-    <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource PanelColor}" />
-    <SolidColorBrush x:Key="PanelAltBrush" Color="{StaticResource PanelAltColor}" />
-    <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}" />
-    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
-    <SolidColorBrush x:Key="TextBrush" Color="{StaticResource TextColor}" />
-    <SolidColorBrush x:Key="MutedBrush" Color="{StaticResource MutedColor}" />
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Themes/EditorTheme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
 
     <Style TargetType="Window">
-      <Setter Property="Background" Value="{StaticResource WindowBrush}" />
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Window}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
       <Setter Property="FontFamily" Value="Segoe UI" />
-      <Setter Property="FontSize" Value="13" />
-    </Style>
-    <Style TargetType="TextBlock">
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="FontSize" Value="{DynamicResource {x:Static SystemFonts.MessageFontSizeKey}}" />
     </Style>
     <Style TargetType="Label">
-      <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.MutedText}" />
       <Setter Property="Padding" Value="0,6,8,3" />
     </Style>
     <Style TargetType="TextBox">
-      <Setter Property="Background" Value="{StaticResource PanelAltBrush}" />
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Alternate}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}" />
+      <Setter Property="CaretBrush" Value="{DynamicResource EditorTheme.Accent}" />
       <Setter Property="Padding" Value="8,6" />
       <Setter Property="Template">
         <Setter.Value>
@@ -52,10 +38,10 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsKeyboardFocused" Value="True">
-                <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource EditorTheme.Accent}" />
               </Trigger>
               <Trigger Property="IsReadOnly" Value="True">
-                <Setter TargetName="Chrome" Property="Background" Value="{StaticResource WindowBrush}" />
+                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource EditorTheme.Window}" />
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="Chrome" Property="Opacity" Value="0.48" />
@@ -66,9 +52,9 @@
       </Setter>
     </Style>
     <Style TargetType="Button">
-      <Setter Property="Background" Value="{StaticResource PanelAltBrush}" />
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Alternate}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Padding" Value="12,7" />
       <Setter Property="Margin" Value="0,0,7,0" />
@@ -89,8 +75,16 @@
                                 RecognizesAccessKey="True" />
             </Border>
             <ControlTemplate.Triggers>
+              <Trigger Property="IsDefaulted" Value="True">
+                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource EditorTheme.Accent}" />
+                <Setter TargetName="Chrome" Property="BorderThickness" Value="2" />
+              </Trigger>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource EditorTheme.Accent}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource EditorTheme.Text}" />
+                <Setter TargetName="Chrome" Property="BorderThickness" Value="2" />
               </Trigger>
               <Trigger Property="IsPressed" Value="True">
                 <Setter TargetName="Chrome" Property="Opacity" Value="0.72" />
@@ -105,18 +99,18 @@
       </Setter>
     </Style>
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-      <Setter Property="Background" Value="{StaticResource AccentBrush}" />
-      <Setter Property="Foreground" Value="#181006" />
-      <Setter Property="BorderBrush" Value="#FFAD62" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Selection}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.SelectionText}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Accent}" />
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <Style TargetType="ListBox">
-      <Setter Property="Background" Value="{StaticResource PanelBrush}" />
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Panel}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
     </Style>
     <Style TargetType="ListBoxItem">
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
       <Setter Property="Padding" Value="7,5" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Template">
@@ -127,20 +121,28 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Chrome" Property="Background" Value="{StaticResource PanelAltBrush}" />
+                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource EditorTheme.Alternate}" />
               </Trigger>
               <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="Chrome" Property="Background" Value="#314052" />
-                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource EditorTheme.Selection}" />
+                <Setter Property="Foreground" Value="{DynamicResource EditorTheme.SelectionText}" />
               </Trigger>
+              <MultiTrigger>
+                <MultiTrigger.Conditions>
+                  <Condition Property="IsSelected" Value="True" />
+                  <Condition Property="Selector.IsSelectionActive" Value="False" />
+                </MultiTrigger.Conditions>
+                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource EditorTheme.InactiveSelection}" />
+                <Setter Property="Foreground" Value="{DynamicResource EditorTheme.InactiveSelectionText}" />
+              </MultiTrigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
         </Setter.Value>
       </Setter>
     </Style>
     <Style TargetType="TabControl">
-      <Setter Property="Background" Value="{StaticResource WindowBrush}" />
-      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Window}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Template">
         <Setter.Value>
@@ -153,7 +155,7 @@
               <TabPanel x:Name="HeaderPanel"
                         Grid.Row="0"
                         IsItemsHost="True"
-                        Background="{StaticResource PanelBrush}"
+                        Background="{DynamicResource EditorTheme.Panel}"
                         KeyboardNavigation.TabIndex="1" />
               <Border Grid.Row="1"
                       Background="{TemplateBinding Background}"
@@ -172,9 +174,9 @@
       </Setter>
     </Style>
     <Style TargetType="TabItem">
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-      <Setter Property="Background" Value="{StaticResource PanelBrush}" />
-      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Panel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
       <Setter Property="Padding" Value="12,6" />
       <Setter Property="Template">
         <Setter.Value>
@@ -190,12 +192,12 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Chrome" Property="Background" Value="{StaticResource PanelAltBrush}" />
+                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource EditorTheme.Alternate}" />
               </Trigger>
               <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="Chrome" Property="Background" Value="#283647" />
-                <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
-                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource EditorTheme.Alternate}" />
+                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource EditorTheme.Accent}" />
+                <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
@@ -206,8 +208,8 @@
       </Setter>
     </Style>
     <Style TargetType="ComboBoxItem">
-      <Setter Property="Background" Value="{StaticResource PanelAltBrush}" />
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Alternate}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
       <Setter Property="Padding" Value="7,5" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Template">
@@ -218,10 +220,11 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsHighlighted" Value="True">
-                <Setter TargetName="Chrome" Property="Background" Value="#314052" />
+                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource EditorTheme.Hover}" />
               </Trigger>
               <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="Chrome" Property="Background" Value="#3B4D61" />
+                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource EditorTheme.Selection}" />
+                <Setter Property="Foreground" Value="{DynamicResource EditorTheme.SelectionText}" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -229,9 +232,9 @@
       </Setter>
     </Style>
     <Style TargetType="ComboBox">
-      <Setter Property="Background" Value="{StaticResource PanelAltBrush}" />
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Alternate}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Padding" Value="7,5" />
       <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
@@ -268,7 +271,7 @@
                   <Path HorizontalAlignment="Right"
                         VerticalAlignment="Center"
                         Margin="0,0,9,0"
-                        Fill="{StaticResource MutedBrush}"
+                        Fill="{DynamicResource EditorTheme.MutedText}"
                         Data="M 0 0 L 8 0 L 4 5 Z" />
                 </Grid>
               </ToggleButton>
@@ -290,7 +293,7 @@
                             IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
                 <Path HorizontalAlignment="Center"
                       VerticalAlignment="Center"
-                      Fill="{StaticResource MutedBrush}"
+                      Fill="{DynamicResource EditorTheme.MutedText}"
                       Data="M 0 0 L 8 0 L 4 5 Z" />
               </ToggleButton>
               <Popup x:Name="PART_Popup"
@@ -299,8 +302,8 @@
                      IsOpen="{TemplateBinding IsDropDownOpen}"
                      Placement="Bottom"
                      PopupAnimation="Fade">
-                <Border Background="{StaticResource PanelAltBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
+                <Border Background="{DynamicResource EditorTheme.Alternate}"
+                        BorderBrush="{DynamicResource EditorTheme.Border}"
                         BorderThickness="1"
                         MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
                         MaxHeight="320">
@@ -317,7 +320,7 @@
                 <Setter TargetName="EditableDropDownToggle" Property="Visibility" Value="Visible" />
               </Trigger>
               <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource EditorTheme.Accent}" />
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
@@ -331,19 +334,19 @@
       </Setter>
     </Style>
     <Style TargetType="DataGrid">
-      <Setter Property="Background" Value="{StaticResource PanelBrush}" />
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-      <Setter Property="RowBackground" Value="{StaticResource PanelBrush}" />
-      <Setter Property="AlternatingRowBackground" Value="{StaticResource PanelAltBrush}" />
-      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
-      <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderBrush}" />
-      <Setter Property="VerticalGridLinesBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Panel}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
+      <Setter Property="RowBackground" Value="{DynamicResource EditorTheme.Panel}" />
+      <Setter Property="AlternatingRowBackground" Value="{DynamicResource EditorTheme.Alternate}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
+      <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource EditorTheme.Border}" />
+      <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource EditorTheme.Border}" />
       <Setter Property="ColumnHeaderStyle">
         <Setter.Value>
           <Style TargetType="{x:Type DataGridColumnHeader}">
-            <Setter Property="Background" Value="{StaticResource PanelAltBrush}" />
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource EditorTheme.Alternate}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
             <Setter Property="BorderThickness" Value="0,0,1,1" />
             <Setter Property="Padding" Value="7,5" />
             <Setter Property="Template">
@@ -365,18 +368,19 @@
       <Setter Property="CellStyle">
         <Setter.Value>
           <Style TargetType="{x:Type DataGridCell}">
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
             <Style.Triggers>
               <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="#3B4D61" />
-                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                <Setter Property="Background" Value="{DynamicResource EditorTheme.Selection}" />
+                <Setter Property="Foreground" Value="{DynamicResource EditorTheme.SelectionText}" />
               </Trigger>
             </Style.Triggers>
           </Style>
         </Setter.Value>
       </Setter>
     </Style>
+    </ResourceDictionary>
   </Application.Resources>
 </Application>

@@ -16,9 +16,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\build\generated\editor-theme\EditorThemeRoles.g.cs" Link="Generated\EditorThemeRoles.g.cs" />
+    <Page Include="..\..\build\generated\editor-theme\ThemeDefaults.xaml" Link="Themes\ThemeDefaults.xaml" />
     <PackageReference Include="Nodify" Version="7.3.0" />
     <ProjectReference Include="..\Dluma.QuestGraph.Core\Dluma.QuestGraph.Core.csproj" />
   </ItemGroup>
+
+  <Target Name="GenerateEditorTheme" BeforeTargets="PrepareForBuild">
+    <Exec Command="python &quot;$(MSBuildProjectDirectory)\..\..\tools\generate_editor_theme.py&quot;" />
+  </Target>
 
   <ItemGroup>
     <Content Include="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />

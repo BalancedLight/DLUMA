@@ -6,6 +6,62 @@ namespace Dluma.QuestGraph.Core.Tests;
 
 public sealed class QuestCatalogSemanticsTests
 {
+    [Theory]
+    [InlineData("call-mod", true)]
+    [InlineData("call-lua", true)]
+    [InlineData("call-native", true)]
+    [InlineData("show-effect", false)]
+    public void AuthoringMetadataKeepsNamedTemplatesAndInspectorBindings(string command, bool builtin)
+    {
+        var signature = $",{command} <<phase_name>> " +
+            (builtin ? "-mod=<<mod.id>> -handler=<<handler>> " : string.Empty) +
+            "-arguments=<<{}>> -wait=0";
+        var parameters = builtin ? "name mod handler arguments wait" : "name arguments wait";
+        var edf = $"# DLUMA authoring: {signature}\n,{command} {parameters} =\n" +
+            "  Phase -type=<<wait guard>> -name=<(,name)> -time=<(,wait)>\n";
+        var catalog = Extract(("quest_extensions.edf", QuestCatalogFormat.Edf, edf));
+        var entry = Entry(catalog, command, QuestCatalogEntryKind.Macro);
+        Assert.True(entry.IsInsertable);
+        Assert.Equal(signature, entry.BuildMinimumTemplate());
+        Assert.Equal(QuestInspectorFieldRole.PhaseName, entry.InspectorFields[0].Role);
+        var arguments = Assert.Single(entry.InspectorFields, value => value.ParameterName == "arguments");
+        Assert.Equal("arguments", arguments.NamedArgument);
+        Assert.Null(arguments.Position);
+        Assert.True(arguments.RequiresAngleBrackets);
+        var wait = Assert.Single(entry.InspectorFields, value => value.ParameterName == "wait");
+        Assert.Equal(QuestParameterEditorKind.Number, wait.EditorKind);
+
+        var source = new QuestSourceSnapshot("metadata-contract", "quests/example.pxsl", 1,
+            Encoding.UTF8.GetBytes(signature + "\n"));
+        var document = PxslParser.Parse(source, catalog);
+        var node = Assert.Single(document.SemanticNodes);
+        Assert.False(node.IsOpaque);
+        Assert.Empty(QuestInspectorService.Inspect(document, node.Id).UnknownArguments);
+        var mutation = QuestInspectorMutationService.SetFieldValue(document, node.Id,
+            arguments.Id, "{\"message\":\"hello world\"}");
+        var result = QuestSourceEditService.Apply(source, mutation.Edits).Source;
+        Assert.Contains("-arguments=<<{\"message\":\"hello world\"}>>",
+            Encoding.UTF8.GetString(result.Bytes.Span));
+    }
+
+    [Fact]
+    public void MissingRequiredNamedFieldIsInsertedInAuthoringOrder()
+    {
+        const string signature = ",custom-action <<phase_name>> -mod=<<mod.id>> -handler=<<handler>> -arguments=<<{}>> -wait=0";
+        var catalog = Extract(("extensions.edf", QuestCatalogFormat.Edf,
+            $"# DLUMA authoring: {signature}\n,custom-action name mod handler arguments wait =\n  Phase -type=<<wait guard>>\n"));
+        var text = signature.Replace("-handler=<<handler>> ", string.Empty) + "\n";
+        var source = new QuestSourceSnapshot("metadata-insertion", "quests/example.pxsl", 1,
+            Encoding.UTF8.GetBytes(text));
+        var document = PxslParser.Parse(source, catalog);
+        var node = Assert.Single(document.SemanticNodes);
+        var mutation = QuestInspectorMutationService.SetFieldValue(document, node.Id,
+            "parameter:handler", "start");
+        var result = QuestSourceEditService.Apply(source, mutation.Edits).Source;
+        Assert.Equal(signature.Replace("<<handler>>", "<<start>>") + "\n",
+            Encoding.UTF8.GetString(result.Bytes.Span));
+    }
+
     [Fact]
     public void StockShapedInputsProduceInsertableMacrosWithResolvedSemantics()
     {

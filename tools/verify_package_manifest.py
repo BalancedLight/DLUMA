@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 
 from build_managed_runtime import (
+    EDITOR_THEME_ARTIFACTS,
     RUNTIME_VERSION,
     read_catalog_hash,
     verify_runtime,
@@ -80,6 +81,17 @@ def main() -> int:
             for record in runtime_manifest.get("files", [])
             if isinstance(record, dict)
         }
+        required_editor = {
+            f"editor/{name}".casefold()
+            for name in EDITOR_THEME_ARTIFACTS
+            if name.casefold().endswith(".dll")
+        }
+        editor_dlls = {
+            path for path in runtime_paths
+            if path.startswith("editor/") and path.endswith(".dll")
+        }
+        if editor_dlls != required_editor:
+            raise ValueError("runtime manifest has missing or unexpected Editor appearance libraries")
         required_diagnostics = {
             "diagnostics/loader_address_ranges.json",
             "updater/apply_nightly_update.ps1",

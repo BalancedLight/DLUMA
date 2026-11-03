@@ -35,7 +35,11 @@ public sealed record QuestInspectorFieldDefinition(
     string? NamedArgument,
     IReadOnlyList<string> AllowedValues,
     string? PairedFieldId,
-    string Description);
+    string Description)
+{
+    public bool RequiresAngleBrackets { get; init; }
+    public int? AuthoringOrder { get; init; }
+}
 
 public sealed record PxslArgumentToken(
     string RawText,

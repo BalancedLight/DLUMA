@@ -7,7 +7,10 @@ public sealed record LaunchOptions(
     string? SessionToken,
     int? EditorProcessId,
     IReadOnlyList<string> Files,
-    bool SmokeTest)
+    bool SmokeTest,
+    string? ThemeConfigPath = null,
+    long? PanelParent = null,
+    ulong? PanelToken = null)
 {
     private const int MaximumArguments = 1_024;
     private const int MaximumCommandLineCharacters = 32_767;
@@ -44,6 +47,9 @@ public sealed record LaunchOptions(
         int? editorProcessId = null;
         var files = new List<string>();
         var smokeTest = false;
+        string? themeConfig = null;
+        long? panelParent = null;
+        ulong? panelToken = null;
 
         for (var index = 0; index < arguments.Count; ++index)
         {
@@ -82,9 +88,30 @@ public sealed record LaunchOptions(
                 editorProcessId = parsedPid;
                 continue;
             }
+            if (TryReadValue(arguments, ref index, "--panel-parent", out var parentText))
+            {
+                if (panelParent is not null || !long.TryParse(parentText, NumberStyles.None, CultureInfo.InvariantCulture, out var parent) || parent <= 0)
+                    throw new ArgumentException("--panel-parent must be a single positive decimal window handle.");
+                panelParent = parent;
+                continue;
+            }
+            if (TryReadValue(arguments, ref index, "--panel-token", out var panelTokenText))
+            {
+                if (panelToken is not null || !ulong.TryParse(panelTokenText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedPanelToken) || parsedPanelToken == 0)
+                    throw new ArgumentException("--panel-token must be a single positive integer.");
+                panelToken = parsedPanelToken;
+                continue;
+            }
             if (TryReadValue(arguments, ref index, "--open", out var file))
             {
                 files.Add(file);
+                continue;
+            }
+            if (TryReadValue(arguments, ref index, "--theme-config", out var config))
+            {
+                if (themeConfig is not null)
+                    throw new ArgumentException("--theme-config cannot be specified more than once.");
+                themeConfig = config;
                 continue;
             }
             if (argument.StartsWith("--", StringComparison.Ordinal))
@@ -98,10 +125,12 @@ public sealed record LaunchOptions(
         if (connectedValueCount is > 0 and < 3)
             throw new ArgumentException(
                 "--pipe, --session-token, and --editor-pid must be supplied together.");
-        if (smokeTest && (connectedValueCount > 0 || files.Count > 0))
+        if ((panelParent is null) != (panelToken is null) || (panelParent is not null && connectedValueCount != 3))
+            throw new ArgumentException("--panel-parent and --panel-token require a connected launch and must be supplied together.");
+        if (smokeTest && (connectedValueCount > 0 || files.Count > 0 || themeConfig is not null || panelParent is not null))
             throw new ArgumentException("--smoke-test must be used by itself.");
 
-        return new LaunchOptions(pipeName, token, editorProcessId, files, smokeTest);
+        return new LaunchOptions(pipeName, token, editorProcessId, files, smokeTest, themeConfig, panelParent, panelToken);
     }
 
     private static bool TryReadValue(

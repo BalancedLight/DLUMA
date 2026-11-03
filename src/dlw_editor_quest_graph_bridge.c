@@ -2,6 +2,10 @@
 
 #include "dlw_dual_host_runtime.h"
 #include "dlw_editor_launch.h"
+#include "dlw_editor_host.h"
+#include "dlw_editor_presence.h"
+#include "dlw_editor_ui.h"
+#include "dlw_editor_panel_host.h"
 #include "dlw_log.h"
 #include "dlw_path_security.h"
 #include "dlw_project_owner_identity.h"
@@ -48,7 +52,13 @@ static int dluma_qg_compare_n(
 #define DLUMA_QG_QUESTEDITOR_TIMESTAMP 0x623395EBU
 #define DLUMA_QG_QUESTEDITOR_IMAGE_SIZE 0x0011F000U
 #define DLUMA_QG_STOCK_SAVE_RVA 0x0000D4C0U
+#define DLUMA_QG_DOCUMENT_VTABLE_RVA 0x000BD128U
 #define DLUMA_QG_CWND_FROM_HANDLE_IAT_RVA 0x000B2BF0U
+#define DLUMA_QG_FULL_PATH_IAT_RVA 0x000B1E18U
+#define DLUMA_QG_NATIVE_FREE_IAT_RVA 0x000B16A0U
+#define DLUMA_QG_FILESYSTEM_TIMESTAMP 0x623394CDU
+#define DLUMA_QG_FILESYSTEM_IMAGE_SIZE 0x00060000U
+#define DLUMA_QG_FULL_PATH_RVA 0x00014D80U
 #define DLUMA_QG_COMPILE_COMMAND 0x0E10U
 #define DLUMA_QG_SCINTILLA_CONTROL 3581
 #define DLUMA_QG_CONTEXT_CONTROL 3602
@@ -60,15 +70,14 @@ static int dluma_qg_compare_n(
 #define DLUMA_QG_MAIN_DISCOVER (WM_APP + 0x352U)
 #define DLUMA_QG_MAIN_TEARDOWN (WM_APP + 0x353U)
 #define DLUMA_QG_SOURCE_TIMER_BASE 0x4D10U
+#define DLUMA_QG_SAVE_TIMER_BASE 0x4E10U
 #define DLUMA_QG_SOURCE_DEBOUNCE_MS 350U
 #define DLUMA_QG_MAX_DIALOGS 16U
+#define DLUMA_QG_MAX_PENDING_DOCUMENTS (2U * DLUMA_QG_MAX_DIALOGS)
 #define DLUMA_QG_MAX_EDITS 4096U
 #define DLUMA_QG_MAX_SOURCE_BYTES (8U * 1024U * 1024U)
 #define DLUMA_QG_MAX_FRAME_BYTES (16U * 1024U * 1024U)
 #define DLUMA_QG_MAX_COMPANION_BYTES (512ULL * 1024ULL * 1024ULL)
-#define DLUMA_QG_MAX_PROJECT_ENTRIES 50000U
-#define DLUMA_QG_MAX_PROJECT_DEPTH 32U
-#define DLUMA_QG_MAX_WORKSHOP_PROJECTS 4096U
 #define DLUMA_QG_IO_TIMEOUT_MS 5000ULL
 #define DLUMA_QG_PIPE_POLL_MS 2U
 #define DLUMA_QG_PRIVATE_RUNTIME_VERSION "10.0.13"
@@ -91,6 +100,7 @@ static int dluma_qg_compare_n(
 #define SCI_AUTOCSETSEPARATOR 2106U
 #define DLUMA_QG_AUTOCOMPLETE_BYTES 65536U
 #define SCN_MODIFIED 2008U
+#define SCN_SAVEPOINTREACHED 2002U
 
 #define WS_CHILD 0x40000000UL
 #define WS_VISIBLE 0x10000000UL
@@ -229,6 +239,14 @@ typedef LONG (WINAPI *DlumaQgBCryptGenRandomFn)(
 typedef void* (__fastcall *DlumaQgCWndFromHandleFn)(HWND);
 typedef __int64 (__fastcall *DlumaQgStockSaveFn)(void*);
 
+typedef struct DlumaQgNativeString {
+    char* data;
+    unsigned int size, capacity;
+} DlumaQgNativeString;
+typedef DlumaQgNativeString* (__fastcall *DlumaQgFullPathFn)(
+    DlumaQgNativeString*, const char*);
+typedef void (__cdecl *DlumaQgNativeFreeFn)(void*);
+
 __declspec(dllimport) HWND WINAPI CreateWindowExW(
     DWORD extended_style, LPCWSTR class_name, LPCWSTR window_name,
     DWORD style, int x, int y, int width, int height, HWND parent,
@@ -262,13 +280,17 @@ __declspec(dllimport) LPWSTR WINAPI GetEnvironmentStringsW(void);
 __declspec(dllimport) BOOL WINAPI FreeEnvironmentStringsW(LPWSTR environment);
 __declspec(dllimport) HWND WINAPI SetFocus(HWND window);
 __declspec(dllimport) UINT WINAPI GetACP(void);
+__declspec(dllimport) UINT WINAPI GetOEMCP(void);
+__declspec(dllimport) BOOL WINAPI AreFileApisANSI(void);
 
 typedef struct DlumaQgDialog {
     HWND dialog;
     HWND scintilla;
     HWND button;
+    DlumaEditorPanelRef panel;
     WNDPROC predecessor;
     WNDPROC scintilla_predecessor;
+    unsigned int clip_children_added;
     char autocomplete_separator;
     WCHAR project_root[DLUMA_MAX_WPATH];
     WCHAR source_path[DLUMA_MAX_WPATH];
@@ -279,6 +301,13 @@ typedef struct DlumaQgDialog {
     ULONGLONG saved_revision;
     char saved_sha256[DLUMA_SHA256_HEX_CAPACITY];
     unsigned int suppress_source_notification;
+    void* native_document;
+    char native_path[DLUMA_MAX_WPATH * 4U];
+    char* save_source;
+    DWORD save_source_size;
+    ULONGLONG save_source_revision;
+    char save_source_sha256[DLUMA_SHA256_HEX_CAPACITY];
+    char save_source_encoding[64];
 } DlumaQgDialog;
 
 typedef enum DlumaQgUiRequestKind {
@@ -287,7 +316,8 @@ typedef enum DlumaQgUiRequestKind {
     DLUMA_QG_UI_COMPILE = 2,
     DLUMA_QG_UI_APPLY_SOURCE = 3,
     DLUMA_QG_UI_ACTIVATE = 4,
-    DLUMA_QG_UI_RESTORE_SOURCE = 5
+    DLUMA_QG_UI_RESTORE_SOURCE = 5,
+    DLUMA_QG_UI_PANEL_READY = 6
 } DlumaQgUiRequestKind;
 
 typedef DlumaQuestGraphTextEdit DlumaQgTextEdit;
@@ -297,6 +327,10 @@ typedef struct DlumaQgUiRequest {
     DlumaQgUiRequestKind kind;
     ULONGLONG expected_revision;
     ULONGLONG response_revision;
+    HWND panel_parent;
+    HWND panel_child;
+    ULONGLONG panel_token;
+    ULONGLONG panel_generation;
     char document_id[DLUMA_SHA256_HEX_CAPACITY];
     char expected_sha256[DLUMA_SHA256_HEX_CAPACITY];
     char expected_result_sha256[DLUMA_SHA256_HEX_CAPACITY];
@@ -312,22 +346,23 @@ typedef struct DlumaQgUiRequest {
     char error[96];
 } DlumaQgUiRequest;
 
-typedef struct DlumaQgSearch {
-    const WCHAR* project_root;
-    const WCHAR* preferred_leaf;
-    const char* source_sha256;
-    WCHAR match[DLUMA_MAX_WPATH];
-    unsigned int match_count;
-    unsigned int entries;
-    unsigned int refused;
-    unsigned int name_only;
-} DlumaQgSearch;
-
 typedef struct DlumaQgWindowCandidate {
     DWORD process_id;
     HWND window;
     ULONGLONG area;
 } DlumaQgWindowCandidate;
+
+typedef struct DlumaQgPendingDocument {
+    ULONGLONG token;
+    unsigned int admitted;
+    unsigned int retired;
+    char* open_frame;
+    DWORD open_size;
+    char* update_frame;
+    DWORD update_size;
+    char* saved_frame;
+    DWORD saved_size;
+} DlumaQgPendingDocument;
 
 typedef struct DlumaQgBridge {
     volatile LONG start_state;
@@ -341,9 +376,14 @@ typedef struct DlumaQgBridge {
     volatile LONG authenticated;
     volatile LONG worker_stopped;
     HWND main_window;
-    WNDPROC main_predecessor;
+    unsigned int main_subscribed;
+    unsigned int ui_teardown_complete;
     DWORD owner_thread_id;
     HMODULE quest_editor;
+    HMODULE filesystem;
+    int filesystem_profile_checked;
+    DlumaQgFullPathFn native_full_path;
+    DlumaQgNativeFreeFn native_string_free;
     DlumaQgDialog dialogs[DLUMA_QG_MAX_DIALOGS];
     DlumaQgUiRequest ui_request;
     HANDLE stop_event;
@@ -352,13 +392,16 @@ typedef struct DlumaQgBridge {
     WCHAR pipe_name[160];
     WCHAR pipe_short_name[128];
     char token[65];
-    char* pending_frame;
-    DWORD pending_frame_size;
+    DlumaQgPendingDocument pending_documents[DLUMA_QG_MAX_PENDING_DOCUMENTS];
+    DWORD pending_document_bytes;
+    unsigned int pending_document_cursor;
+    ULONGLONG companion_epoch;
+    char* pending_panel_frame;
+    DWORD pending_panel_frame_size;
+    DlumaQgDialog* panel_dialog;
     DlumaQuestContextCore context;
     char context_project_identity[DLUMA_MAX_WPATH * 4U];
     char context_map_identity[DLUMA_MAX_MAP_NAME];
-    ULONGLONG pending_generation;
-    ULONGLONG sent_generation;
     ULONGLONG last_launch_tick;
     HANDLE companion_process;
     DWORD companion_process_id;
@@ -404,8 +447,10 @@ static int dluma_qg_message_type_supported(const char* value)
 {
     return value &&
         (strcmp(value, "hello") == 0 ||
+         strcmp(value, "panelReady") == 0 ||
          strcmp(value, "applyEdits") == 0 ||
          strcmp(value, "restoreDocument") == 0 ||
+         strcmp(value, "completeClose") == 0 ||
          strcmp(value, "saveDocument") == 0 ||
          strcmp(value, "compileDocument") == 0 ||
          strcmp(value, "getContext") == 0 ||
@@ -569,6 +614,8 @@ static int dluma_qg_validate_edits_payload(DlumaJsonReader* reader)
     return count > 0U && dluma_json_array_end(reader);
 }
 
+static int dluma_qg_close_payload_valid(const char* payload, DWORD payload_size);
+
 static int dluma_qg_validate_payload(
     const char* type, const char* payload, DWORD payload_size)
 {
@@ -577,8 +624,12 @@ static int dluma_qg_validate_payload(
     unsigned int expected_fields = 0;
     int first = 1;
     if (!type || !payload || !payload_size) return 0;
+    if (strcmp(type, "completeClose") == 0)
+        return dluma_qg_close_payload_valid(payload, payload_size);
     if (strcmp(type, "hello") == 0)
         expected_fields = 0x0FU;
+    else if (strcmp(type, "panelReady") == 0)
+        expected_fields = 0x07U;
     else if (strcmp(type, "getContext") == 0 ||
              strcmp(type, "closeDocument") == 0)
         expected_fields = 0x01U;
@@ -606,7 +657,16 @@ static int dluma_qg_validate_payload(
                 &reader, key, (unsigned int)sizeof(key)) ||
             !dluma_json_take(&reader, ':'))
             return 0;
-        if (strcmp(type, "hello") == 0 &&
+        if (strcmp(type, "panelReady") == 0) {
+            uint64_t value = 0;
+            unsigned int bit = strcmp(key, "parentWindow") == 0 ? 1U :
+                strcmp(key, "childWindow") == 0 ? 2U :
+                strcmp(key, "panelToken") == 0 ? 4U : 0U;
+            if (!bit || !dluma_qg_payload_mark(&fields, bit) ||
+                !dluma_json_u64(&reader, &value) || !value ||
+                (bit != 4U && value > 0x7FFFFFFFFFFFFFFFULL))
+                return 0;
+        } else if (strcmp(type, "hello") == 0 &&
             strcmp(key, "protocolVersion") == 0) {
             uint64_t value = 0;
             if (!dluma_qg_payload_mark(&fields, 1U << 0) ||
@@ -845,12 +905,192 @@ static int dluma_qg_executable_pointer(const void* address)
         protection == PAGE_EXECUTE_WRITECOPY;
 }
 
-static int dluma_qg_dispatch_stock_save(DlumaQgDialog* slot)
+/* fs::full_path and its QuestEditor caller are qualified independently for
+ * this Windows filesystem build. The caller releases the returned TTL buffer
+ * with the same CRT free import used below. */
+static int dluma_qg_filesystem_ready(void)
+{
+    static const BYTE prefix[] = {
+        0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x74,0x24,0x10,
+        0x48,0x89,0x7c,0x24,0x18,0x4c,0x89,0x64,0x24,0x20,
+        0x55,0x48,0x8d,0xac,0x24,0x30,0xff,0xff,0xff,
+        0x48,0x81,0xec,0xd0,0x01,0x00,0x00
+    };
+    HMODULE module = GetModuleHandleW(L"filesystem_x64_rwdi.dll");
+    HMODULE crt = GetModuleHandleW(L"MSVCR100.dll");
+    BYTE* base = (BYTE*)module;
+    BYTE* quest = (BYTE*)g_dluma_qg.quest_editor;
+    WCHAR path[DLUMA_MAX_WPATH];
+    char sha[DLUMA_SHA256_HEX_CAPACITY];
+    DWORD nt;
+    DlumaQgFullPathFn resolve;
+    DlumaQgNativeFreeFn release;
+    if (!module || !crt || !quest) return 0;
+    if (g_dluma_qg.filesystem_profile_checked &&
+        g_dluma_qg.filesystem == module)
+        return g_dluma_qg.native_full_path && g_dluma_qg.native_string_free;
+    g_dluma_qg.filesystem = module;
+    g_dluma_qg.filesystem_profile_checked = 1;
+    g_dluma_qg.native_full_path = 0;
+    g_dluma_qg.native_string_free = 0;
+    if (!dluma_is_readable(base, 0x100U) || *(WORD*)base != 0x5a4dU)
+        return 0;
+    nt = *(DWORD*)(base + 0x3cU);
+    if (nt > 0x10000000U || !dluma_is_readable(base + nt, 0x60U) ||
+        *(DWORD*)(base + nt) != 0x00004550U ||
+        *(WORD*)(base + nt + 24U) != 0x020bU ||
+        *(DWORD*)(base + nt + 8U) != DLUMA_QG_FILESYSTEM_TIMESTAMP ||
+        *(DWORD*)(base + nt + 0x50U) != DLUMA_QG_FILESYSTEM_IMAGE_SIZE ||
+        !dluma_get_module_path_checked(module, path, DLUMA_ARRAY_COUNT(path)) ||
+        !dluma_sha256_file_hex(path, 16ULL * 1024ULL * 1024ULL, sha) ||
+        dluma_stricmp(sha,
+            "C833EBD635572EC9D8D773479FA0DD6E4FA80D9F958A0876C8F07E5F1189B65A"))
+        return 0;
+    resolve = (DlumaQgFullPathFn)GetProcAddress(module,
+        "?full_path@fs@@YA?BV?$string_base@D@ttl@@PEBD@Z");
+    release = (DlumaQgNativeFreeFn)GetProcAddress(crt, "free");
+    if ((BYTE*)resolve != base + DLUMA_QG_FULL_PATH_RVA ||
+        !dluma_is_readable((const void*)resolve, sizeof(prefix)) ||
+        memcmp((const void*)resolve, prefix, sizeof(prefix)) ||
+        !dluma_is_readable(quest + DLUMA_QG_FULL_PATH_IAT_RVA, sizeof(resolve)) ||
+        *(DlumaQgFullPathFn*)(quest + DLUMA_QG_FULL_PATH_IAT_RVA) != resolve ||
+        !dluma_is_readable(quest + DLUMA_QG_NATIVE_FREE_IAT_RVA, sizeof(release)) ||
+        *(DlumaQgNativeFreeFn*)(quest + DLUMA_QG_NATIVE_FREE_IAT_RVA) != release ||
+        !dluma_qg_executable_pointer((const void*)release))
+        return 0;
+    g_dluma_qg.native_full_path = resolve;
+    g_dluma_qg.native_string_free = release;
+    return 1;
+}
+
+static int dluma_qg_absolute_path(const WCHAR* path)
+{
+    if (!path || !path[0]) return 0;
+    if (path[0] == L'\\' && path[1] == L'\\') return 1;
+    return ((path[0] >= L'A' && path[0] <= L'Z') ||
+            (path[0] >= L'a' && path[0] <= L'z')) && path[1] == L':' &&
+        (path[2] == L'\\' || path[2] == L'/');
+}
+
+static int dluma_qg_regular_file_path(const WCHAR* path,
+    WCHAR* canonical, unsigned int capacity)
+{
+    HANDLE file;
+    BY_HANDLE_FILE_INFORMATION info;
+    int valid;
+    if (!path || !canonical || !capacity || !dluma_qg_absolute_path(path))
+        return 0;
+    canonical[0] = 0;
+    file = CreateFileW(path, GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        0, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, 0);
+    if (file == INVALID_HANDLE_VALUE) return 0;
+    valid = GetFileInformationByHandle(file, &info) &&
+        !(info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) &&
+        info.nNumberOfLinks == 1U &&
+        dluma_get_final_path_checked(file, canonical, capacity);
+    CloseHandle(file);
+    if (!valid) canonical[0] = 0;
+    return valid;
+}
+
+static int dluma_qg_native_filename_to_wide(const char* path,
+    WCHAR* output, unsigned int capacity)
+{
+    UINT code_page = AreFileApisANSI() ? GetACP() : GetOEMCP();
+    if (!path || !path[0] || !output || !capacity || capacity > 0x7fffffffU)
+        return 0;
+    output[0] = 0;
+    /* Stock Source opens the byte filename with CreateFileA. Decode using the
+     * same file-API codepage; invalid multibyte sequences cannot identify it. */
+    return MultiByteToWideChar(code_page, 0x00000008U /* MB_ERR_INVALID_CHARS */,
+        path, -1, output, (int)capacity) > 0;
+}
+
+static int dluma_qg_native_relative_path(WCHAR* path)
+{
+    WCHAR* segment = path;
+    WCHAR* cursor;
+    if (!path || !path[0] || path[0] == L'/' || path[0] == L'\\')
+        return 0;
+    /* Validate decoded characters: a DBCS trail byte must never be treated as
+     * an ASCII separator. The canonical regular-file check rejects devices. */
+    for (cursor = path; ; ++cursor) {
+        WCHAR c = *cursor;
+        if (!c || c == L'/' || c == L'\\') {
+            SIZE_T count = (SIZE_T)(cursor - segment);
+            if (!count || (count == 1U && segment[0] == L'.') ||
+                (count == 2U && segment[0] == L'.' && segment[1] == L'.') ||
+                cursor[-1] == L'.' || cursor[-1] == L' ')
+                return 0;
+            if (!c) return 1;
+            *cursor = L'\\';
+            segment = cursor + 1;
+        } else if (c < 0x20U || c == L'<' || c == L'>' || c == L':' ||
+                   c == L'"' || c == L'|' || c == L'?' || c == L'*')
+            return 0;
+    }
+}
+
+static int dluma_qg_mounted_source_path_core(const char* native_path,
+    WCHAR* canonical, unsigned int capacity)
+{
+    DlumaQgNativeString result;
+    /* The admitted native resolver constructs its path in a MAX_PATH buffer. */
+    char resolved[260];
+    WCHAR wide[260];
+    int valid = 0;
+    if (!native_path || !native_path[0] || !canonical || !capacity ||
+        strlen(native_path) >= sizeof(resolved) ||
+        !dluma_qg_filesystem_ready()) return 0;
+    canonical[0] = 0;
+    memset(&result, 0, sizeof(result));
+    __try {
+        if (g_dluma_qg.native_full_path(&result, native_path) == &result &&
+            result.data && result.size && result.size <= result.capacity &&
+            result.size < sizeof(resolved) &&
+            dluma_is_readable(result.data, (SIZE_T)result.size + 1U) &&
+            !result.data[result.size] && !memchr(result.data, 0, result.size)) {
+            memcpy(resolved, result.data, (SIZE_T)result.size + 1U);
+            valid = 1;
+        }
+    } __except(1) { valid = 0; }
+    if (result.data) {
+        __try { g_dluma_qg.native_string_free(result.data); }
+        __except(1) { valid = 0; }
+    }
+    return valid && dluma_qg_native_filename_to_wide(resolved, wide, DLUMA_ARRAY_COUNT(wide)) &&
+        dluma_qg_wide_ends_icase(wide, L".pxsl") &&
+        dluma_qg_regular_file_path(wide, canonical, capacity);
+}
+
+static int dluma_qg_mounted_source_path(const char* native_path,
+    WCHAR* canonical, unsigned int capacity)
+{
+    return GetCurrentThreadId() == g_dluma_qg.owner_thread_id &&
+        dluma_qg_mounted_source_path_core(native_path, canonical, capacity);
+}
+
+static int dluma_qg_mounted_identity_matches(DlumaQgDialog* slot,
+    const char* native_path)
+{
+    WCHAR canonical[DLUMA_MAX_WPATH];
+    return slot && slot->source_path[0] &&
+        dluma_qg_mounted_source_path(native_path, canonical, DLUMA_ARRAY_COUNT(canonical)) &&
+        !dluma_wstricmp(canonical, slot->source_path) &&
+        dluma_project_regular_file_is_contained(slot->project_root, canonical);
+}
+
+static int dluma_qg_native_document(
+    DlumaQgDialog* slot, void** object_out, void** document_out,
+    char* path, unsigned int path_capacity)
 {
     BYTE* base;
     DlumaQgCWndFromHandleFn from_handle;
-    DlumaQgStockSaveFn save;
-    void* dialog_object;
+    BYTE* dialog_object;
+    BYTE* document;
+    const char* native_path;
+    unsigned int length, index;
     if (!slot || !slot->dialog ||
         GetCurrentThreadId() != g_dluma_qg.owner_thread_id ||
         !dluma_qg_profile_ready())
@@ -863,16 +1103,63 @@ static int dluma_qg_dispatch_stock_save(DlumaQgDialog* slot)
         return 0;
     from_handle = *(DlumaQgCWndFromHandleFn*)(
         base + DLUMA_QG_CWND_FROM_HANDLE_IAT_RVA);
-    save = (DlumaQgStockSaveFn)(base + DLUMA_QG_STOCK_SAVE_RVA);
-    if (!dluma_qg_executable_pointer((const void*)from_handle) ||
-        !dluma_qg_executable_pointer((const void*)save))
+    if (!dluma_qg_executable_pointer((const void*)from_handle))
         return 0;
-    dialog_object = from_handle(slot->dialog);
+    dialog_object = (BYTE*)from_handle(slot->dialog);
     if (!dialog_object ||
-        !dluma_is_readable(dialog_object, sizeof(void*)))
+        !dluma_is_readable(dialog_object, 712U) ||
+        *(HWND*)(dialog_object + 704U) != slot->scintilla)
+        return 0;
+    document = *(BYTE**)(dialog_object + 632U);
+    if (!document || !dluma_is_readable(document, 88U) ||
+        *(void**)document != (void*)(base + DLUMA_QG_DOCUMENT_VTABLE_RVA) ||
+        *(void**)(document + 64U) != dialog_object)
+        return 0;
+    native_path = *(const char**)(document + 72U);
+    length = *(const unsigned int*)(document + 80U);
+    if (!path || !length || length >= path_capacity || !native_path ||
+        !dluma_is_readable(native_path, length))
+        return 0;
+    for (index = 0; index < length; ++index) if (!native_path[index]) return 0;
+    memcpy(path, native_path, length);
+    path[length] = 0;
+    /* A Save As remains closable through its new native identity. For the
+     * bound document, a namespace switch must not redirect a later stock save
+     * or close replay to another project with the same relative filename. */
+    if (slot->native_document == document && slot->source_path[0] &&
+        !dluma_stricmp(path, slot->native_path) &&
+        !dluma_qg_mounted_identity_matches(slot, path))
+        return 0;
+    if (object_out) *object_out = dialog_object;
+    if (document_out) *document_out = document;
+    return 1;
+}
+
+static int dluma_qg_native_identity_matches(DlumaQgDialog* slot)
+{
+    void* document = 0;
+    char path[DLUMA_MAX_WPATH * 4U];
+    return slot && slot->native_document &&
+        dluma_qg_native_document(slot, 0, &document, path, DLUMA_ARRAY_COUNT(path)) &&
+        document == slot->native_document &&
+        dluma_stricmp(path, slot->native_path) == 0;
+}
+
+static int dluma_qg_dispatch_stock_save(DlumaQgDialog* slot)
+{
+    void* dialog_object = 0;
+    void* document = 0;
+    char path[DLUMA_MAX_WPATH * 4U];
+    DlumaQgStockSaveFn save;
+    if (!dluma_qg_native_identity_matches(slot) ||
+        !dluma_qg_native_document(slot, &dialog_object, &document,
+            path, DLUMA_ARRAY_COUNT(path)))
+        return 0;
+    save = (DlumaQgStockSaveFn)((BYTE*)g_dluma_qg.quest_editor + DLUMA_QG_STOCK_SAVE_RVA);
+    if (!dluma_qg_executable_pointer((const void*)save))
         return 0;
     (void)save(dialog_object);
-    return 1;
+    return dluma_qg_native_identity_matches(slot);
 }
 
 static int dluma_qg_scintilla_class(HWND window)
@@ -939,6 +1226,7 @@ static void dluma_qg_button_position(DlumaQgDialog* slot)
 {
     RECT code_rectangle;
     RECT patch_rectangle;
+    RECT current_rectangle;
     POINT dialog_origin;
     HWND patch_diff;
     int available_width;
@@ -946,7 +1234,7 @@ static void dluma_qg_button_position(DlumaQgDialog* slot)
     int height = 26;
     int x;
     int y;
-    if (!slot || !slot->dialog || !slot->button ||
+    if (!slot || !slot->dialog || !slot->button || slot->panel.token ||
         !slot->scintilla ||
         !GetWindowRect(slot->scintilla, &code_rectangle))
         return;
@@ -976,6 +1264,13 @@ static void dluma_qg_button_position(DlumaQgDialog* slot)
     /* A sibling BUTTON inside the Scintilla rectangle reports visible but
      * is overpainted by the stock editor surface. Keep it in the toolbar
      * row immediately left of Patch Diff instead. */
+    if (IsWindowVisible(slot->button) &&
+        GetWindowRect(slot->button, &current_rectangle) &&
+        current_rectangle.left == dialog_origin.x + x &&
+        current_rectangle.top == dialog_origin.y + y &&
+        current_rectangle.right - current_rectangle.left == width &&
+        current_rectangle.bottom - current_rectangle.top == height)
+        return;
     (void)SetWindowPos(
         slot->button, HWND_TOP, x, y, width, height,
         SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -1132,7 +1427,7 @@ done:
     if (candidates) dluma_free(candidates);
 }
 
-static LRESULT CALLBACK dluma_qg_scintilla_proc(
+static LRESULT CALLBACK dluma_qg_scintilla_proc_impl(
     HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     DlumaQgDialog* slot = dluma_qg_scintilla_find(window);
@@ -1156,279 +1451,150 @@ static LRESULT CALLBACK dluma_qg_scintilla_proc(
     return result;
 }
 
-static int dluma_qg_file_leaf(const WCHAR* path, const WCHAR** leaf)
+static LRESULT CALLBACK dluma_qg_scintilla_proc(
+    HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
-    const WCHAR* cursor;
-    const WCHAR* value;
-    if (!path || !path[0] || !leaf) return 0;
-    value = path;
-    for (cursor = path; *cursor; ++cursor)
-        if (*cursor == L'\\' || *cursor == L'/') value = cursor + 1;
-    *leaf = value;
-    return value[0] != 0;
-}
-
-static int dluma_qg_same_leaf(
-    const WCHAR* path, const WCHAR* expected)
-{
-    const WCHAR* leaf;
-    return expected && expected[0] &&
-        dluma_qg_file_leaf(path, &leaf) &&
-        dluma_wstricmp(leaf, expected) == 0;
-}
-
-static void dluma_qg_search_directory(
-    DlumaQgSearch* search, const WCHAR* directory, unsigned int depth)
-{
-    WCHAR pattern[DLUMA_MAX_WPATH];
-    WCHAR child[DLUMA_MAX_WPATH];
-    WIN32_FIND_DATAW data;
-    HANDLE find;
-    if (!search || search->refused || depth > DLUMA_QG_MAX_PROJECT_DEPTH ||
-        !dluma_checked_path_join(
-            pattern, DLUMA_ARRAY_COUNT(pattern), directory, L"*")) {
-        if (search) search->refused = 1;
-        return;
-    }
-    find = FindFirstFileW(pattern, &data);
-    if (find == INVALID_HANDLE_VALUE) return;
-    do {
-        if (++search->entries > DLUMA_QG_MAX_PROJECT_ENTRIES) {
-            search->refused = 1;
-            break;
-        }
-        if ((data.cFileName[0] == L'.' && !data.cFileName[1]) ||
-            (data.cFileName[0] == L'.' && data.cFileName[1] == L'.' &&
-             !data.cFileName[2]))
-            continue;
-        if (!dluma_checked_path_join(
-                child, DLUMA_ARRAY_COUNT(child),
-                directory, data.cFileName)) {
-            search->refused = 1;
-            break;
-        }
-        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            if (!(data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
-                dluma_qg_search_directory(search, child, depth + 1U);
-            if (search->refused) break;
-            continue;
-        }
-        if (!dluma_qg_wide_ends_icase(data.cFileName, L".pxsl") ||
-            (search->preferred_leaf && search->preferred_leaf[0] &&
-             !dluma_qg_same_leaf(child, search->preferred_leaf)))
-            continue;
-        if (dluma_project_regular_file_is_contained(
-                search->project_root, child)) {
-            char digest[DLUMA_SHA256_HEX_CAPACITY];
-            if (search->name_only ||
-                (dluma_sha256_file_hex(
-                    child, DLUMA_QG_MAX_SOURCE_BYTES, digest) &&
-                 dluma_stricmp(digest, search->source_sha256) == 0)) {
-                ++search->match_count;
-                if (search->match_count == 1U)
-                    dluma_wstr_copy(
-                        search->match, DLUMA_ARRAY_COUNT(search->match),
-                        child);
-            }
-        }
-    } while (FindNextFileW(find, &data));
-    FindClose(find);
-}
-
-static int dluma_qg_search_project_document(
-    const WCHAR* project_root,
-    const WCHAR* preferred_leaf,
-    const char* source_sha256,
-    WCHAR* source_path,
-    unsigned int source_capacity)
-{
-    DlumaQgSearch search;
-    if (!project_root || !source_sha256 ||
-        !source_path || !source_capacity)
-        return -1;
-    source_path[0] = 0;
-    memset(&search, 0, sizeof(search));
-    search.project_root = project_root;
-    search.preferred_leaf = preferred_leaf;
-    search.source_sha256 = source_sha256;
-    dluma_qg_search_directory(&search, project_root, 0);
-    if (search.refused) return -1;
-    if (search.match_count != 1U && preferred_leaf &&
-        preferred_leaf[0]) {
-        memset(&search, 0, sizeof(search));
-        search.project_root = project_root;
-        search.source_sha256 = source_sha256;
-        dluma_qg_search_directory(&search, project_root, 0);
-        if (search.refused) return -1;
-    }
-    if (search.match_count != 1U)
-        return 0;
-    dluma_wstr_copy(
-        source_path, source_capacity, search.match);
-    return source_path[0] ? 1 : -1;
-}
-
-static int dluma_qg_search_project_document_by_leaf(
-    const WCHAR* project_root,
-    const WCHAR* preferred_leaf,
-    WCHAR* source_path,
-    unsigned int source_capacity)
-{
-    DlumaQgSearch search;
-    if (!project_root || !preferred_leaf || !preferred_leaf[0] ||
-        !source_path || !source_capacity)
-        return -1;
-    source_path[0] = 0;
-    memset(&search, 0, sizeof(search));
-    search.project_root = project_root;
-    search.preferred_leaf = preferred_leaf;
-    search.source_sha256 = "";
-    search.name_only = 1U;
-    dluma_qg_search_directory(&search, project_root, 0);
-    if (search.refused) return -1;
-    if (search.match_count != 1U) return 0;
-    dluma_wstr_copy(source_path, source_capacity, search.match);
-    return source_path[0] ? 1 : -1;
-}
-
-static int dluma_qg_search_workshop_pass(
-    const WCHAR* workshop_root,
-    const WCHAR* preferred_leaf,
-    const char* source_sha256,
-    WCHAR* project_root,
-    unsigned int project_capacity,
-    WCHAR* source_path,
-    unsigned int source_capacity,
-    int name_only)
-{
-    WCHAR pattern[DLUMA_MAX_WPATH];
-    WCHAR candidate[DLUMA_MAX_WPATH];
-    WIN32_FIND_DATAW data;
-    HANDLE find = INVALID_HANDLE_VALUE;
-    unsigned int projects = 0;
-    unsigned int entries = 0;
-    unsigned int matches = 0;
-    int result = -1;
-    if (!workshop_root || !source_sha256 ||
-        !project_root || !project_capacity ||
-        !source_path || !source_capacity ||
-        !dluma_checked_path_join(
-            pattern, DLUMA_ARRAY_COUNT(pattern),
-            workshop_root, L"*"))
-        return -1;
-    project_root[0] = 0;
-    source_path[0] = 0;
-    find = FindFirstFileW(pattern, &data);
-    if (find == INVALID_HANDLE_VALUE)
-        return -1;
-    do {
-        DlumaDirectoryIdentity identity;
-        DlumaQgSearch search;
-        if ((data.cFileName[0] == L'.' && !data.cFileName[1]) ||
-            (data.cFileName[0] == L'.' &&
-             data.cFileName[1] == L'.' &&
-             !data.cFileName[2]))
-            continue;
-        if (++projects > DLUMA_QG_MAX_WORKSHOP_PROJECTS)
-            goto done;
-        if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
-            (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
-            continue;
-        if (!dluma_checked_path_join(
-                candidate, DLUMA_ARRAY_COUNT(candidate),
-                workshop_root, data.cFileName) ||
-            !dluma_project_candidate_root_is_contained(
-                workshop_root, candidate) ||
-            !dluma_open_directory_identity(candidate, &identity))
-            goto done;
-        memset(&search, 0, sizeof(search));
-        search.project_root = identity.final_path;
-        search.preferred_leaf = preferred_leaf;
-        search.source_sha256 = source_sha256;
-        search.name_only = name_only ? 1U : 0U;
-        dluma_qg_search_directory(
-            &search, identity.final_path, 0);
-        if (search.refused ||
-            search.entries >
-                DLUMA_QG_MAX_PROJECT_ENTRIES - entries)
-            goto done;
-        entries += search.entries;
-        if (!search.match_count) continue;
-        if (search.match_count != 1U || ++matches != 1U)
-            goto complete;
-        dluma_wstr_copy(
-            project_root, project_capacity,
-            identity.final_path);
-        dluma_wstr_copy(
-            source_path, source_capacity, search.match);
-    } while (FindNextFileW(find, &data));
-    if (GetLastError() != ERROR_NO_MORE_FILES)
-        goto done;
-complete:
-    result = matches == 1U &&
-        project_root[0] && source_path[0] ? 1 : 0;
-done:
-    FindClose(find);
+    LRESULT result;
+    dluma_atomic_increment(&g_dluma_qg.callbacks_in_flight);
+    __try { result = dluma_qg_scintilla_proc_impl(window, message, wparam, lparam); }
+    __finally { dluma_atomic_decrement(&g_dluma_qg.callbacks_in_flight); }
     return result;
 }
 
-static int dluma_qg_search_workshop_document(
-    const WCHAR* workshop_root,
-    const WCHAR* preferred_leaf,
-    const char* source_sha256,
-    WCHAR* project_root,
-    unsigned int project_capacity,
-    WCHAR* source_path,
-    unsigned int source_capacity)
+static int dluma_qg_project_from_native_source(const char* native_path,
+    const WCHAR* source_path, WCHAR* project_root, unsigned int project_capacity)
 {
-    int status = dluma_qg_search_workshop_pass(
-        workshop_root, preferred_leaf, source_sha256,
-        project_root, project_capacity,
-        source_path, source_capacity, 0);
-    if (status == 1) return 1;
-    if (status < 0 || !preferred_leaf ||
-        !preferred_leaf[0])
-        return status;
-    status = dluma_qg_search_workshop_pass(
-        workshop_root, 0, source_sha256,
-        project_root, project_capacity,
-        source_path, source_capacity, 0);
-    if (status == 1) return 1;
-    return dluma_qg_search_workshop_pass(
-        workshop_root, preferred_leaf, source_sha256,
-        project_root, project_capacity,
-        source_path, source_capacity, 1);
+    struct ProjectPaths {
+        WCHAR workshop[DLUMA_MAX_WPATH], candidate[DLUMA_MAX_WPATH];
+        WCHAR quests[DLUMA_MAX_WPATH], joined[DLUMA_MAX_WPATH];
+        WCHAR canonical[DLUMA_MAX_WPATH];
+        DlumaDirectoryIdentity project, quest_directory;
+    } *paths;
+    WCHAR component[260], relative[260];
+    int valid = 0;
+    const WCHAR* cursor;
+    SIZE_T count = 0;
+    if (!native_path || !source_path || !project_root || !project_capacity) return 0;
+    paths = (struct ProjectPaths*)dluma_alloc(sizeof(*paths));
+    if (!paths) return 0;
+    if (!dluma_editor_launch_resolve_workshop_root(paths->workshop, DLUMA_ARRAY_COUNT(paths->workshop)) ||
+        !dluma_final_path_equal_or_under(source_path, paths->workshop)) goto done;
+    cursor = source_path + wcslen(paths->workshop);
+    while (*cursor == L'\\' || *cursor == L'/') ++cursor;
+    while (cursor[count] && cursor[count] != L'\\' && cursor[count] != L'/') {
+        if (count + 1U >= DLUMA_ARRAY_COUNT(component)) goto done;
+        component[count] = cursor[count]; ++count;
+    }
+    if (!count || !cursor[count]) goto done;
+    component[count] = 0;
+    if (!dluma_checked_path_join(paths->candidate, DLUMA_ARRAY_COUNT(paths->candidate), paths->workshop, component) ||
+        !dluma_project_candidate_root_is_contained(paths->workshop, paths->candidate) ||
+        !dluma_open_directory_identity(paths->candidate, &paths->project) ||
+        !dluma_checked_path_join(paths->quests, DLUMA_ARRAY_COUNT(paths->quests), paths->project.final_path, L"data\\quests") ||
+        !dluma_open_directory_identity(paths->quests, &paths->quest_directory) ||
+        !dluma_final_path_equal_or_under(paths->quest_directory.final_path, paths->project.final_path) ||
+        !dluma_final_path_equal_or_under(source_path, paths->quest_directory.final_path) ||
+        !dluma_project_regular_file_is_contained(paths->project.final_path, source_path))
+        goto done;
+    if (!dluma_qg_native_filename_to_wide(native_path, relative, DLUMA_ARRAY_COUNT(relative))) goto done;
+    if (!dluma_qg_absolute_path(relative)) {
+        if (!dluma_qg_native_relative_path(relative) ||
+            !dluma_checked_path_join(paths->joined, DLUMA_ARRAY_COUNT(paths->joined), paths->project.final_path, relative) ||
+            !dluma_qg_regular_file_path(paths->joined, paths->canonical, DLUMA_ARRAY_COUNT(paths->canonical)) ||
+            dluma_wstricmp(paths->canonical, source_path)) goto done;
+    }
+    if (wcslen(paths->project.final_path) + 1U > project_capacity) goto done;
+    dluma_wstr_copy(project_root, project_capacity, paths->project.final_path);
+    valid = 1;
+done:
+    dluma_free(paths);
+    return valid;
 }
 
-static int dluma_qg_title_leaf(HWND dialog, WCHAR* output,
-                             unsigned int capacity)
+int dluma_editor_quest_resolve_compile_paths(
+    const char* native_source, const char* native_output,
+    int editor_callback_tracked,
+    WCHAR* project_root, unsigned int project_capacity,
+    char* source_absolute, unsigned int source_capacity,
+    char* output_absolute, unsigned int output_capacity)
 {
-    HWND window = dialog;
-    unsigned int level;
-    if (!output || capacity < 2U) return 0;
-    output[0] = 0;
-    for (level = 0; window && level < 4U; ++level) {
-        WCHAR title[DLUMA_MAX_WPATH];
-        SIZE_T length;
-        title[0] = 0;
-        if (GetWindowTextW(window, title,
-                           (int)DLUMA_ARRAY_COUNT(title)) > 0) {
-            length = wcslen(title);
-            while (length && (title[length - 1U] == L' ' ||
-                              title[length - 1U] == L'*'))
-                title[--length] = 0;
-            if (dluma_qg_wide_ends_icase(title, L".pxsl")) {
-                const WCHAR* leaf;
-                if (dluma_qg_file_leaf(title, &leaf) &&
-                    wcslen(leaf) + 1U <= capacity) {
-                    dluma_wstr_copy(output, capacity, leaf);
-                    return 1;
-                }
-            }
-        }
-        window = GetParent(window);
+    struct CompilePaths {
+        WCHAR project[DLUMA_MAX_WPATH], source[DLUMA_MAX_WPATH];
+        WCHAR output[DLUMA_MAX_WPATH], joined[DLUMA_MAX_WPATH];
+        WCHAR parent[DLUMA_MAX_WPATH];
+        DlumaDirectoryIdentity parent_identity;
+        char source_utf8[DLUMA_MAX_WPATH * 4U];
+        char output_utf8[DLUMA_MAX_WPATH * 4U];
+    } *paths;
+    const char* failure = "native_source_unavailable";
+    unsigned int index;
+    int valid = 0;
+    if (!native_source || !native_output || !project_root || !project_capacity ||
+        !source_absolute || !source_capacity || !output_absolute || !output_capacity)
+        return 0;
+    project_root[0] = 0; source_absolute[0] = 0; output_absolute[0] = 0;
+    if (!editor_callback_tracked || !dluma_editor_host_current_thread_in_callback() ||
+        !dluma_dual_host_runtime_is_editor() || !dluma_qg_profile_ready()) {
+        dluma_log_pair("ERROR", "quest_compile_resolution", "native_editor_callback_unavailable");
+        return 0;
     }
-    return 0;
+    paths = (struct CompilePaths*)dluma_alloc(sizeof(*paths));
+    if (!paths) return 0;
+    if (!dluma_qg_mounted_source_path_core(native_source, paths->source, DLUMA_ARRAY_COUNT(paths->source)))
+        goto done;
+    failure = "source_project_unavailable";
+    if (!dluma_qg_project_from_native_source(native_source, paths->source,
+            paths->project, DLUMA_ARRAY_COUNT(paths->project))) goto done;
+    failure = "native_output_path_invalid";
+    if (!dluma_qg_native_filename_to_wide(native_output, paths->output, DLUMA_ARRAY_COUNT(paths->output)))
+        goto done;
+    if (!dluma_qg_absolute_path(paths->output)) {
+        if (!dluma_qg_native_relative_path(paths->output) ||
+            !dluma_checked_path_join(paths->joined, DLUMA_ARRAY_COUNT(paths->joined),
+                paths->project, paths->output)) goto done;
+        dluma_wstr_copy(paths->output, DLUMA_ARRAY_COUNT(paths->output), paths->joined);
+    }
+    for (index = 0; paths->output[index]; ++index)
+        if (paths->output[index] == L'/') paths->output[index] = L'\\';
+    dluma_wstr_copy(paths->parent, DLUMA_ARRAY_COUNT(paths->parent), paths->output);
+    dluma_path_parent(paths->parent);
+    failure = "output_parent_outside_source_project";
+    if (!dluma_open_directory_identity(paths->parent, &paths->parent_identity) ||
+        !dluma_final_path_equal_or_under(paths->parent_identity.final_path, paths->project))
+        goto done;
+    failure = "compile_path_encoding_or_capacity";
+    if (!dluma_wide_to_utf8(paths->source, paths->source_utf8, DLUMA_ARRAY_COUNT(paths->source_utf8)) ||
+        !dluma_wide_to_utf8(paths->output, paths->output_utf8, DLUMA_ARRAY_COUNT(paths->output_utf8)) ||
+        wcslen(paths->project) + 1U > project_capacity ||
+        strlen(paths->source_utf8) + 1U > source_capacity ||
+        strlen(paths->output_utf8) + 1U > output_capacity) goto done;
+    dluma_wstr_copy(project_root, project_capacity, paths->project);
+    dluma_str_copy(source_absolute, source_capacity, paths->source_utf8);
+    dluma_str_copy(output_absolute, output_capacity, paths->output_utf8);
+    valid = 1;
+done:
+    if (!valid) dluma_log_pair("ERROR", "quest_compile_resolution", failure);
+    dluma_free(paths);
+    return valid;
+}
+
+int dluma_editor_quest_native_filename_from_utf8(
+    const char* path, char* output, unsigned int capacity)
+{
+    WCHAR wide[DLUMA_MAX_WPATH];
+    UINT code_page = AreFileApisANSI() ? GetACP() : GetOEMCP();
+    BOOL used_default = FALSE;
+    int count;
+    if (!path || !output || !capacity || capacity > 0x7fffffffU) return 0;
+    output[0] = 0;
+    if (!MultiByteToWideChar(CP_UTF8, 0x00000008U /* MB_ERR_INVALID_CHARS */,
+            path, -1, wide, DLUMA_ARRAY_COUNT(wide))) return 0;
+    count = WideCharToMultiByte(code_page,
+        code_page == CP_UTF8 ? 0 : 0x00000400U /* WC_NO_BEST_FIT_CHARS */,
+        wide, -1, output, (int)capacity, 0,
+        code_page == CP_UTF8 ? 0 : &used_default);
+    if (!count || used_default) { output[0] = 0; return 0; }
+    return 1;
 }
 
 static int dluma_qg_make_relative(
@@ -1453,69 +1619,56 @@ static int dluma_qg_make_relative(
 static int dluma_qg_resolve_document(
     DlumaQgDialog* slot, const char* text, DWORD text_size)
 {
-    WCHAR project_root[DLUMA_MAX_WPATH];
-    WCHAR workshop_root[DLUMA_MAX_WPATH];
-    WCHAR preferred_leaf[DLUMA_MAX_WPATH];
-    WCHAR source_path[DLUMA_MAX_WPATH];
-    char map_name[DLUMA_MAX_MAP_NAME];
+    struct DocumentPaths {
+        WCHAR project_root[DLUMA_MAX_WPATH], source_path[DLUMA_MAX_WPATH];
+        char relative_path[DLUMA_MAX_WPATH * 4U];
+        char identity[DLUMA_MAX_WPATH * 4U + 32U];
+    } *paths;
+    int valid = 0;
+    char native_path[260];
     char digest[DLUMA_SHA256_HEX_CAPACITY];
-    int project_status = 0;
-    if (!slot || !text) return 0;
-    project_root[0] = 0;
-    workshop_root[0] = 0;
-    preferred_leaf[0] = 0;
-    source_path[0] = 0;
-    map_name[0] = 0;
+    char document_id[DLUMA_SHA256_HEX_CAPACITY];
+    char lifetime[32];
+    void* native_document = 0;
+    if (!slot || !text || !slot->panel.token) return 0;
+    paths = (struct DocumentPaths*)dluma_alloc(sizeof(*paths));
+    if (!paths) return 0;
+    if (!dluma_qg_native_document(slot, 0, &native_document,
+            native_path, DLUMA_ARRAY_COUNT(native_path))) {
+        dluma_log_pair("WARN", "editor_quest_graph_source_binding", "native_document_unavailable");
+        goto done;
+    }
+    if (!dluma_qg_mounted_source_path(native_path, paths->source_path, DLUMA_ARRAY_COUNT(paths->source_path))) {
+        dluma_log_pair("WARN", "editor_quest_graph_source_binding", "mounted_source_unavailable");
+        goto done;
+    }
+    if (!dluma_qg_project_from_native_source(native_path, paths->source_path,
+            paths->project_root, DLUMA_ARRAY_COUNT(paths->project_root))) {
+        dluma_log_pair("WARN", "editor_quest_graph_source_binding", "source_project_unavailable");
+        goto done;
+    }
+    if (!dluma_qg_make_relative(paths->project_root, paths->source_path,
+            paths->relative_path, DLUMA_ARRAY_COUNT(paths->relative_path)) ||
+        !dluma_wide_to_utf8(paths->source_path, paths->identity, DLUMA_ARRAY_COUNT(paths->identity)) ||
+        !dluma_u64_to_text(slot->panel.token, lifetime, DLUMA_ARRAY_COUNT(lifetime)))
+        goto done;
+    dluma_str_append(paths->identity, DLUMA_ARRAY_COUNT(paths->identity), "|");
+    dluma_str_append(paths->identity, DLUMA_ARRAY_COUNT(paths->identity), lifetime);
+    dluma_sha256_bytes_hex(paths->identity, strlen(paths->identity), document_id);
     dluma_sha256_bytes_hex(text, text_size, digest);
-    (void)dluma_qg_title_leaf(
-        slot->dialog, preferred_leaf,
-        DLUMA_ARRAY_COUNT(preferred_leaf));
-    if (dluma_editor_launch_resolve_current_project(
-            project_root, DLUMA_ARRAY_COUNT(project_root),
-            map_name, DLUMA_ARRAY_COUNT(map_name))) {
-        project_status = dluma_qg_search_project_document(
-            project_root, preferred_leaf, digest,
-            source_path, DLUMA_ARRAY_COUNT(source_path));
-        if (project_status < 0)
-            return 0;
-        if (project_status == 0 && preferred_leaf[0]) {
-            project_status = dluma_qg_search_project_document_by_leaf(
-                project_root, preferred_leaf,
-                source_path, DLUMA_ARRAY_COUNT(source_path));
-            if (project_status < 0) return 0;
-        }
-    }
-    if (project_status != 1) {
-        if (!dluma_editor_launch_resolve_workshop_root(
-                workshop_root,
-                DLUMA_ARRAY_COUNT(workshop_root)) ||
-            dluma_qg_search_workshop_document(
-                workshop_root, preferred_leaf, digest,
-                project_root, DLUMA_ARRAY_COUNT(project_root),
-                source_path, DLUMA_ARRAY_COUNT(source_path)) != 1)
-            return 0;
-    }
-    if (!dluma_project_regular_file_is_contained(
-            project_root, source_path) ||
-        !dluma_qg_make_relative(
-            project_root, source_path,
-            slot->relative_path,
-            DLUMA_ARRAY_COUNT(slot->relative_path)))
-        return 0;
-    dluma_wstr_copy(
-        slot->project_root, DLUMA_ARRAY_COUNT(slot->project_root),
-        project_root);
-    dluma_wstr_copy(
-        slot->source_path, DLUMA_ARRAY_COUNT(slot->source_path),
-        source_path);
-    dluma_str_copy(
-        slot->source_sha256,
-        DLUMA_ARRAY_COUNT(slot->source_sha256), digest);
-    dluma_sha256_bytes_hex(
-        slot->relative_path, strlen(slot->relative_path),
-        slot->document_id);
+    /* Publish the binding only after all native/file/project checks pass. */
+    slot->native_document = native_document;
+    dluma_str_copy(slot->native_path, DLUMA_ARRAY_COUNT(slot->native_path), native_path);
+    dluma_wstr_copy(slot->project_root, DLUMA_ARRAY_COUNT(slot->project_root), paths->project_root);
+    dluma_wstr_copy(slot->source_path, DLUMA_ARRAY_COUNT(slot->source_path), paths->source_path);
+    dluma_str_copy(slot->relative_path, DLUMA_ARRAY_COUNT(slot->relative_path), paths->relative_path);
+    dluma_str_copy(slot->document_id, DLUMA_ARRAY_COUNT(slot->document_id), document_id);
+    dluma_str_copy(slot->source_sha256, DLUMA_ARRAY_COUNT(slot->source_sha256), digest);
     if (!slot->revision) slot->revision = 1ULL;
-    return 1;
+    valid = 1;
+done:
+    dluma_free(paths);
+    return valid;
 }
 
 static int dluma_qg_json_append(
@@ -1684,33 +1837,43 @@ static int dluma_qg_build_open_frame(
     return 1;
 }
 
-static int dluma_qg_build_source_changed_frame(
+static int dluma_qg_build_source_frame(
     DlumaQgDialog* slot, const char* source, DWORD source_size,
+    const char* type, ULONGLONG source_revision, const char* source_sha,
+    const char* source_encoding, const WCHAR* disk_path,
     char** output, DWORD* output_size)
 {
     char revision[32];
     char request_id[33];
     char encoding_name[32];
+    char disk_utf8[DLUMA_MAX_WPATH * 4U];
     char* json;
     DWORD capacity;
     DWORD used = 0;
     if (!slot || !source || !output || !output_size ||
         !dluma_u64_to_text(
-            slot->revision, revision, DLUMA_ARRAY_COUNT(revision)))
+            source_revision, revision, DLUMA_ARRAY_COUNT(revision)))
         return 0;
     memcpy(request_id, g_dluma_qg.token, 32U);
     request_id[32] = 0;
-    if (!dluma_qg_scintilla_encoding(
+    if (source_encoding) {
+        dluma_str_copy(encoding_name, DLUMA_ARRAY_COUNT(encoding_name), source_encoding);
+        if (strcmp(encoding_name, source_encoding)) return 0;
+    } else if (!dluma_qg_scintilla_encoding(
             slot->scintilla, encoding_name,
             DLUMA_ARRAY_COUNT(encoding_name)))
         return 0;
-    capacity = source_size + ((source_size + 2U) / 3U) + 2048U;
+    if (disk_path && !dluma_wide_to_utf8(disk_path, disk_utf8, DLUMA_ARRAY_COUNT(disk_utf8)))
+        return 0;
+    capacity = source_size + ((source_size + 2U) / 3U) + 32768U;
     if (capacity > DLUMA_QG_MAX_FRAME_BYTES) return 0;
     json = (char*)dluma_alloc((SIZE_T)capacity + 1U);
     if (!json) return 0;
     json[0] = 0;
     if (!dluma_qg_json_append(json, capacity, &used,
-            "{\"schemaVersion\":2,\"type\":\"sourceChanged\",\"requestId\":\"") ||
+            "{\"schemaVersion\":2,\"type\":\"") ||
+        !dluma_qg_json_append(json, capacity, &used, type) ||
+        !dluma_qg_json_append(json, capacity, &used, "\",\"requestId\":\"") ||
         !dluma_qg_json_append(json, capacity, &used, request_id) ||
         !dluma_qg_json_append(json, capacity, &used,
             "\",\"sessionToken\":\"") ||
@@ -1731,8 +1894,19 @@ static int dluma_qg_build_source_changed_frame(
         !dluma_qg_json_append(json, capacity, &used,
             "\",\"sha256\":\"") ||
         !dluma_qg_json_append(
-            json, capacity, &used, slot->source_sha256) ||
-        !dluma_qg_json_append(json, capacity, &used, "\"}}")) {
+            json, capacity, &used, source_sha) ||
+        !dluma_qg_json_append(json, capacity, &used, "\"")) {
+        dluma_free(json);
+        return 0;
+    }
+    if (disk_path &&
+        (!dluma_qg_json_append(json, capacity, &used, ",\"diskPath\":\"") ||
+         !dluma_qg_json_escape(json, capacity, &used, disk_utf8) ||
+         !dluma_qg_json_append(json, capacity, &used, "\""))) {
+        dluma_free(json);
+        return 0;
+    }
+    if (!dluma_qg_json_append(json, capacity, &used, "}}")) {
         dluma_free(json);
         return 0;
     }
@@ -1741,17 +1915,102 @@ static int dluma_qg_build_source_changed_frame(
     return 1;
 }
 
-static int dluma_qg_queue_frame(char* frame, DWORD frame_size)
+static int dluma_qg_build_source_changed_frame(
+    DlumaQgDialog* slot, const char* source, DWORD source_size,
+    char** output, DWORD* output_size)
 {
-    if (!frame || !frame_size || frame_size > DLUMA_QG_MAX_FRAME_BYTES)
-        return 0;
+    if (!slot) return 0;
+    return dluma_qg_build_source_frame(slot, source, source_size, "sourceChanged",
+        slot->revision, slot->source_sha256, 0, 0, output, output_size);
+}
+
+/* Document queue entries are bounded by the native dialog count and use the
+ * output lock. A full open cannot be replaced by an incremental update. */
+static DlumaQgPendingDocument* dluma_qg_pending_document(ULONGLONG token, int create)
+{
+    unsigned int i;
+    DlumaQgPendingDocument* free_slot = 0;
+    for (i = 0; i < DLUMA_QG_MAX_PENDING_DOCUMENTS; ++i) {
+        DlumaQgPendingDocument* entry = &g_dluma_qg.pending_documents[i];
+        if (entry->token == token) return entry;
+        if (!entry->token && !free_slot) free_slot = entry;
+    }
+    if (create && free_slot) { free_slot->token = token; return free_slot; }
+    return 0;
+}
+
+static void dluma_qg_clear_pending_documents(void)
+{
+    unsigned int i;
+    for (i = 0; i < DLUMA_QG_MAX_PENDING_DOCUMENTS; ++i) {
+        DlumaQgPendingDocument* entry = &g_dluma_qg.pending_documents[i];
+        if (entry->open_frame) dluma_free(entry->open_frame);
+        if (entry->update_frame) dluma_free(entry->update_frame);
+        if (entry->saved_frame) dluma_free(entry->saved_frame);
+        memset(entry, 0, sizeof(*entry));
+    }
+    g_dluma_qg.pending_document_bytes = 0;
+    g_dluma_qg.pending_document_cursor = 0;
+}
+
+static void dluma_qg_retire_document(ULONGLONG token)
+{
+    DlumaQgPendingDocument* entry;
+    if (!token) return;
     dluma_qg_lock(&g_dluma_qg.output_lock);
-    if (g_dluma_qg.pending_frame) dluma_free(g_dluma_qg.pending_frame);
-    g_dluma_qg.pending_frame = frame;
-    g_dluma_qg.pending_frame_size = frame_size;
-    ++g_dluma_qg.pending_generation;
+    entry = dluma_qg_pending_document(token, 0);
+    if (entry) {
+        g_dluma_qg.pending_document_bytes -= entry->open_size + entry->update_size;
+        if (entry->open_frame) dluma_free(entry->open_frame);
+        if (entry->update_frame) dluma_free(entry->update_frame);
+        entry->open_frame = entry->update_frame = 0;
+        entry->open_size = entry->update_size = 0;
+        entry->retired = 1U;
+        if (!entry->saved_frame) memset(entry, 0, sizeof(*entry));
+    }
     dluma_qg_unlock(&g_dluma_qg.output_lock);
-    return 1;
+}
+
+static int dluma_qg_queue_document(char* frame, DWORD size, ULONGLONG token, int mode)
+{
+    DlumaQgPendingDocument* entry;
+    DWORD retired;
+    unsigned int i;
+    int accepted = 0;
+    if (!frame || !size || size > DLUMA_QG_MAX_FRAME_BYTES || !token) return 0;
+    dluma_qg_lock(&g_dluma_qg.output_lock);
+    entry = dluma_qg_pending_document(token, 1);
+    if (!entry || entry->retired || (mode != 1 && !entry->admitted)) goto done;
+    /* Only the latest explicit graph activation needs an unsent open. Known
+     * documents retain their incremental queues and are resynced on activation. */
+    if (mode == 1) for (i = 0; i < DLUMA_QG_MAX_PENDING_DOCUMENTS; ++i) {
+        DlumaQgPendingDocument* other = &g_dluma_qg.pending_documents[i];
+        if (other != entry && other->open_frame) {
+            g_dluma_qg.pending_document_bytes -= other->open_size;
+            dluma_free(other->open_frame); other->open_frame = 0; other->open_size = 0;
+        }
+    }
+    retired = mode == 1 ? entry->open_size + entry->update_size :
+        mode == 2 ? entry->saved_size : entry->update_size;
+    if (g_dluma_qg.pending_document_bytes - retired + size > 3U * DLUMA_QG_MAX_FRAME_BYTES)
+        goto done;
+    if (mode == 1) {
+        if (entry->open_frame) dluma_free(entry->open_frame);
+        if (entry->update_frame) dluma_free(entry->update_frame);
+        entry->open_frame = frame; entry->open_size = size;
+        entry->update_frame = 0; entry->update_size = 0;
+    } else if (mode == 2) {
+        if (entry->saved_frame) dluma_free(entry->saved_frame);
+        entry->saved_frame = frame; entry->saved_size = size;
+    } else {
+        if (entry->update_frame) dluma_free(entry->update_frame);
+        entry->update_frame = frame; entry->update_size = size;
+    }
+    g_dluma_qg.pending_document_bytes = g_dluma_qg.pending_document_bytes - retired + size;
+    accepted = 1;
+done:
+    dluma_qg_unlock(&g_dluma_qg.output_lock);
+    return accepted;
 }
 
 static void dluma_qg_publish_source_changed(DlumaQgDialog* slot)
@@ -1761,7 +2020,8 @@ static void dluma_qg_publish_source_changed(DlumaQgDialog* slot)
     char digest[DLUMA_SHA256_HEX_CAPACITY];
     char* frame = 0;
     DWORD frame_size = 0;
-    if (!slot || !slot->document_id[0] ||
+    int admitted;
+    if (!slot || !slot->document_id[0] || !dluma_qg_native_identity_matches(slot) ||
         !dluma_qg_scintilla_read(
             slot->scintilla, &source, &source_size))
         return;
@@ -1774,11 +2034,101 @@ static void dluma_qg_publish_source_changed(DlumaQgDialog* slot)
     dluma_str_copy(
         slot->source_sha256,
         DLUMA_ARRAY_COUNT(slot->source_sha256), digest);
-    if (dluma_qg_build_source_changed_frame(
-            slot, source, source_size, &frame, &frame_size) &&
-        !dluma_qg_queue_frame(frame, frame_size))
-        dluma_free(frame);
+    if (!slot->panel.token) { dluma_free(source); return; }
+    dluma_qg_lock(&g_dluma_qg.output_lock);
+    {
+        DlumaQgPendingDocument* entry = dluma_qg_pending_document(slot->panel.token, 0);
+        admitted = entry && entry->admitted;
+    }
+    dluma_qg_unlock(&g_dluma_qg.output_lock);
+    if (!admitted && slot != g_dluma_qg.panel_dialog) { dluma_free(source); return; }
+    if (admitted && dluma_qg_build_source_changed_frame(
+            slot, source, source_size, &frame, &frame_size)) {
+        if (dluma_qg_queue_document(frame, frame_size, slot->panel.token, 0)) {
+            dluma_free(source); return;
+        }
+        dluma_free(frame); frame = 0;
+    }
+    /* A new or reconnected companion first receives the complete latest source. */
+    if (dluma_qg_build_open_frame(slot, source, source_size, &frame, &frame_size) &&
+        !dluma_qg_queue_document(frame, frame_size, slot->panel.token, 1)) dluma_free(frame);
     dluma_free(source);
+}
+
+static void dluma_qg_saved_source_clear(DlumaQgDialog* slot)
+{
+    if (slot->save_source) dluma_free(slot->save_source);
+    slot->save_source = 0;
+    slot->save_source_size = 0;
+    slot->save_source_revision = 0;
+    slot->save_source_sha256[0] = 0;
+    slot->save_source_encoding[0] = 0;
+}
+
+static int dluma_qg_document_admitted(DlumaQgDialog* slot)
+{
+    DlumaQgPendingDocument* entry;
+    int admitted;
+    if (!slot || !slot->panel.token) return 0;
+    dluma_qg_lock(&g_dluma_qg.output_lock);
+    entry = dluma_qg_pending_document(slot->panel.token, 0);
+    admitted = entry && entry->admitted;
+    dluma_qg_unlock(&g_dluma_qg.output_lock);
+    return admitted;
+}
+
+static void dluma_qg_capture_saved_source(DlumaQgDialog* slot)
+{
+    char* source = 0;
+    DWORD size = 0;
+    char sha[DLUMA_SHA256_HEX_CAPACITY];
+    char encoding[32];
+    if (!dluma_qg_document_admitted(slot) || !dluma_qg_native_identity_matches(slot) ||
+        !dluma_qg_scintilla_read(slot->scintilla, &source, &size)) return;
+    if (!dluma_qg_scintilla_encoding(slot->scintilla, encoding, DLUMA_ARRAY_COUNT(encoding))) {
+        dluma_free(source); return;
+    }
+    dluma_sha256_bytes_hex(source, size, sha);
+    if (dluma_stricmp(sha, slot->source_sha256)) {
+        ++slot->revision;
+        dluma_str_copy(slot->source_sha256, DLUMA_ARRAY_COUNT(slot->source_sha256), sha);
+    }
+    dluma_qg_saved_source_clear(slot);
+    slot->save_source = source;
+    slot->save_source_size = size;
+    slot->save_source_revision = slot->revision;
+    dluma_str_copy(slot->save_source_sha256, DLUMA_ARRAY_COUNT(slot->save_source_sha256), sha);
+    dluma_str_copy(slot->save_source_encoding, DLUMA_ARRAY_COUNT(slot->save_source_encoding), encoding);
+    /* Leave the stock save handler before checking its disk publication. */
+    if (!SetTimer(slot->dialog, (UINT_PTR)DLUMA_QG_SAVE_TIMER_BASE +
+            (UINT_PTR)(slot - g_dluma_qg.dialogs), 10U, 0))
+        dluma_qg_saved_source_clear(slot);
+}
+
+static void dluma_qg_publish_saved_source(DlumaQgDialog* slot)
+{
+    char disk_sha[DLUMA_SHA256_HEX_CAPACITY];
+    char* frame = 0;
+    DWORD frame_size = 0;
+    if (!slot || !slot->save_source) return;
+    if (!dluma_qg_document_admitted(slot) || !dluma_qg_native_identity_matches(slot) ||
+        !dluma_project_regular_file_is_contained(slot->project_root, slot->source_path) ||
+        !dluma_sha256_file_hex(slot->source_path, DLUMA_QG_MAX_SOURCE_BYTES, disk_sha) ||
+        dluma_stricmp(disk_sha, slot->save_source_sha256)) {
+        dluma_qg_saved_source_clear(slot); return;
+    }
+    slot->saved_revision = slot->save_source_revision;
+    dluma_str_copy(slot->saved_sha256, DLUMA_ARRAY_COUNT(slot->saved_sha256), disk_sha);
+    if (dluma_qg_build_source_frame(slot, slot->save_source, slot->save_source_size,
+            "sourceSaved", slot->save_source_revision, slot->save_source_sha256,
+            slot->save_source_encoding, slot->source_path, &frame, &frame_size)) {
+        if (!dluma_qg_queue_document(frame, frame_size, slot->panel.token, 2)) {
+            dluma_free(frame);
+            if (SetTimer(slot->dialog, (UINT_PTR)DLUMA_QG_SAVE_TIMER_BASE +
+                    (UINT_PTR)(slot - g_dluma_qg.dialogs), 100U, 0)) return;
+        }
+    }
+    dluma_qg_saved_source_clear(slot);
 }
 
 static int dluma_qg_random_token(void)
@@ -2205,6 +2555,19 @@ static int dluma_qg_installed_catalog_root(
     return output[0] != 0;
 }
 
+static int dluma_qg_generated_catalog_root(WCHAR* output, unsigned int capacity)
+{
+    WCHAR module_path[DLUMA_MAX_WPATH];
+    DlumaDirectoryIdentity identity;
+    if (!dluma_get_module_path_checked(g_dluma.self_module,
+            module_path, DLUMA_ARRAY_COUNT(module_path))) return 0;
+    dluma_path_parent(module_path);
+    if (!dluma_checked_path_join(output, capacity, module_path, L"dluma_runtime\\editor") ||
+        !dluma_open_directory_identity(output, &identity)) return 0;
+    dluma_wstr_copy(output, capacity, identity.final_path);
+    return output[0] != 0;
+}
+
 static DWORD dluma_qg_hello_response(
     char* output, DWORD capacity, const char* request_id)
 {
@@ -2212,12 +2575,15 @@ static DWORD dluma_qg_hello_response(
     char process_id[32];
     WCHAR project_root[DLUMA_MAX_WPATH];
     WCHAR installed_root[DLUMA_MAX_WPATH];
+    WCHAR generated_root[DLUMA_MAX_WPATH];
     char map_name[DLUMA_MAX_MAP_NAME];
     char project_utf8[DLUMA_MAX_WPATH * 4U];
     char installed_utf8[DLUMA_MAX_WPATH * 4U];
+    char generated_utf8[DLUMA_MAX_WPATH * 4U];
     char context_generation[32];
     int have_project;
     int have_installed;
+    int have_generated;
     int have_context_generation;
     project_root[0] = installed_root[0] = 0;
     map_name[0] = project_utf8[0] = installed_utf8[0] = 0;
@@ -2232,6 +2598,8 @@ static DWORD dluma_qg_hello_response(
         dluma_wide_to_utf8(
             installed_root, installed_utf8,
             DLUMA_ARRAY_COUNT(installed_utf8));
+    have_generated = dluma_qg_generated_catalog_root(generated_root, DLUMA_ARRAY_COUNT(generated_root)) &&
+        dluma_wide_to_utf8(generated_root, generated_utf8, DLUMA_ARRAY_COUNT(generated_utf8));
     dluma_qg_context_refresh_identity();
     dluma_qg_lock(&g_dluma_qg.context_lock);
     have_context_generation = dluma_u64_to_text(
@@ -2268,6 +2636,11 @@ static DWORD dluma_qg_hello_response(
                    output, capacity, &used, installed_utf8) ||
                !dluma_qg_json_append(output, capacity, &used, "\""))
             : 0) ||
+        (have_generated &&
+            ((have_installed && !dluma_qg_json_append(output, capacity, &used, ",")) ||
+             !dluma_qg_json_append(output, capacity, &used, "\"") ||
+             !dluma_qg_json_escape(output, capacity, &used, generated_utf8) ||
+             !dluma_qg_json_append(output, capacity, &used, "\""))) ||
         !dluma_qg_json_append(
             output, capacity, &used,
             "],\"contextGeneration\":") ||
@@ -2494,6 +2867,15 @@ static DWORD dluma_qg_compile_response(
     return used;
 }
 
+static void dluma_qg_pipe_diagnostic(const char* stage, DWORD error, int failed)
+{
+    DWORD saved_error = GetLastError();
+    const char* level = failed ? "WARN" : "INFO";
+    dluma_log_pair(level, "editor_quest_graph_pipe_stage", stage);
+    if (error) dluma_log_hex(level, "editor_quest_graph_pipe_error", error);
+    SetLastError(saved_error);
+}
+
 static int dluma_qg_write_exact(
     HANDLE pipe, const void* data, DWORD size)
 {
@@ -2510,9 +2892,16 @@ static int dluma_qg_write_exact(
             if (!written) Sleep(DLUMA_QG_PIPE_POLL_MS);
             continue;
         }
-        if (GetLastError() != ERROR_NO_DATA) return 0;
+        {
+            DWORD error = GetLastError();
+            if (error != ERROR_NO_DATA) {
+                dluma_qg_pipe_diagnostic("write_file_failed", error, 1);
+                return 0;
+            }
+        }
         Sleep(DLUMA_QG_PIPE_POLL_MS);
     }
+    if (total != size) dluma_qg_pipe_diagnostic("write_timeout", 0, 1);
     return total == size;
 }
 
@@ -2520,13 +2909,51 @@ static int dluma_qg_write_frame(
     HANDLE pipe, const char* json, DWORD size)
 {
     BYTE prefix[4];
-    if (!json || !size || size > DLUMA_QG_MAX_FRAME_BYTES) return 0;
+    if (!json || !size || size > DLUMA_QG_MAX_FRAME_BYTES) {
+        dluma_qg_pipe_diagnostic("write_frame_invalid", 0, 1);
+        return 0;
+    }
     prefix[0] = (BYTE)(size & 0xFFU);
     prefix[1] = (BYTE)((size >> 8) & 0xFFU);
     prefix[2] = (BYTE)((size >> 16) & 0xFFU);
     prefix[3] = (BYTE)((size >> 24) & 0xFFU);
     return dluma_qg_write_exact(pipe, prefix, sizeof(prefix)) &&
         dluma_qg_write_exact(pipe, json, size);
+}
+
+static int dluma_qg_dispatch_panel_ready(HWND parent, HWND child,
+    ULONGLONG token, ULONGLONG* generation, char* error, unsigned int capacity)
+{
+    DlumaQgUiRequest* request = &g_dluma_qg.ui_request;
+    ULONG_PTR result = 0;
+    int delivered;
+    if (dluma_atomic_compare_exchange(&request->state, -1, 2) == 2) {
+        dluma_qg_ui_payload_free(request);
+        memset((void*)request, 0, sizeof(*request));
+    }
+    if (dluma_atomic_compare_exchange(&request->state, -1, 0) != 0) {
+        dluma_str_copy(error, capacity, "ui_dispatch_busy");
+        return 0;
+    }
+    memset((void*)request, 0, sizeof(*request));
+    request->state = -1;
+    request->kind = DLUMA_QG_UI_PANEL_READY;
+    request->panel_parent = parent;
+    request->panel_child = child;
+    request->panel_token = token;
+    dluma_atomic_exchange(&request->state, 1);
+    delivered = SendMessageTimeoutW(g_dluma_qg.main_window,
+        DLUMA_QG_MAIN_DISPATCH, 0, 0,
+        DLUMA_SMTO_BLOCK | DLUMA_SMTO_ABORTIFHUNG | DLUMA_SMTO_ERRORONEXIT,
+        30000U, &result) != 0;
+    if (dluma_atomic_compare_exchange(&request->state, 0, 0) != 2) {
+        dluma_str_copy(error, capacity, "ui_dispatch_failed");
+        return 0;
+    }
+    *generation = request->panel_generation;
+    dluma_str_copy(error, capacity, request->error);
+    dluma_atomic_exchange(&request->state, 0);
+    return delivered && result != 0;
 }
 
 static int dluma_qg_dispatch_ui(
@@ -2626,6 +3053,14 @@ invalid:
     return 0;
 }
 
+#include "dlw_editor_quest_graph_close.inc"
+
+static int dluma_qg_close_payload_valid(const char* payload, DWORD payload_size)
+{
+    DlumaQgCloseReply reply;
+    return dluma_qg_close_parse_reply(payload, payload_size, &reply);
+}
+
 static int dluma_qg_handle_json(
     HANDLE pipe, char* json, DWORD size)
 {
@@ -2658,7 +3093,10 @@ static int dluma_qg_handle_json(
     int ok = 0;
     int retryable = 0;
     int has_byte_offset = 0;
-    if (!json || !size || size > DLUMA_QG_MAX_FRAME_BYTES) return 0;
+    if (!json || !size || size > DLUMA_QG_MAX_FRAME_BYTES) {
+        dluma_qg_pipe_diagnostic("request_frame_invalid", 0, 1);
+        return 0;
+    }
     json[size] = 0;
     type[0] = request_id[0] = token[0] = disk_path[0] = 0;
     if (!dluma_qg_parse_envelope(
@@ -2666,10 +3104,18 @@ static int dluma_qg_handle_json(
             type, (unsigned int)sizeof(type),
             request_id, (unsigned int)sizeof(request_id),
             token, (unsigned int)sizeof(token),
-            &payload, &payload_size) ||
-        !dluma_qg_validate_payload(
-            type, payload, payload_size))
+            &payload, &payload_size)) {
+        dluma_qg_pipe_diagnostic("envelope_invalid", 0, 1);
         return 0;
+    }
+    if (!dluma_qg_validate_payload(type, payload, payload_size)) {
+        dluma_qg_pipe_diagnostic(
+            strcmp(type, "hello") == 0 ? "hello_payload_invalid" :
+            strcmp(type, "panelReady") == 0 ? "panel_ready_payload_invalid" :
+            strcmp(type, "getContext") == 0 ? "get_context_payload_invalid" :
+                "other_payload_invalid", 0, 1);
+        return 0;
+    }
     json = payload;
     if (strcmp(type, "hello") == 0) {
         executable_sha[0] = 0;
@@ -2692,26 +3138,75 @@ static int dluma_qg_handle_json(
             dluma_stricmp(
                 executable_sha,
                 g_dluma_qg.companion_sha256) != 0) {
+            dluma_qg_pipe_diagnostic("hello_identity_rejected", 0, 1);
             response_size = dluma_qg_error_response(
                 response, sizeof(response), request_id,
                 "hello_identity_mismatch", 0);
-            return response_size &&
-                dluma_qg_write_frame(pipe, response, response_size);
+            ok = response_size && dluma_qg_write_frame(pipe, response, response_size);
+            if (!ok) dluma_qg_pipe_diagnostic(response_size ?
+                "hello_rejection_write_failed" : "hello_rejection_build_failed", 0, 1);
+            return ok;
         }
         dluma_atomic_exchange(&g_dluma_qg.authenticated, 1);
+        dluma_qg_pipe_diagnostic("hello_identity_accepted", 0, 0);
         response_size = dluma_qg_hello_response(
             response, sizeof(response), request_id);
-        return response_size &&
-            dluma_qg_write_frame(pipe, response, response_size);
+        ok = response_size && dluma_qg_write_frame(pipe, response, response_size);
+        if (!ok) dluma_qg_pipe_diagnostic(response_size ?
+            "hello_response_write_failed" : "hello_response_build_failed", 0, 1);
+        return ok;
     }
     if (!dluma_atomic_compare_exchange(
-            &g_dluma_qg.authenticated, 0, 0))
+            &g_dluma_qg.authenticated, 0, 0)) {
+        dluma_qg_pipe_diagnostic("request_before_authentication", 0, 1);
         return 0;
+    }
+    if (strcmp(type, "panelReady") == 0) {
+        ULONGLONG parent = 0, child = 0, panel_token = 0, generation = 0;
+        DWORD used = 0;
+        char generation_text[32];
+        error[0] = 0;
+        ok = dluma_qg_json_u64(json, "parentWindow", &parent) &&
+            dluma_qg_json_u64(json, "childWindow", &child) &&
+            dluma_qg_json_u64(json, "panelToken", &panel_token) &&
+            dluma_qg_dispatch_panel_ready((HWND)(ULONG_PTR)parent,
+                (HWND)(ULONG_PTR)child, panel_token, &generation,
+                error, DLUMA_ARRAY_COUNT(error));
+        if (!ok) dluma_qg_pipe_diagnostic("panel_ready_refused", 0, 1);
+        if (!dluma_u64_to_text(generation, generation_text,
+                DLUMA_ARRAY_COUNT(generation_text)) ||
+            !dluma_qg_response_begin(response, sizeof(response), &used, request_id, "result") ||
+            !dluma_qg_json_append(response, sizeof(response), &used,
+                ok ? "{\"bound\":true,\"bindingGeneration\":" :
+                     "{\"bound\":false,\"bindingGeneration\":") ||
+            !dluma_qg_json_append(response, sizeof(response), &used, generation_text) ||
+            !dluma_qg_json_append(response, sizeof(response), &used, ",\"message\":\"") ||
+            !dluma_qg_json_escape(response, sizeof(response), &used,
+                ok ? "Graph panel connected." : error[0] ? error : "Graph panel binding failed.") ||
+            !dluma_qg_json_append(response, sizeof(response), &used, "\"}}")) {
+            dluma_qg_pipe_diagnostic("panel_ready_response_build_failed", 0, 1);
+            return 0;
+        }
+        ok = dluma_qg_write_frame(pipe, response, used);
+        if (!ok) dluma_qg_pipe_diagnostic("panel_ready_response_write_failed", 0, 1);
+        return ok;
+    }
     if (strcmp(type, "getContext") == 0) {
         response_size = dluma_qg_context_response(
             response, sizeof(response), request_id);
-        return response_size &&
-            dluma_qg_write_frame(pipe, response, response_size);
+        ok = response_size && dluma_qg_write_frame(pipe, response, response_size);
+        if (!ok) dluma_qg_pipe_diagnostic(response_size ?
+            "get_context_response_write_failed" : "get_context_response_build_failed", 0, 1);
+        return ok;
+    }
+    if (strcmp(type, "completeClose") == 0) {
+        DlumaQgCloseReply reply;
+        ok = dluma_qg_close_parse_reply(json, payload_size, &reply) &&
+            dluma_qg_close_accept_reply(&reply);
+        response_size = ok
+            ? dluma_qg_bridge_result_response(response, sizeof(response), request_id, "Close decision accepted.")
+            : dluma_qg_error_response(response, sizeof(response), request_id, "close_request_not_pending", 0);
+        return response_size && dluma_qg_write_frame(pipe, response, response_size);
     }
     if (strcmp(type, "closeDocument") == 0) {
         document_id[0] = 0;
@@ -2915,38 +3410,73 @@ static int dluma_qg_read_available(
         *used += read;
         return 1;
     }
-    if (GetLastError() == ERROR_NO_DATA) return 1;
+    {
+        DWORD error = GetLastError();
+        if (error == ERROR_NO_DATA) return 1;
+        dluma_qg_pipe_diagnostic("read_file_failed", error, 1);
+    }
     return 0;
 }
 
 static int dluma_qg_send_pending(HANDLE pipe)
 {
-    char* frame = 0;
-    DWORD frame_size = 0;
-    ULONGLONG generation = 0;
+    char* panel_frame = 0;
+    char* open_frame = 0;
+    char* update_frame = 0;
+    char* saved_frame = 0;
+    DWORD panel_size = 0, open_size = 0, update_size = 0, saved_size = 0;
+    ULONGLONG token = 0, epoch;
+    unsigned int i;
     int result = 1;
-    if (!dluma_atomic_compare_exchange(&g_dluma_qg.authenticated, 0, 0))
-        return 1;
+    if (!dluma_atomic_compare_exchange(&g_dluma_qg.authenticated, 0, 0)) return 1;
     dluma_qg_lock(&g_dluma_qg.output_lock);
-    if (g_dluma_qg.pending_frame &&
-        g_dluma_qg.pending_generation != g_dluma_qg.sent_generation) {
-        frame = g_dluma_qg.pending_frame;
-        frame_size = g_dluma_qg.pending_frame_size;
-        generation = g_dluma_qg.pending_generation;
-        g_dluma_qg.pending_frame = 0;
-        g_dluma_qg.pending_frame_size = 0;
+    epoch = g_dluma_qg.companion_epoch;
+    panel_frame = g_dluma_qg.pending_panel_frame;
+    panel_size = g_dluma_qg.pending_panel_frame_size;
+    g_dluma_qg.pending_panel_frame = 0;
+    g_dluma_qg.pending_panel_frame_size = 0;
+    for (i = 0; i < DLUMA_QG_MAX_PENDING_DOCUMENTS; ++i) {
+        unsigned int index = (g_dluma_qg.pending_document_cursor + i) % DLUMA_QG_MAX_PENDING_DOCUMENTS;
+        DlumaQgPendingDocument* entry = &g_dluma_qg.pending_documents[index];
+        if (!entry->open_frame && !entry->update_frame && !entry->saved_frame) continue;
+        token = entry->token;
+        open_frame = entry->open_frame; open_size = entry->open_size;
+        update_frame = entry->update_frame; update_size = entry->update_size;
+        saved_frame = entry->saved_frame; saved_size = entry->saved_size;
+        entry->open_frame = entry->update_frame = entry->saved_frame = 0;
+        entry->open_size = entry->update_size = entry->saved_size = 0;
+        g_dluma_qg.pending_document_bytes -= open_size + update_size + saved_size;
+        if (entry->retired) memset(entry, 0, sizeof(*entry));
+        g_dluma_qg.pending_document_cursor = (index + 1U) % DLUMA_QG_MAX_PENDING_DOCUMENTS;
+        break;
     }
     dluma_qg_unlock(&g_dluma_qg.output_lock);
-    if (frame) {
-        result = dluma_qg_write_frame(pipe, frame, frame_size);
-        dluma_free(frame);
-        if (result) g_dluma_qg.sent_generation = generation;
+    if (panel_frame) { result = dluma_qg_write_frame(pipe, panel_frame, panel_size); dluma_free(panel_frame); }
+    if (open_frame) {
+        if (result) result = dluma_qg_write_frame(pipe, open_frame, open_size);
+        dluma_free(open_frame);
+        if (result) {
+            DlumaQgPendingDocument* entry;
+            dluma_qg_lock(&g_dluma_qg.output_lock);
+            entry = dluma_qg_pending_document(token, 0);
+            if (entry && epoch == g_dluma_qg.companion_epoch) entry->admitted = 1U;
+            dluma_qg_unlock(&g_dluma_qg.output_lock);
+        }
+    }
+    if (saved_frame) {
+        if (result) result = dluma_qg_write_frame(pipe, saved_frame, saved_size);
+        dluma_free(saved_frame);
+    }
+    if (update_frame) {
+        if (result) result = dluma_qg_write_frame(pipe, update_frame, update_size);
+        dluma_free(update_frame);
     }
     return result;
 }
 
 static int dluma_qg_connected_loop(HANDLE pipe)
 {
+    const char* exit_stage = "stop_requested";
     BYTE prefix[4];
     DWORD prefix_used = 0;
     char* frame = 0;
@@ -2954,14 +3484,39 @@ static int dluma_qg_connected_loop(HANDLE pipe)
     DWORD frame_used = 0;
     dluma_atomic_exchange(&g_dluma_qg.connected, 1);
     dluma_atomic_exchange(&g_dluma_qg.authenticated, 0);
+    dluma_qg_lock(&g_dluma_qg.output_lock);
+    {
+        unsigned int i;
+        for (i = 0; i < DLUMA_QG_MAX_PENDING_DOCUMENTS; ++i) {
+            DlumaQgPendingDocument* entry = &g_dluma_qg.pending_documents[i];
+            entry->admitted = 0;
+            if (entry->update_frame) {
+                g_dluma_qg.pending_document_bytes -= entry->update_size;
+                dluma_free(entry->update_frame); entry->update_frame = 0; entry->update_size = 0;
+            }
+            if (entry->saved_frame) {
+                g_dluma_qg.pending_document_bytes -= entry->saved_size;
+                dluma_free(entry->saved_frame); entry->saved_frame = 0; entry->saved_size = 0;
+            }
+            if (entry->retired) memset(entry, 0, sizeof(*entry));
+        }
+    }
+    dluma_qg_unlock(&g_dluma_qg.output_lock);
     for (;;) {
         if (WaitForSingleObject(g_dluma_qg.stop_event, 0) == WAIT_OBJECT_0)
             break;
-        if (!dluma_qg_send_pending(pipe)) break;
+        if (!dluma_qg_send_pending(pipe)) {
+            exit_stage = "pending_send_failed"; break;
+        }
+        if (!dluma_qg_send_control_pending(pipe)) {
+            exit_stage = "control_send_failed"; break;
+        }
         if (prefix_used < sizeof(prefix)) {
             if (!dluma_qg_read_available(
-                    pipe, prefix, sizeof(prefix), &prefix_used))
+                    pipe, prefix, sizeof(prefix), &prefix_used)) {
+                exit_stage = "prefix_read_failed";
                 break;
+            }
             if (prefix_used < sizeof(prefix)) {
                 Sleep(DLUMA_QG_PIPE_POLL_MS);
                 continue;
@@ -2970,17 +3525,23 @@ static int dluma_qg_connected_loop(HANDLE pipe)
                 ((DWORD)prefix[1] << 8) |
                 ((DWORD)prefix[2] << 16) |
                 ((DWORD)prefix[3] << 24);
-            if (!frame_size || frame_size > DLUMA_QG_MAX_FRAME_BYTES)
+            if (!frame_size || frame_size > DLUMA_QG_MAX_FRAME_BYTES) {
+                exit_stage = "frame_size_invalid";
                 break;
+            }
             frame = (char*)dluma_alloc((SIZE_T)frame_size + 1U);
-            if (!frame) break;
+            if (!frame) { exit_stage = "frame_allocation_failed"; break; }
             frame_used = 0;
         }
         if (!dluma_qg_read_available(
-                pipe, (BYTE*)frame, frame_size, &frame_used))
+                pipe, (BYTE*)frame, frame_size, &frame_used)) {
+            exit_stage = "body_read_failed";
             break;
+        }
         if (frame_used == frame_size) {
-            if (!dluma_qg_handle_json(pipe, frame, frame_size)) break;
+            if (!dluma_qg_handle_json(pipe, frame, frame_size)) {
+                exit_stage = "request_handler_failed"; break;
+            }
             dluma_free(frame);
             frame = 0;
             frame_size = frame_used = prefix_used = 0;
@@ -2988,9 +3549,11 @@ static int dluma_qg_connected_loop(HANDLE pipe)
         }
         Sleep(DLUMA_QG_PIPE_POLL_MS);
     }
+    dluma_qg_pipe_diagnostic(exit_stage, 0, strcmp(exit_stage, "stop_requested") != 0);
     if (frame) dluma_free(frame);
     dluma_atomic_exchange(&g_dluma_qg.authenticated, 0);
     dluma_atomic_exchange(&g_dluma_qg.connected, 0);
+    dluma_qg_close_reset();
     return 1;
 }
 
@@ -3226,6 +3789,35 @@ static int dluma_qg_append_quoted(
     return 1;
 }
 
+static int dluma_qg_queue_panel_attach(const DlumaEditorPanelRef* panel)
+{
+    char* json = (char*)dluma_alloc(768U);
+    char parent[32], token[32], request_id[33];
+    DWORD used = 0;
+    if (!json || !panel || !panel->token || !panel->content_window ||
+        !dluma_u64_to_text((ULONGLONG)(ULONG_PTR)panel->content_window, parent, sizeof(parent)) ||
+        !dluma_u64_to_text(panel->token, token, sizeof(token))) {
+        if (json) dluma_free(json);
+        return 0;
+    }
+    memcpy(request_id, g_dluma_qg.token, 32U); request_id[32] = 0;
+    json[0] = 0;
+    if (!dluma_qg_response_begin(json, 768U, &used, request_id, "attachPanel") ||
+        !dluma_qg_json_append(json, 768U, &used, "{\"parentWindow\":") ||
+        !dluma_qg_json_append(json, 768U, &used, parent) ||
+        !dluma_qg_json_append(json, 768U, &used, ",\"panelToken\":") ||
+        !dluma_qg_json_append(json, 768U, &used, token) ||
+        !dluma_qg_json_append(json, 768U, &used, "}}")) {
+        dluma_free(json); return 0;
+    }
+    dluma_qg_lock(&g_dluma_qg.output_lock);
+    if (g_dluma_qg.pending_panel_frame) dluma_free(g_dluma_qg.pending_panel_frame);
+    g_dluma_qg.pending_panel_frame = json;
+    g_dluma_qg.pending_panel_frame_size = used;
+    dluma_qg_unlock(&g_dluma_qg.output_lock);
+    return 1;
+}
+
 static int dluma_qg_launch_companion(void)
 {
     WCHAR module_root[DLUMA_MAX_WPATH];
@@ -3236,6 +3828,8 @@ static int dluma_qg_launch_companion(void)
     WCHAR token_wide[80];
     WCHAR pid_wide[32];
     char pid[32];
+    char panel_parent[32], panel_token[32];
+    WCHAR panel_value[32];
     WCHAR command[DLUMA_MAX_WPATH * 3U];
     DlumaQgStartupInfo startup;
     DlumaQgProcessInformation process;
@@ -3304,6 +3898,22 @@ static int dluma_qg_launch_companion(void)
     if (!dluma_qg_append_quoted(
             command, DLUMA_ARRAY_COUNT(command), pid_wide))
         return 0;
+    if (!g_dluma_qg.panel_dialog || !g_dluma_qg.panel_dialog->panel.token ||
+        !dluma_u64_to_text((ULONGLONG)(ULONG_PTR)g_dluma_qg.panel_dialog->panel.content_window,
+            panel_parent, sizeof(panel_parent)) ||
+        !dluma_u64_to_text(g_dluma_qg.panel_dialog->panel.token, panel_token, sizeof(panel_token)))
+        return 0;
+    dluma_wstr_append(command, DLUMA_ARRAY_COUNT(command), L" --panel-parent ");
+    if (!dluma_utf8_to_wide(panel_parent, panel_value, DLUMA_ARRAY_COUNT(panel_value)) ||
+        !dluma_qg_append_quoted(command, DLUMA_ARRAY_COUNT(command), panel_value)) return 0;
+    dluma_wstr_append(command, DLUMA_ARRAY_COUNT(command), L" --panel-token ");
+    if (!dluma_utf8_to_wide(panel_token, panel_value, DLUMA_ARRAY_COUNT(panel_value)) ||
+        !dluma_qg_append_quoted(command, DLUMA_ARRAY_COUNT(command), panel_value)) return 0;
+    if (g_dluma.config_path[0]) {
+        dluma_wstr_append(command, DLUMA_ARRAY_COUNT(command), L" --theme-config ");
+        if (!dluma_qg_append_quoted(command, DLUMA_ARRAY_COUNT(command), g_dluma.config_path))
+            return 0;
+    }
     environment = dluma_qg_child_environment(dotnet_root);
     if (!environment) {
         dluma_log_pair(
@@ -3314,6 +3924,12 @@ static int dluma_qg_launch_companion(void)
     memset(&startup, 0, sizeof(startup));
     memset(&process, 0, sizeof(process));
     startup.size = sizeof(startup);
+    dluma_qg_lock(&g_dluma_qg.output_lock);
+    ++g_dluma_qg.companion_epoch;
+    dluma_qg_clear_pending_documents();
+    if (g_dluma_qg.pending_panel_frame) dluma_free(g_dluma_qg.pending_panel_frame);
+    g_dluma_qg.pending_panel_frame = 0; g_dluma_qg.pending_panel_frame_size = 0;
+    dluma_qg_unlock(&g_dluma_qg.output_lock);
     if (!CreateProcessW(
             executable, command, 0, 0, FALSE,
             CREATE_UNICODE_ENVIRONMENT, environment, companion_dir,
@@ -3371,22 +3987,46 @@ static void dluma_qg_open_dialog(DlumaQgDialog* slot)
     char* frame = 0;
     DWORD frame_size = 0;
     if (!slot || !slot->scintilla) return;
+    (void)KillTimer(slot->dialog, (UINT_PTR)DLUMA_QG_SAVE_TIMER_BASE +
+        (UINT_PTR)(slot - g_dluma_qg.dialogs));
+    dluma_qg_publish_saved_source(slot);
+    dluma_qg_saved_source_clear(slot);
+    if (!slot->panel.token || !IsWindow(slot->panel.content_window)) {
+        MessageBoxW(slot->dialog, L"The graph panel could not be created.",
+            L"Visual Quest Editor", 0x30U);
+        return;
+    }
     if (!dluma_qg_scintilla_read(
             slot->scintilla, &source, &source_size) ||
         !dluma_qg_resolve_document(slot, source, source_size)) {
         if (source) dluma_free(source);
+        (void)dluma_editor_panel_host_show(&slot->panel, 0);
         MessageBoxW(
             slot->dialog,
-            L"The active PXSL file could not be resolved uniquely inside the current project. Save it, close duplicate identical copies, and try again.",
+            L"The native quest source could not be resolved to an editable file in its project. Close and reopen the source, then try again.",
             L"Visual Quest Editor", 0x30U);
         return;
     }
+    if (!dluma_qg_close_install()) {
+        dluma_free(source);
+        (void)dluma_editor_panel_host_show(&slot->panel, 0);
+        MessageBoxW(slot->dialog, L"The graph could not be opened safely. Try again or restart Developer Tools.",
+            L"Visual Quest Editor", 0x30U);
+        return;
+    }
+    if (g_dluma_qg.panel_dialog && g_dluma_qg.panel_dialog != slot) {
+        (void)dluma_editor_panel_host_unbind(&g_dluma_qg.panel_dialog->panel);
+        (void)dluma_editor_panel_host_show(&g_dluma_qg.panel_dialog->panel, 0);
+    }
+    g_dluma_qg.panel_dialog = slot;
     if (!dluma_qg_session_start() ||
+        !dluma_qg_queue_panel_attach(&slot->panel) ||
         !dluma_qg_build_open_frame(
             slot, source, source_size, &frame, &frame_size) ||
-        !dluma_qg_queue_frame(frame, frame_size)) {
+        !dluma_qg_queue_document(frame, frame_size, slot->panel.token, 1)) {
         if (frame) dluma_free(frame);
         dluma_free(source);
+        (void)dluma_editor_panel_host_show(&slot->panel, 0);
         MessageBoxW(
             slot->dialog,
             L"The packaged visual quest editor or its authenticated local bridge is unavailable. Stock PXSL editing remains unchanged.",
@@ -3394,6 +4034,24 @@ static void dluma_qg_open_dialog(DlumaQgDialog* slot)
         return;
     }
     dluma_free(source);
+}
+
+static void dluma_qg_panel_notify(const DlumaEditorPanelRef* panel,
+    unsigned int event, unsigned int argument, void* context)
+{
+    DlumaQgDialog* slot = (DlumaQgDialog*)context;
+    if (!slot || slot->panel.token != panel->token) return;
+    if (event == DLUMA_EDITOR_PANEL_VISIBILITY && argument &&
+        !dluma_atomic_compare_exchange(&g_dluma_qg.stopping, 0, 0))
+        dluma_qg_open_dialog(slot);
+    if (event == DLUMA_EDITOR_PANEL_CHILD_EXITED) {
+        (void)dluma_editor_panel_host_show(&slot->panel, 0);
+        dluma_log_line("WARN", "editor_quest_graph_companion_exited");
+    }
+    if (event == DLUMA_EDITOR_PANEL_CLOSING) {
+        dluma_qg_retire_document(panel->token);
+        if (g_dluma_qg.panel_dialog == slot) g_dluma_qg.panel_dialog = 0;
+    }
 }
 
 static void dluma_qg_ui_request_execute(void)
@@ -3411,6 +4069,25 @@ static void dluma_qg_ui_request_execute(void)
     if (dluma_atomic_compare_exchange(&request->state, 0, 0) != 1)
         return;
     request->error[0] = 0;
+    if (request->kind == DLUMA_QG_UI_PANEL_READY) {
+        slot = g_dluma_qg.panel_dialog;
+        if (!slot || !slot->dialog || !IsWindow(slot->dialog) ||
+            slot->panel.token != request->panel_token ||
+            slot->panel.content_window != request->panel_parent ||
+            !g_dluma_qg.companion_process || !g_dluma_qg.companion_process_id ||
+            !dluma_editor_panel_host_bind(&slot->panel, request->panel_child,
+                g_dluma_qg.companion_process_id, g_dluma_qg.companion_process)) {
+            dluma_str_copy(request->error, DLUMA_ARRAY_COUNT(request->error),
+                "panel_identity_unavailable");
+            goto done;
+        }
+        request->panel_generation = dluma_editor_panel_host_binding_generation(&slot->panel);
+        accepted = request->panel_generation != 0;
+        if (accepted) dluma_log_line("INFO", "editor_quest_graph_panel_bound");
+        if (!accepted) dluma_str_copy(request->error, DLUMA_ARRAY_COUNT(request->error),
+            "panel_binding_generation_unavailable");
+        goto done;
+    }
     slot = dluma_qg_document_find(request->document_id);
     if (!slot || !slot->dialog || !slot->scintilla) {
         dluma_str_copy(request->error,
@@ -3418,7 +4095,13 @@ static void dluma_qg_ui_request_execute(void)
                      "document_not_active");
         goto done;
     }
+    if (!dluma_qg_native_identity_matches(slot)) {
+        dluma_str_copy(request->error, DLUMA_ARRAY_COUNT(request->error),
+            "native_document_identity_changed");
+        goto done;
+    }
     if (request->kind == DLUMA_QG_UI_ACTIVATE) {
+        if (slot->panel.token) (void)dluma_editor_panel_host_show(&slot->panel, 0);
         LRESULT source_length = SendMessageA(
             slot->scintilla, SCI_GETTEXTLENGTH, 0, 0);
         if (source_length < 0 ||
@@ -3461,6 +4144,14 @@ static void dluma_qg_ui_request_execute(void)
             dluma_str_copy(request->error,
                          DLUMA_ARRAY_COUNT(request->error),
                          "restore_hash_invalid");
+            goto done;
+        }
+        if (!request->restore_was_modified &&
+            (!dluma_project_regular_file_is_contained(slot->project_root, slot->source_path) ||
+             !dluma_sha256_file_hex(slot->source_path, DLUMA_QG_MAX_SOURCE_BYTES, disk_sha) ||
+             dluma_stricmp(disk_sha, current_sha))) {
+            dluma_str_copy(request->error, DLUMA_ARRAY_COUNT(request->error),
+                "saved_baseline_changed");
             goto done;
         }
         slot->suppress_source_notification = 1U;
@@ -3669,14 +4360,14 @@ static void dluma_qg_ui_request_execute(void)
                          "saved_source_identity_changed");
             goto done;
         }
-        if (!g_dluma_qg.main_predecessor) {
+        if (!g_dluma_qg.main_subscribed || !g_dluma_qg.main_window) {
             dluma_str_copy(request->error,
                          DLUMA_ARRAY_COUNT(request->error),
                          "stock_compile_route_unavailable");
             goto done;
         }
-        (void)CallWindowProcW(
-            g_dluma_qg.main_predecessor, g_dluma_qg.main_window,
+        (void)SendMessageW(
+            g_dluma_qg.main_window,
             WM_COMMAND, (WPARAM)DLUMA_QG_COMPILE_COMMAND, 0);
     } else {
         dluma_str_copy(request->error,
@@ -3701,7 +4392,7 @@ done:
     request->error[0] = accepted ? 0 : request->error[0];
 }
 
-static LRESULT CALLBACK dluma_qg_dialog_proc(
+static LRESULT CALLBACK dluma_qg_dialog_proc_impl(
     HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     DlumaQgDialog* slot = dluma_qg_dialog_find(window);
@@ -3710,16 +4401,25 @@ static LRESULT CALLBACK dluma_qg_dialog_proc(
         ? (UINT_PTR)DLUMA_QG_SOURCE_TIMER_BASE +
             (UINT_PTR)(slot - g_dluma_qg.dialogs)
         : 0;
+    UINT_PTR save_timer = slot
+        ? (UINT_PTR)DLUMA_QG_SAVE_TIMER_BASE + (UINT_PTR)(slot - g_dluma_qg.dialogs)
+        : 0;
+    int savepoint_reached = 0;
     LRESULT result;
     if (slot && message == WM_COMMAND &&
         (UINT)(wparam & 0xFFFFU) == DLUMA_QG_BUTTON_CONTROL) {
-        dluma_qg_open_dialog(slot);
+        if (slot->panel.token) (void)dluma_editor_panel_host_show(&slot->panel, 1);
         return 0;
     }
     if (slot && message == WM_TIMER &&
         (UINT_PTR)wparam == source_timer) {
         (void)KillTimer(window, source_timer);
         dluma_qg_publish_source_changed(slot);
+        return 0;
+    }
+    if (slot && message == WM_TIMER && (UINT_PTR)wparam == save_timer) {
+        (void)KillTimer(window, save_timer);
+        dluma_qg_publish_saved_source(slot);
         return 0;
     }
     if (slot && message == WM_NOTIFY && lparam &&
@@ -3731,13 +4431,27 @@ static LRESULT CALLBACK dluma_qg_dialog_proc(
             (void)SetTimer(
                 window, source_timer,
                 DLUMA_QG_SOURCE_DEBOUNCE_MS, 0);
+        if (notification->window_from == slot->scintilla &&
+            notification->code == SCN_SAVEPOINTREACHED)
+            savepoint_reached = 1;
+    }
+    if (slot && message == WM_DESTROY) {
+        dluma_qg_publish_saved_source(slot);
+        if (slot->panel.token) (void)dluma_editor_panel_host_close(&slot->panel);
     }
     result = predecessor
         ? CallWindowProcW(predecessor, window, message, wparam, lparam)
         : 0;
-    if (slot && message == WM_SIZE) dluma_qg_button_position(slot);
+    if (slot && savepoint_reached && !g_dluma_qg.stopping)
+        dluma_qg_capture_saved_source(slot);
+    if (slot && message == WM_SIZE) {
+        dluma_qg_button_position(slot);
+        if (slot->panel.token) (void)dluma_editor_panel_host_layout(&slot->panel);
+    }
     if (slot && message == WM_NCDESTROY) {
         (void)KillTimer(window, source_timer);
+        (void)KillTimer(window, save_timer);
+        dluma_qg_saved_source_clear(slot);
         if (slot->scintilla &&
             IsWindow(slot->scintilla) &&
             slot->scintilla_predecessor &&
@@ -3752,15 +4466,28 @@ static LRESULT CALLBACK dluma_qg_dialog_proc(
         slot->button = 0;
         slot->predecessor = 0;
         slot->scintilla_predecessor = 0;
+        slot->clip_children_added = 0;
         slot->project_root[0] = 0;
         slot->source_path[0] = 0;
         slot->relative_path[0] = 0;
         slot->document_id[0] = 0;
         slot->source_sha256[0] = 0;
+        slot->native_document = 0;
+        slot->native_path[0] = 0;
         slot->revision = 0;
         slot->saved_revision = 0;
         slot->saved_sha256[0] = 0;
     }
+    return result;
+}
+
+static LRESULT CALLBACK dluma_qg_dialog_proc(
+    HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    LRESULT result;
+    dluma_atomic_increment(&g_dluma_qg.callbacks_in_flight);
+    __try { result = dluma_qg_dialog_proc_impl(window, message, wparam, lparam); }
+    __finally { dluma_atomic_decrement(&g_dluma_qg.callbacks_in_flight); }
     return result;
 }
 
@@ -3782,6 +4509,8 @@ static int dluma_qg_dialog_attach(HWND dialog, HWND scintilla)
     if (index == DLUMA_QG_MAX_DIALOGS ||
         GetDlgItem(dialog, DLUMA_QG_BUTTON_CONTROL))
         return 0;
+    if (!dluma_editor_ui_request_enroll(dialog) ||
+        !dluma_editor_ui_request_enroll(scintilla)) return 0;
     slot = &g_dluma_qg.dialogs[index];
     memset(slot, 0, sizeof(*slot));
     observed = (WNDPROC)GetWindowLongPtrW(dialog, GWLP_WNDPROC);
@@ -3836,6 +4565,21 @@ static int dluma_qg_dialog_attach(HWND dialog, HWND scintilla)
     if (installed_scintilla &&
         installed_scintilla != dluma_qg_scintilla_proc)
         slot->scintilla_predecessor = installed_scintilla;
+    /* Stock diagnostic updates erase the dialog background while typing.
+     * Clip child controls so that erase cannot flash the entire toolbar. */
+    if (!(GetWindowLongPtrW(dialog, GWL_STYLE) & 0x02000000L)) {
+        (void)SetWindowLongPtrW(dialog, GWL_STYLE,
+            GetWindowLongPtrW(dialog, GWL_STYLE) | 0x02000000L);
+        slot->clip_children_added = 1U;
+    }
+    slot->panel.size = sizeof(slot->panel);
+    slot->panel.version = 1U;
+    if (dluma_editor_panel_host_create(dialog, scintilla, L"Source", L"Graph",
+            dluma_qg_panel_notify, slot, &slot->panel)) {
+        (void)ShowWindow(slot->button, 0);
+        dluma_log_line("INFO", "editor_quest_graph_panel_created");
+    } else
+        dluma_log_line("WARN", "editor_quest_graph_panel_unavailable");
     dluma_qg_button_position(slot);
     dluma_log_pair(
         "INFO", "editor_quest_graph_button",
@@ -3860,58 +4604,108 @@ static void dluma_qg_discover_dialogs(void)
             g_dluma_qg.main_window, dluma_qg_discover_dialog, 0);
 }
 
-static void dluma_qg_teardown_dialogs(void)
+static int dluma_qg_restore_window_proc(HWND window, WNDPROC installed, WNDPROC* predecessor)
 {
-    unsigned int index;
-    for (index = 0; index < DLUMA_QG_MAX_DIALOGS; ++index) {
-        DlumaQgDialog* slot = &g_dluma_qg.dialogs[index];
-        if (!slot->dialog) continue;
-        if (slot->scintilla && IsWindow(slot->scintilla) &&
-            slot->scintilla_predecessor &&
-            (WNDPROC)GetWindowLongPtrW(
-                slot->scintilla, GWLP_WNDPROC) ==
-                    dluma_qg_scintilla_proc)
-            (void)SetWindowLongPtrW(
-                slot->scintilla, GWLP_WNDPROC,
-                (LONG_PTR)slot->scintilla_predecessor);
-        if (IsWindow(slot->dialog) && slot->predecessor &&
-            (WNDPROC)GetWindowLongPtrW(
-                slot->dialog, GWLP_WNDPROC) == dluma_qg_dialog_proc)
-            (void)SetWindowLongPtrW(
-                slot->dialog, GWLP_WNDPROC,
-                (LONG_PTR)slot->predecessor);
-        if (slot->button && IsWindow(slot->button))
-            (void)DestroyWindow(slot->button);
-        memset(slot, 0, sizeof(*slot));
-    }
+    WNDPROC current, previous;
+    if (!*predecessor || !window || !IsWindow(window)) { *predecessor = 0; return 1; }
+    current = (WNDPROC)GetWindowLongPtrW(window, GWLP_WNDPROC);
+    if (current == *predecessor) { *predecessor = 0; return 1; }
+    if (current != installed) return 0;
+    SetLastError(0);
+    previous = (WNDPROC)SetWindowLongPtrW(window, GWLP_WNDPROC, (LONG_PTR)*predecessor);
+    if (!previous && GetLastError()) return 0;
+    *predecessor = 0;
+    return 1;
 }
 
-static LRESULT CALLBACK dluma_qg_main_proc(
-    HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+static int dluma_qg_teardown_dialogs(void)
 {
-    WNDPROC predecessor = g_dluma_qg.main_predecessor;
-    LRESULT result;
+    unsigned int index;
+    int complete = 1;
+    if (!dluma_qg_close_stop()) return 0;
+    for (index = 0; index < DLUMA_QG_MAX_DIALOGS; ++index) {
+        DlumaQgDialog* slot = &g_dluma_qg.dialogs[index];
+        WNDPROC current;
+        if (!slot->dialog) continue;
+        if (slot->scintilla_predecessor && IsWindow(slot->scintilla)) {
+            current = (WNDPROC)GetWindowLongPtrW(slot->scintilla, GWLP_WNDPROC);
+            if (current != dluma_qg_scintilla_proc && current != slot->scintilla_predecessor) {
+                complete = 0; continue;
+            }
+        }
+        if (slot->predecessor && IsWindow(slot->dialog)) {
+            current = (WNDPROC)GetWindowLongPtrW(slot->dialog, GWLP_WNDPROC);
+            if (current != dluma_qg_dialog_proc && current != slot->predecessor) {
+                complete = 0; continue;
+            }
+        }
+        if (slot->panel.token && IsWindow(slot->panel.panel_window) &&
+            !dluma_editor_panel_host_close(&slot->panel)) { complete = 0; continue; }
+        if (!dluma_qg_restore_window_proc(slot->scintilla, dluma_qg_scintilla_proc,
+                &slot->scintilla_predecessor) ||
+            !dluma_qg_restore_window_proc(slot->dialog, dluma_qg_dialog_proc,
+                &slot->predecessor)) { complete = 0; continue; }
+        if (IsWindow(slot->dialog)) {
+            (void)KillTimer(slot->dialog, (UINT_PTR)DLUMA_QG_SOURCE_TIMER_BASE + index);
+            (void)KillTimer(slot->dialog, (UINT_PTR)DLUMA_QG_SAVE_TIMER_BASE + index);
+        }
+        dluma_qg_saved_source_clear(slot);
+        if (slot->clip_children_added && IsWindow(slot->dialog))
+            (void)SetWindowLongPtrW(slot->dialog, GWL_STYLE,
+                GetWindowLongPtrW(slot->dialog, GWL_STYLE) & ~0x02000000L);
+        if (slot->button && IsWindow(slot->button)) (void)DestroyWindow(slot->button);
+        if (g_dluma_qg.panel_dialog == slot) g_dluma_qg.panel_dialog = 0;
+        memset(slot, 0, sizeof(*slot));
+    }
+    return complete && dluma_editor_panel_host_callbacks_drained();
+}
+
+static int dluma_qg_main_listener(
+    HWND window, unsigned int stage, UINT message, WPARAM wparam,
+    LPARAM lparam, LRESULT *result, void *context)
+{
+    (void)wparam; (void)lparam; (void)context;
+    if (window != g_dluma_qg.main_window) return 0;
+    if (stage == DLUMA_EDITOR_UI_DESTROY) {
+        g_dluma_qg.main_window = 0;
+        g_dluma_qg.owner_thread_id = 0;
+        return 0;
+    }
+    if (stage != DLUMA_EDITOR_UI_BEFORE) return 0;
+    if (message == WM_CLOSE && dluma_qg_close_begin_main(window)) {
+        *result = 0;
+        return 1;
+    }
+    if (message == DLUMA_QG_MAIN_CLOSE_REPLY) {
+        dluma_qg_close_process_reply();
+        *result = 1;
+        return 1;
+    }
+    if (message == DLUMA_QG_MAIN_CLOSE_ABORT) {
+        dluma_qg_close_abort();
+        *result = 1;
+        return 1;
+    }
     if (message == DLUMA_QG_MAIN_DISCOVER) {
-        dluma_qg_discover_dialogs();
+        if (!g_dluma_qg.stopping) dluma_qg_discover_dialogs();
+        *result = 1;
         return 1;
     }
     if (message == DLUMA_QG_MAIN_DISPATCH) {
-        dluma_qg_ui_request_execute();
-        return g_dluma_qg.ui_request.error[0] ? 0 : 1;
-    }
-    if (message == DLUMA_QG_MAIN_TEARDOWN) {
-        dluma_qg_teardown_dialogs();
+        if (!g_dluma_qg.stopping) {
+            dluma_atomic_increment(&g_dluma_qg.callbacks_in_flight);
+            dluma_qg_ui_request_execute();
+            *result = g_dluma_qg.ui_request.error[0] ? 0 : 1;
+            dluma_atomic_decrement(&g_dluma_qg.callbacks_in_flight);
+        } else *result = 0;
         return 1;
     }
-    result = predecessor
-        ? CallWindowProcW(predecessor, window, message, wparam, lparam)
-        : 0;
-    if (message == WM_NCDESTROY && g_dluma_qg.main_window == window) {
-        g_dluma_qg.main_window = 0;
-        g_dluma_qg.main_predecessor = 0;
-        g_dluma_qg.owner_thread_id = 0;
+    if (message == DLUMA_QG_MAIN_TEARDOWN) {
+        g_dluma_qg.ui_teardown_complete = dluma_qg_teardown_dialogs() ? 1U : 0U;
+        *result = 1;
+        return 1;
     }
-    return result;
+    return 0;
 }
 
 static int dluma_qg_main_window_matches(
@@ -3972,17 +4766,13 @@ static BOOL CALLBACK dluma_qg_find_main(
 static int dluma_qg_attach_main(void)
 {
     DlumaQgWindowCandidate candidate;
-    WNDPROC observed;
-    WNDPROC installed;
     DWORD process_id = 0;
     DWORD thread_id;
     int accepted = 0;
-    if (g_dluma_qg.main_window && g_dluma_qg.main_predecessor &&
+    if (g_dluma_qg.main_window && g_dluma_qg.main_subscribed &&
         dluma_qg_main_window_matches(
             g_dluma_qg.main_window, GetCurrentProcessId(),
-            g_dluma_qg.owner_thread_id) &&
-        (WNDPROC)GetWindowLongPtrW(
-            g_dluma_qg.main_window, GWLP_WNDPROC) == dluma_qg_main_proc) {
+            g_dluma_qg.owner_thread_id)) {
         (void)PostMessageW(
             g_dluma_qg.main_window, DLUMA_QG_MAIN_DISCOVER, 0, 0);
         return 1;
@@ -3997,34 +4787,27 @@ static int dluma_qg_attach_main(void)
     if (!EnumWindows(dluma_qg_find_main, (LPARAM)&candidate) ||
         !candidate.window)
         goto done;
-    observed = (WNDPROC)GetWindowLongPtrW(
-        candidate.window, GWLP_WNDPROC);
     thread_id = GetWindowThreadProcessId(
         candidate.window, &process_id);
-    if (!thread_id || process_id != candidate.process_id ||
-        !observed || observed == dluma_qg_main_proc)
+    if (!thread_id || process_id != candidate.process_id)
         goto done;
     g_dluma_qg.main_window = candidate.window;
-    g_dluma_qg.main_predecessor = observed;
     g_dluma_qg.owner_thread_id = thread_id;
-    SetLastError(0);
-    installed = (WNDPROC)SetWindowLongPtrW(
-        candidate.window, GWLP_WNDPROC, (LONG_PTR)dluma_qg_main_proc);
-    if (!installed && GetLastError() != 0) {
+    if (!dluma_editor_ui_subscribe(DLUMA_EDITOR_UI_OWNER_GRAPH,
+                                    dluma_qg_main_listener, 0) ||
+        !dluma_editor_ui_request_enroll(candidate.window)) {
         g_dluma_qg.main_window = 0;
-        g_dluma_qg.main_predecessor = 0;
         g_dluma_qg.owner_thread_id = 0;
         goto done;
     }
-    if (installed && installed != dluma_qg_main_proc)
-        g_dluma_qg.main_predecessor = installed;
-    accepted = g_dluma_qg.main_predecessor != 0;
+    g_dluma_qg.main_subscribed = 1U;
+    accepted = 1;
 done:
     dluma_atomic_exchange(&g_dluma_qg.attach_lock, 0);
     if (accepted) {
         dluma_log_pair(
             "INFO", "editor_quest_graph_ui_bridge",
-            "owner_thread_dispatcher_installed");
+            "owner_thread_dispatcher_requested");
         (void)PostMessageW(
             g_dluma_qg.main_window, DLUMA_QG_MAIN_DISCOVER, 0, 0);
     }
@@ -4080,17 +4863,22 @@ int dluma_editor_quest_graph_bridge_stop(void)
             &g_dluma_qg.start_state, 0, 0) != 2)
         return 1;
     dluma_atomic_exchange(&g_dluma_qg.stopping, 1);
+    if (g_dluma_qg.stop_event) (void)SetEvent(g_dluma_qg.stop_event);
     if (g_dluma_qg.main_window && IsWindow(g_dluma_qg.main_window))
         (void)SendMessageTimeoutW(
             g_dluma_qg.main_window, DLUMA_QG_MAIN_TEARDOWN, 0, 0,
             DLUMA_SMTO_BLOCK | DLUMA_SMTO_ABORTIFHUNG |
                 DLUMA_SMTO_ERRORONEXIT,
             2000U, &ignored);
-    if (g_dluma_qg.stop_event) (void)SetEvent(g_dluma_qg.stop_event);
+    if (g_dluma_qg.main_window && IsWindow(g_dluma_qg.main_window) &&
+        !g_dluma_qg.ui_teardown_complete) return 0;
     if (g_dluma_qg.worker_thread)
-        wait_result = WaitForSingleObject(
-            g_dluma_qg.worker_thread, 2000U);
+        wait_result = WaitForSingleObject(g_dluma_qg.worker_thread, 2000U);
     if (wait_result != WAIT_OBJECT_0) return 0;
+    if (!dluma_qg_close_stop()) return 0;
+    if (!dluma_editor_ui_unsubscribe(DLUMA_EDITOR_UI_OWNER_GRAPH) ||
+        dluma_atomic_compare_exchange(&g_dluma_qg.callbacks_in_flight, 0, 0))
+        return 0;
     if (g_dluma_qg.worker_thread) CloseHandle(g_dluma_qg.worker_thread);
     if (g_dluma_qg.stop_event) CloseHandle(g_dluma_qg.stop_event);
     if (g_dluma_qg.companion_process)
@@ -4103,19 +4891,18 @@ int dluma_editor_quest_graph_bridge_stop(void)
     g_dluma_qg.worker_thread = 0;
     g_dluma_qg.stop_event = 0;
     g_dluma_qg.pipe = INVALID_HANDLE_VALUE;
+    dluma_qg_close_reset();
     dluma_qg_lock(&g_dluma_qg.output_lock);
-    if (g_dluma_qg.pending_frame) dluma_free(g_dluma_qg.pending_frame);
-    g_dluma_qg.pending_frame = 0;
-    g_dluma_qg.pending_frame_size = 0;
+    dluma_qg_clear_pending_documents();
+    g_dluma_qg.companion_epoch = 0;
+    if (g_dluma_qg.pending_panel_frame) dluma_free(g_dluma_qg.pending_panel_frame);
+    g_dluma_qg.pending_panel_frame = 0;
+    g_dluma_qg.pending_panel_frame_size = 0;
+    g_dluma_qg.panel_dialog = 0;
     dluma_qg_unlock(&g_dluma_qg.output_lock);
-    if (g_dluma_qg.main_window && g_dluma_qg.main_predecessor &&
-        (WNDPROC)GetWindowLongPtrW(
-            g_dluma_qg.main_window, GWLP_WNDPROC) == dluma_qg_main_proc)
-        (void)SetWindowLongPtrW(
-            g_dluma_qg.main_window, GWLP_WNDPROC,
-            (LONG_PTR)g_dluma_qg.main_predecessor);
     g_dluma_qg.main_window = 0;
-    g_dluma_qg.main_predecessor = 0;
+    g_dluma_qg.main_subscribed = 0;
+    g_dluma_qg.ui_teardown_complete = 0;
     g_dluma_qg.owner_thread_id = 0;
     g_dluma_qg.token[0] = 0;
     g_dluma_qg.pipe_name[0] = 0;
@@ -4128,8 +4915,6 @@ int dluma_editor_quest_graph_bridge_stop(void)
         "editor");
     g_dluma_qg.context_map_identity[0] = 0;
     dluma_qg_unlock(&g_dluma_qg.context_lock);
-    g_dluma_qg.pending_generation = 0;
-    g_dluma_qg.sent_generation = 0;
     g_dluma_qg.last_launch_tick = 0;
     g_dluma_qg.companion_process = 0;
     g_dluma_qg.companion_process_id = 0;

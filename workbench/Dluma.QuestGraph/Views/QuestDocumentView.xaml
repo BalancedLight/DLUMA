@@ -5,6 +5,39 @@
              xmlns:vm="clr-namespace:Dluma.QuestGraph.ViewModels"
              PreviewKeyDown="OnPreviewKeyDown">
   <UserControl.Resources>
+    <Style x:Key="GraphToggle" TargetType="ToggleButton">
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Panel}" />
+      <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ToggleButton">
+            <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    Padding="{TemplateBinding Padding}" CornerRadius="3">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource EditorTheme.Hover}" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource EditorTheme.Selection}" />
+                <Setter Property="Foreground" Value="{DynamicResource EditorTheme.SelectionText}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource EditorTheme.Text}" />
+                <Setter TargetName="Chrome" Property="BorderThickness" Value="2" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{DynamicResource EditorTheme.DisabledText}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style x:Key="GraphItemStyle" TargetType="{x:Type nodify:ItemContainer}" BasedOn="{StaticResource {x:Type nodify:ItemContainer}}">
       <Setter Property="Location" Value="{Binding Location, Mode=TwoWay}" />
       <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
@@ -13,19 +46,19 @@
       <Setter Property="Location" Value="{Binding Location}" />
       <Setter Property="Width" Value="110" />
       <Setter Property="Height" Value="60" />
-      <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+      <Setter Property="Background" Value="{DynamicResource EditorTheme.Accent}" />
     </Style>
     <DataTemplate x:Key="GraphConnectionTemplate" DataType="{x:Type vm:QuestConnectionViewModel}">
       <nodify:StepConnection Source="{Binding Source.Anchor}"
                              Target="{Binding Target.Anchor}"
-                             Stroke="{StaticResource AccentBrush}"
+                             Stroke="{DynamicResource EditorTheme.Accent}"
                              StrokeThickness="2.5" />
     </DataTemplate>
     <DataTemplate x:Key="GraphNodeTemplate" DataType="{x:Type vm:QuestNodeViewModel}">
       <nodify:Node Header="{Binding}"
                    HeaderBrush="{Binding HeaderColor}"
                    Foreground="{Binding HeaderForegroundColor}"
-                   ContentBrush="#18212B"
+                   ContentBrush="{DynamicResource EditorTheme.Surface}"
                    BorderBrush="{Binding BorderColor}"
                    Opacity="{Binding NodeOpacity}"
                    MinWidth="230"
@@ -35,6 +68,8 @@
             <Grid MinWidth="180">
               <TextBlock Text="{Binding DisplayHeader}"
                          FontWeight="SemiBold"
+                         FontSize="13"
+                         ToolTip="{Binding DisplayHeader}"
                          TextTrimming="CharacterEllipsis"
                          MouseLeftButtonDown="OnNodeHeaderMouseLeftButtonDown">
                 <TextBlock.Style>
@@ -93,7 +128,9 @@
                   <nodify:Connector Anchor="{Binding Anchor, Mode=OneWayToSource}"
                                      IsConnected="{Binding IsConnected}"
                                      Width="14" Height="14" />
-                  <TextBlock Grid.Column="1" Text="{Binding DisplayName}" Foreground="{StaticResource MutedBrush}" Margin="5,0,0,0" />
+                  <TextBlock Grid.Column="1" Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}"
+                             Foreground="{DynamicResource EditorTheme.Text}" FontSize="12" MaxWidth="110"
+                             TextTrimming="CharacterEllipsis" Margin="5,0,0,0" />
                 </Grid>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
@@ -101,12 +138,12 @@
 
           <StackPanel Grid.Column="1" Margin="7,0" VerticalAlignment="Top">
             <TextBlock Text="{Binding Summary}"
-                       Foreground="{StaticResource MutedBrush}"
+                       Foreground="{DynamicResource EditorTheme.MutedText}"
                        FontSize="11"
                        TextWrapping="Wrap"
                        TextAlignment="Center"
                        MaxWidth="190" />
-            <TextBlock Text="Opaque source" Foreground="#E8B26E" FontSize="10" HorizontalAlignment="Center">
+            <TextBlock Text="Opaque source" Foreground="{DynamicResource EditorTheme.Warning}" FontSize="10" HorizontalAlignment="Center">
               <TextBlock.Style>
                 <Style TargetType="TextBlock">
                   <Setter Property="Visibility" Value="Collapsed" />
@@ -119,7 +156,7 @@
               </TextBlock.Style>
             </TextBlock>
             <TextBlock Text="Detached / reconnect from a compatible output"
-                       Foreground="#E8A26E"
+                       Foreground="{DynamicResource EditorTheme.Warning}"
                        FontSize="10"
                        TextWrapping="Wrap"
                        HorizontalAlignment="Center">
@@ -144,7 +181,9 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
-                  <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource MutedBrush}" Margin="0,0,5,0" />
+                  <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}"
+                             Foreground="{DynamicResource EditorTheme.Text}" FontSize="12" MaxWidth="110"
+                             TextTrimming="CharacterEllipsis" Margin="0,0,5,0" />
                   <nodify:Connector Grid.Column="1"
                                     Anchor="{Binding Anchor, Mode=OneWayToSource}"
                                     IsConnected="{Binding IsConnected}"
@@ -162,73 +201,100 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="*" />
       <RowDefinition Height="5" />
-      <RowDefinition Height="210" MinHeight="120" />
+      <RowDefinition Height="150" MinHeight="80" />
     </Grid.RowDefinitions>
 
     <Grid Grid.Row="0">
-      <nodify:NodifyEditor x:Name="Editor"
-                           AllowDrop="True"
-                           DragOver="OnEditorDragOver"
-                           Drop="OnEditorDrop"
-                           ItemsSource="{Binding Nodes}"
-                           Connections="{Binding Connections}"
-                           SelectedItems="{Binding SelectedItems}"
-                           ItemTemplate="{StaticResource GraphNodeTemplate}"
-                           ItemContainerStyle="{StaticResource GraphItemStyle}"
-                           ConnectionTemplate="{StaticResource GraphConnectionTemplate}"
-                           ViewportLocation="{Binding ViewportLocation, Mode=TwoWay}"
-                           ViewportZoom="{Binding ViewportZoom, Mode=TwoWay}"
-                           MinViewportZoom="0.1"
-                           MaxViewportZoom="3"
-                           GridCellSize="12"
-                           Background="#101720">
-        <nodify:NodifyEditor.InputBindings>
-          <KeyBinding Key="Delete" Command="{Binding DeleteNodeCommand}" />
-          <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoCommand}" />
-          <KeyBinding Key="Y" Modifiers="Control" Command="{Binding RedoCommand}" />
-          <KeyBinding Key="C" Modifiers="Control" Command="{Binding CopyNodeCommand}" />
-          <KeyBinding Key="V" Modifiers="Control" Command="{Binding PasteAfterCommand}" />
-          <KeyBinding Key="V" Modifiers="Control+Shift" Command="{Binding PasteChildCommand}" />
-          <KeyBinding Key="Up" Modifiers="Alt" Command="{Binding MoveUpCommand}" />
-          <KeyBinding Key="Down" Modifiers="Alt" Command="{Binding MoveDownCommand}" />
-        </nodify:NodifyEditor.InputBindings>
-      </nodify:NodifyEditor>
-
-      <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10" Background="#D918202A" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="6">
-        <WrapPanel>
-          <Button Content="Undo" Command="{Binding UndoCommand}" Padding="8,4" />
-          <Button Content="Redo" Command="{Binding RedoCommand}" Padding="8,4" />
-          <Button Content="Copy" Command="{Binding CopyNodeCommand}" Padding="8,4" />
-          <Button Content="Paste" Command="{Binding PasteAfterCommand}" Padding="8,4" />
-          <Button Content="Paste child" Command="{Binding PasteChildCommand}" Padding="8,4" />
-          <Button Content="Up" Command="{Binding MoveUpCommand}" Padding="8,4" />
-          <Button Content="Down" Command="{Binding MoveDownCommand}" Padding="8,4" />
-          <Button Content="Group" Command="{Binding GroupSelectedCommand}" Padding="8,4" />
-          <Button Content="Ungroup" Command="{Binding UngroupSelectedCommand}" Padding="8,4" />
-          <ComboBox Width="125"
-                    ItemsSource="{Binding ConnectionPorts}"
-                    SelectedItem="{Binding SelectedConnectionPort}"
-                    Margin="4,0" />
-          <Button Content="Connect"
-                  Command="{Binding ConnectSelectedCommand}"
-                  ToolTip="Select source first, then target."
-                  Padding="8,4" />
-          <Button Content="Disconnect" Command="{Binding DisconnectSelectedCommand}" Padding="8,4" />
-          <Button Content="Auto-layout" Command="{Binding AutoLayoutCommand}" Padding="8,4" Margin="0" />
-        </WrapPanel>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+      <Border Grid.Row="0" Background="{DynamicResource EditorTheme.Panel}" BorderBrush="{DynamicResource EditorTheme.Border}" BorderThickness="0,0,0,1" Padding="4">
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <StackPanel Orientation="Horizontal">
+            <Button Content="−" ToolTip="Zoom out" Click="OnZoomOutClick" Padding="8,4" />
+            <Button Content="+" ToolTip="Zoom in" Click="OnZoomInClick" Padding="8,4" />
+            <Button Content="Fit" ToolTip="Fit all nodes" Command="{x:Static nodify:EditorCommands.FitToScreen}"
+                    CommandTarget="{Binding ElementName=Editor}" Padding="8,4" />
+            <ToggleButton x:Name="ShowMinimap" Content="Map" ToolTip="Show minimap" Style="{StaticResource GraphToggle}" Padding="8,4" Margin="4,0,0,0" />
+            <Button Content="Undo" Command="{Binding UndoCommand}" Padding="8,4" />
+            <Button Content="Redo" Command="{Binding RedoCommand}" Padding="8,4" />
+            <Button Content="Copy" Command="{Binding CopyNodeCommand}" Padding="8,4" />
+            <Button Content="Paste" Command="{Binding PasteAfterCommand}" Padding="8,4" />
+            <Button Content="Paste child" Command="{Binding PasteChildCommand}" Padding="8,4" />
+            <Button Content="Up" Command="{Binding MoveUpCommand}" Padding="8,4" />
+            <Button Content="Down" Command="{Binding MoveDownCommand}" Padding="8,4" />
+            <Button Content="Group" Command="{Binding GroupSelectedCommand}" Padding="8,4" />
+            <Button Content="Ungroup" Command="{Binding UngroupSelectedCommand}" Padding="8,4" />
+            <ComboBox Width="125"
+                      ItemsSource="{Binding ConnectionPorts}"
+                      SelectedItem="{Binding SelectedConnectionPort}"
+                      Margin="4,0" />
+            <Button Content="Connect"
+                    Command="{Binding ConnectSelectedCommand}"
+                    ToolTip="Select source first, then target."
+                    Padding="8,4" />
+            <Button Content="Disconnect" Command="{Binding DisconnectSelectedCommand}" Padding="8,4" />
+            <Button Content="Auto-layout" Command="{Binding AutoLayoutCommand}" Padding="8,4" Margin="0" />
+          </StackPanel>
+        </ScrollViewer>
       </Border>
 
-      <Border Width="230" Height="145" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12" Background="#E2171E28" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="5">
-        <nodify:Minimap ItemsSource="{Binding Nodes}"
-                        ItemContainerStyle="{StaticResource MinimapItemStyle}"
-                        ViewportLocation="{Binding ViewportLocation, Mode=TwoWay}"
-                        ViewportSize="{Binding ElementName=Editor, Path=ViewportSize}"
-                        ResizeToViewport="True"
-                        Background="#101720" />
-      </Border>
+      <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <nodify:NodifyEditor x:Name="Editor"
+                             AllowDrop="True"
+                             DragOver="OnEditorDragOver"
+                             Drop="OnEditorDrop"
+                             ItemsSource="{Binding Nodes}"
+                             Connections="{Binding Connections}"
+                             SelectedItems="{Binding SelectedItems}"
+                             ItemTemplate="{StaticResource GraphNodeTemplate}"
+                             ItemContainerStyle="{StaticResource GraphItemStyle}"
+                             ConnectionTemplate="{StaticResource GraphConnectionTemplate}"
+                             ViewportLocation="{Binding ViewportLocation, Mode=TwoWay}"
+                             ViewportZoom="{Binding ViewportZoom, Mode=TwoWay}"
+                             MinViewportZoom="0.1"
+                             MaxViewportZoom="3"
+                             GridCellSize="12"
+                             Background="{DynamicResource EditorTheme.Surface}">
+          <nodify:NodifyEditor.InputBindings>
+            <KeyBinding Key="Delete" Command="{Binding DeleteNodeCommand}" />
+            <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoCommand}" />
+            <KeyBinding Key="Y" Modifiers="Control" Command="{Binding RedoCommand}" />
+            <KeyBinding Key="C" Modifiers="Control" Command="{Binding CopyNodeCommand}" />
+            <KeyBinding Key="V" Modifiers="Control" Command="{Binding PasteAfterCommand}" />
+            <KeyBinding Key="V" Modifiers="Control+Shift" Command="{Binding PasteChildCommand}" />
+            <KeyBinding Key="Up" Modifiers="Alt" Command="{Binding MoveUpCommand}" />
+            <KeyBinding Key="Down" Modifiers="Alt" Command="{Binding MoveDownCommand}" />
+          </nodify:NodifyEditor.InputBindings>
+        </nodify:NodifyEditor>
+
+        <Border Grid.Column="1" Width="180" Height="125" VerticalAlignment="Top" Margin="6" Background="{DynamicResource EditorTheme.Panel}" BorderBrush="{DynamicResource EditorTheme.Border}" BorderThickness="1" CornerRadius="4" Padding="5">
+          <Border.Style>
+            <Style TargetType="Border">
+              <Setter Property="Visibility" Value="Collapsed" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsChecked, ElementName=ShowMinimap}" Value="True">
+                  <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Border.Style>
+          <nodify:Minimap ItemsSource="{Binding Nodes}"
+                          ItemContainerStyle="{StaticResource MinimapItemStyle}"
+                          ViewportLocation="{Binding ViewportLocation, Mode=TwoWay}"
+                          ViewportSize="{Binding ElementName=Editor, Path=ViewportSize}"
+                          ResizeToViewport="True"
+                          Background="{DynamicResource EditorTheme.Surface}" />
+        </Border>
+      </Grid>
     </Grid>
 
-    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}" />
+    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="{DynamicResource EditorTheme.Border}" />
 
     <TabControl Grid.Row="2">
       <TabItem Header="Problems">
