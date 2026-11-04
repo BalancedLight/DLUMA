@@ -4,6 +4,8 @@
 #include <windows.h>
 #include <commctrl.h>
 #include "dlw_editor_panel_host.h"
+#include "dlw_editor_theme.h"
+#include "../build/generated/editor-theme/editor_theme_palette.generated.h"
 
 typedef struct PanelState PanelState;
 typedef struct PanelWait {
@@ -17,12 +19,14 @@ struct PanelState {
     DWORD thread_id, child_pid;
     RECT stock, applied;
     HFONT font;
+    HBRUSH background_brush;
+    COLORREF background_color;
     DlumaEditorPanelNotify notify;
     void *context;
     PanelWait *wait;
     uint64_t binding_generation;
     LONG references;
-    int visible, owns_hide, applied_valid, closing, layout_depth;
+    int visible, owns_hide, applied_valid, closing, layout_depth, single_view;
 };
 static const WCHAR panel_class[] = L"DLUMA.EditorPanel.Host.1";
 static const WCHAR owner_property[] = L"DLUMA.EditorPanel.Owner.1";
@@ -42,7 +46,33 @@ static void focus_child(PanelState *);
 static void panel_addref(PanelState *p) { ++p->references; }
 static void panel_release(PanelState *p)
 {
-    if (!--p->references) HeapFree(GetProcessHeap(), 0, p);
+    if (!--p->references) {
+        if (p->background_brush) DeleteObject(p->background_brush);
+        HeapFree(GetProcessHeap(), 0, p);
+    }
+}
+
+static COLORREF panel_color(unsigned int role, int fallback)
+{
+    DlumaEditorThemeResolved theme = {0};
+    uint32_t argb;
+    theme.size = sizeof(theme); theme.version = 1;
+    if (!dluma_editor_theme_copy_snapshot(&theme)) return GetSysColor(fallback);
+    argb = theme.argb[role];
+    return RGB((argb >> 16) & 255U, (argb >> 8) & 255U, argb & 255U);
+}
+
+static HBRUSH panel_background(PanelState *p)
+{
+    COLORREF color = panel_color(DLUMA_EDITOR_THEME_ROLE_WINDOW, COLOR_BTNFACE);
+    if (!p->background_brush || p->background_color != color) {
+        HBRUSH brush = CreateSolidBrush(color);
+        if (brush) {
+            if (p->background_brush) DeleteObject(p->background_brush);
+            p->background_brush = brush; p->background_color = color;
+        }
+    }
+    return p->background_brush ? p->background_brush : GetSysColorBrush(COLOR_BTNFACE);
 }
 static void wait_release(PanelWait *w)
 {
@@ -186,6 +216,23 @@ static int tab_height(PanelState *p)
 static int layout_panel(PanelState *p, int observe_stock)
 {
     RECT rect; int width, height, row, body;
+    if (p->single_view) {
+        if (p->closing || p->layout_depth || !owner_thread(p->owner) ||
+            GetPropW(p->owner, owner_property) != p || !GetClientRect(p->owner, &rect)) return 0;
+        ++p->layout_depth;
+        width = rect.right - rect.left; height = rect.bottom - rect.top;
+        (void)SetWindowPos(p->ref.panel_window, NULL, rect.left, rect.top, width, height,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+        if (!p->closing)
+            (void)SetWindowPos(p->ref.content_window, NULL, 0, 0, width, height,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+        if (!p->closing && valid_child(p))
+            (void)SetWindowPos(p->child, NULL, 0, 0, width, height,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
+        --p->layout_depth;
+        if (!p->closing) notify_panel(p, DLUMA_EDITOR_PANEL_RESIZED, 0);
+        return !p->closing;
+    }
     if (p->closing || p->layout_depth || !source_rect(p, &rect)) return 0;
     ++p->layout_depth;
     if (observe_stock && (!p->applied_valid || !same_rect(&rect, &p->applied))) {
@@ -261,7 +308,16 @@ static LRESULT CALLBACK panel_proc(HWND window, UINT message, WPARAM wp, LPARAM 
     }
     if (!p) return DefWindowProcW(window, message, wp, lp);
     panel_addref(p);
-    if (!p->closing && message == WM_NOTIFY && ((NMHDR *)lp) && ((NMHDR *)lp)->hwndFrom == p->tabs && ((NMHDR *)lp)->code == TCN_SELCHANGE) {
+    if (message == WM_ERASEBKGND && wp) {
+        RECT bounds;
+        GetClientRect(window, &bounds);
+        FillRect((HDC)wp, &bounds, panel_background(p)); result = 1;
+    } else if (message == WM_CTLCOLORSTATIC && (HWND)lp == p->ref.content_window) {
+        HBRUSH brush = panel_background(p);
+        SetTextColor((HDC)wp, panel_color(DLUMA_EDITOR_THEME_ROLE_TEXT, COLOR_BTNTEXT));
+        SetBkColor((HDC)wp, p->background_brush ? p->background_color : GetSysColor(COLOR_BTNFACE));
+        result = (LRESULT)brush;
+    } else if (!p->closing && message == WM_NOTIFY && ((NMHDR *)lp) && ((NMHDR *)lp)->hwndFrom == p->tabs && ((NMHDR *)lp)->code == TCN_SELCHANGE) {
         int selected = (int)SendMessageW(p->tabs, TCM_GETCURSEL, 0, 0);
         (void)set_visible(p, selected == 1);
         result = 0;
@@ -270,6 +326,12 @@ static LRESULT CALLBACK panel_proc(HWND window, UINT message, WPARAM wp, LPARAM 
         (void)next_binding(p);
         cancel_wait(p);
         notify_panel(p, DLUMA_EDITOR_PANEL_CHILD_EXITED, 0);
+        result = 0;
+    } else if (!p->closing && p->visible && message == WM_CONTEXTMENU) {
+        /* Unhandled child menus belong to the embedded panel, not the hidden source. */
+        result = 0;
+    } else if (!p->closing && p->visible && message == WM_SETFOCUS) {
+        focus_child(p);
         result = 0;
     } else if (message == WM_NCDESTROY) {
         finish_panel(p);
@@ -330,6 +392,36 @@ int dluma_editor_panel_host_layout(const DlumaEditorPanelRef *ref)
     if (!p) return 0;
     result = layout_panel(p, 1); panel_release(p); return result;
 }
+int dluma_editor_panel_host_create_view(HWND owner,
+    DlumaEditorPanelNotify notify, void *context, DlumaEditorPanelRef *out)
+{
+    PanelState *p; HWND window;
+    if (!out || out->size != sizeof(*out) || out->version != 1 || !notify ||
+        !owner_thread(owner) || GetPropW(owner, owner_property) || !panel_class_ready()) return 0;
+    p = (PanelState *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*p));
+    if (!p) return 0;
+    p->references = 1; p->owner = owner; p->thread_id = GetCurrentThreadId();
+    p->single_view = p->visible = 1; p->context = context;
+    p->ref.size = sizeof(p->ref); p->ref.version = 1;
+    p->ref.token = (uint64_t)InterlockedIncrement64(&next_token);
+    if (!p->ref.token || !SetPropW(owner, owner_property, p)) { panel_release(p); return 0; }
+    window = CreateWindowExW(0, panel_class, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
+        0, 0, 0, 0, owner, NULL, module_instance, p);
+    if (!window) {
+        if (GetPropW(owner, owner_property) == p) RemovePropW(owner, owner_property);
+        panel_release(p); return 0;
+    }
+    p->ref.panel_window = window;
+    p->ref.content_window = CreateWindowExW(0, L"Static", L"",
+        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+        0, 0, 0, 0, window, NULL, module_instance, NULL);
+    if (!p->ref.content_window || !layout_panel(p, 0) || p->closing) {
+        if (!p->closing) DestroyWindow(window);
+        panel_release(p); return 0;
+    }
+    p->notify = notify; *out = p->ref;
+    panel_release(p); return 1;
+}
 int dluma_editor_panel_host_show(const DlumaEditorPanelRef *ref, int visible)
 {
     PanelState *p = find_panel(ref); int result;
@@ -346,6 +438,16 @@ static int set_visible(PanelState *p, int visible)
 {
     LONG_PTR style;
     visible = !!visible;
+    if (p->single_view) {
+        if (p->closing || !owner_thread(p->owner) || GetPropW(p->owner, owner_property) != p) return 0;
+        if (p->visible == visible) return 1;
+        p->visible = visible;
+        (void)ShowWindow(p->ref.panel_window, visible ? SW_SHOWNA : SW_HIDE);
+        if (p->closing || !layout_panel(p, 0)) return 0;
+        notify_panel(p, DLUMA_EDITOR_PANEL_VISIBILITY, (unsigned int)visible);
+        if (!p->closing && visible) focus_child(p);
+        return !p->closing;
+    }
     if (p->closing || !owner_thread(p->source) || GetPropW(p->source, source_property) != p ||
         GetPropW(p->owner, owner_property) != p) return 0;
     if (p->visible == visible) return 1;

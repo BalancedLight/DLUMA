@@ -11,7 +11,7 @@ extern int dluma_editor_is_main_window(HWND window, DWORD expected_process_id);
 
 #define UI_THREAD_CAPACITY 256U
 #define UI_QUEUE_CAPACITY 4096U
-#define UI_OWNER_COUNT 5U
+#define UI_OWNER_COUNT 6U
 #define UI_SLOT_COUNT 4U
 #define UI_SUBCLASS_ID ((UINT_PTR)0x444C5549U)
 
@@ -62,6 +62,7 @@ typedef LRESULT (WINAPI *UiDefSubclass)(HWND, UINT, WPARAM, LPARAM);
 static struct {
     SRWLOCK lock;
     volatile LONG state;
+    volatile LONG activated;
     volatile LONG callbacks;
     volatile LONG refresh_generation;
     volatile LONG64 next_identity;
@@ -76,6 +77,8 @@ static struct {
     UiRemoveSubclass remove_subclass;
     UiDefSubclass def_subclass;
     UiWindow *windows;
+    HWND armed_queue[UI_QUEUE_CAPACITY];
+    unsigned int armed_count;
     UiThread threads[UI_THREAD_CAPACITY];
     UiSubscription subscriptions[UI_OWNER_COUNT];
 } ui;
@@ -356,7 +359,7 @@ static int ui_enroll_owner(HWND window)
     UiWindow *record;
     UiInvocation invocation;
     LRESULT result = 0;
-    if (!ui_running() || !window || !thread_id ||
+    if (!ui_running() || !InterlockedCompareExchange(&ui.activated,0,0) || !window || !thread_id ||
         thread_id != GetCurrentThreadId() || process_id != GetCurrentProcessId())
         return 0;
     AcquireSRWLockExclusive(&ui.lock);
@@ -394,7 +397,8 @@ static void ui_bootstrap(UiThread *thread)
 {
     HWND dispatcher;
     if (!thread || thread->id != GetCurrentThreadId() ||
-        thread->dispatcher || thread->bootstrapping || !ui_running()) return;
+        thread->dispatcher || thread->bootstrapping || !ui_running() ||
+        !InterlockedCompareExchange(&ui.activated,0,0)) return;
     thread->bootstrapping = 1;
     dispatcher = CreateWindowExW(0, L"DLUMA.EditorUi.Dispatcher.1", L"", 0,
                                   0, 0, 0, 0, HWND_MESSAGE, NULL,
@@ -409,7 +413,7 @@ static LRESULT CALLBACK ui_getmessage_hook(int code, WPARAM wparam, LPARAM lpara
     InterlockedIncrement(&ui.callbacks);
     if (code >= 0) {
         UiThread *thread = ui_thread(GetCurrentThreadId());
-        if (ui_running()) ui_bootstrap(thread);
+        if (ui_running() && InterlockedCompareExchange(&ui.activated,0,0)) ui_bootstrap(thread);
         else if (thread && InterlockedCompareExchange(&ui.state, 0, 0) == 3)
             ui_cleanup_thread(thread);
     }
@@ -420,7 +424,7 @@ static LRESULT CALLBACK ui_getmessage_hook(int code, WPARAM wparam, LPARAM lpara
 static LRESULT CALLBACK ui_callwnd_hook(int code, WPARAM wparam, LPARAM lparam)
 {
     InterlockedIncrement(&ui.callbacks);
-    if (code >= 0 && ui_running()) {
+    if (code >= 0 && ui_running() && InterlockedCompareExchange(&ui.activated,0,0)) {
         const CWPSTRUCT *message = (const CWPSTRUCT *)lparam;
         UiThread *thread = ui_thread(GetCurrentThreadId());
         ui_bootstrap(thread);
@@ -463,6 +467,16 @@ int dluma_editor_ui_request_enroll(HWND window)
     InterlockedIncrement(&ui.callbacks);
     AcquireSRWLockExclusive(&ui.lock);
     if (!ui_running()) { ReleaseSRWLockExclusive(&ui.lock); InterlockedDecrement(&ui.callbacks); return 0; }
+    if (!ui.activated) {
+        for (i=0; i<ui.armed_count; ++i) if (ui.armed_queue[i]==window) break;
+        if (i==ui.armed_count) {
+            if (ui.armed_count==UI_QUEUE_CAPACITY) {
+                ReleaseSRWLockExclusive(&ui.lock); InterlockedDecrement(&ui.callbacks); return 0;
+            }
+            ui.armed_queue[ui.armed_count++]=window;
+        }
+        ReleaseSRWLockExclusive(&ui.lock); InterlockedDecrement(&ui.callbacks); return 1;
+    }
     for (i = 0; i < UI_THREAD_CAPACITY; ++i)
         if (ui.threads[i].id == id) { thread = &ui.threads[i]; break; }
     if (thread && thread->handle && WaitForSingleObject(thread->handle, 0) == WAIT_OBJECT_0) {
@@ -580,6 +594,7 @@ static void ui_pump(UiThread *thread)
     ULONGLONG started = GetTickCount64();
     unsigned int count = 0;
     if (!ui_running()) { ui_cleanup_thread(thread); return; }
+    if (!InterlockedCompareExchange(&ui.activated,0,0)) return;
     while (count++ < 128U && GetTickCount64() - started < 2U) {
         HWND window = NULL;
         AcquireSRWLockExclusive(&ui.lock);
@@ -685,6 +700,14 @@ static DWORD WINAPI ui_watch(void *context)
         if (WaitForMultipleObjects(2, events, FALSE, INFINITE) != WAIT_OBJECT_0 + 1U) {
             (void)UnhookWinEvent(hook); return 0;
         }
+    }
+    for (;;) {
+        HWND window = NULL;
+        AcquireSRWLockExclusive(&ui.lock);
+        if (ui.armed_count) window=ui.armed_queue[--ui.armed_count];
+        ReleaseSRWLockExclusive(&ui.lock);
+        if (!window || !ui_running()) break;
+        (void)dluma_editor_ui_request_enroll(window);
     }
     (void)EnumWindows(ui_enumerate, 0);
     for (;;) {
@@ -807,7 +830,6 @@ int dluma_editor_ui_start(void)
         if (WaitForSingleObject(ui.watcher_ready, 2000U) == WAIT_OBJECT_0 &&
             InterlockedCompareExchange(&ui.watcher_status, 0, 0) == 1 &&
             InterlockedCompareExchange(&ui.state, 2, 1) == 1) {
-            (void)SetEvent(ui.watcher_go);
             InterlockedDecrement(&ui.callbacks);
             return 1;
         }
@@ -837,6 +859,22 @@ failed:
     return 0;
 }
 
+int dluma_editor_ui_activate(void)
+{
+    int activated = 0;
+    AcquireSRWLockExclusive(&ui.lock);
+    if (ui_running() && ui.watcher_go) {
+        if (ui.activated) activated = 1;
+        else {
+            InterlockedExchange(&ui.activated,1);
+            if (SetEvent(ui.watcher_go)) activated = 1;
+            else InterlockedExchange(&ui.activated,0);
+        }
+    }
+    ReleaseSRWLockExclusive(&ui.lock);
+    return activated;
+}
+
 int dluma_editor_ui_callbacks_drained(void)
 {
     unsigned int i;
@@ -863,6 +901,7 @@ int dluma_editor_ui_stop(void)
     if (InterlockedCompareExchange(&ui.state, 0, 0) == 4 || InterlockedCompareExchange(&ui.state, 0, 0) == -1) { ReleaseSRWLockExclusive(&ui.lock); return 0; }
     InterlockedIncrement(&ui.callbacks);
     InterlockedExchange(&ui.state, 3);
+    InterlockedExchange(&ui.activated, 0);
     ReleaseSRWLockExclusive(&ui.lock);
     if (ui.stop_event) (void)SetEvent(ui.stop_event);
     for (i = 0; i < UI_THREAD_CAPACITY; ++i) {
@@ -917,6 +956,7 @@ int dluma_editor_ui_stop(void)
     ui.dispatch_message = 0;
     ui.placement_message = 0;
     ZeroMemory(ui.threads, sizeof(ui.threads));
+    ZeroMemory(ui.armed_queue, sizeof(ui.armed_queue)); ui.armed_count = 0;
     ZeroMemory(ui.subscriptions, sizeof(ui.subscriptions));
     InterlockedExchange(&ui.state, 0);
     return 1;

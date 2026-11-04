@@ -39,6 +39,7 @@
       </Setter>
     </Style>
     <Style x:Key="GraphItemStyle" TargetType="{x:Type nodify:ItemContainer}" BasedOn="{StaticResource {x:Type nodify:ItemContainer}}">
+      <Setter Property="HasCustomContextMenu" Value="True" />
       <Setter Property="Location" Value="{Binding Location, Mode=TwoWay}" />
       <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
     </Style>
@@ -49,7 +50,7 @@
       <Setter Property="Background" Value="{DynamicResource EditorTheme.Accent}" />
     </Style>
     <DataTemplate x:Key="GraphConnectionTemplate" DataType="{x:Type vm:QuestConnectionViewModel}">
-      <nodify:StepConnection Source="{Binding Source.Anchor}"
+      <nodify:Connection Source="{Binding Source.Anchor}"
                              Target="{Binding Target.Anchor}"
                              Stroke="{DynamicResource EditorTheme.Accent}"
                              StrokeThickness="2.5" />
@@ -246,6 +247,7 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <nodify:NodifyEditor x:Name="Editor"
+                             HasCustomContextMenu="True"
                              AllowDrop="True"
                              DragOver="OnEditorDragOver"
                              Drop="OnEditorDrop"

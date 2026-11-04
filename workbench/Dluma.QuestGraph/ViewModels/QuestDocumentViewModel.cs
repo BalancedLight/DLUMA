@@ -236,7 +236,11 @@ public sealed partial class QuestDocumentViewModel : ObservableObject
 
     public void MarkSourceSaved() => MarkSourceSaved(Revision, SourceSha256, _model.Source.ToArray());
 
-    public bool MarkSourceSaved(long revision, string sha256, byte[] bytes)
+    internal bool HasConfirmedSave(long revision, string sha256) =>
+        revision == _confirmedSavedRevision &&
+        string.Equals(_savedSourceSha256, sha256, StringComparison.OrdinalIgnoreCase);
+
+    public bool MarkSourceSaved(long revision, string sha256, byte[] bytes, bool announceSaved = true)
     {
         if (revision < _confirmedSavedRevision)
             return false;
@@ -248,7 +252,10 @@ public sealed partial class QuestDocumentViewModel : ObservableObject
         _savedSourceBytes = (byte[])bytes.Clone();
         _savedWasModified = false;
         NotifyDirty();
-        Status = IsSourceDirty ? "Source has newer changes." : "Saved";
+        if (IsSourceDirty)
+            Status = "Source has newer changes.";
+        else if (announceSaved)
+            Status = "Saved";
         return true;
     }
 
@@ -257,12 +264,15 @@ public sealed partial class QuestDocumentViewModel : ObservableObject
 
     public void MarkLayoutSaved() => MarkLayoutSaved(CaptureLayoutSave());
 
-    public void MarkLayoutSaved(QuestLayoutSaveSnapshot snapshot)
+    public void MarkLayoutSaved(QuestLayoutSaveSnapshot snapshot, bool announceSaved = true)
     {
         _savedSidecar = snapshot.Sidecar;
         _savedLayoutFingerprint = snapshot.Fingerprint;
         NotifyDirty();
-        Status = IsDirty ? "Document has newer changes." : "Saved";
+        if (IsDirty)
+            Status = "Document has newer changes.";
+        else if (announceSaved)
+            Status = "Saved";
     }
 
     public async Task<bool> DiscardUnsavedChangesAsync()

@@ -18,6 +18,7 @@
 #define PROPERTIES_FIELDS_OFFSET 0x248U
 #define PROPERTIES_FIELDS_ID 1077
 #define PROPERTIES_BRUSH_IAT 0x1146980U
+#define PROPERTIES_REGION_IAT 0x11451E8U
 #define BOOLEAN_VTABLE 0x15BFE78U
 #define BOOLEAN_DRAW_RVA 0x514600U
 #define BOOLEAN_RECT_IAT 0x11451B0U
@@ -37,13 +38,21 @@ typedef struct PropertiesScope {
     COLORREF button_text, button_disabled, button_border;
     HBRUSH button_brush;
     HPEN button_pen;
-    int kind, rectangle_seen, text_seen;
+    HRGN paint_damage;
+    uint64_t paint_generation;
+    int kind, rectangle_seen, text_seen, paint_post_done, paint_content_failed;
     int fields_active;
+    HDC boolean_buffer;
+    int boolean_erase, boolean_rectangle_done, boolean_text_done;
 } PropertiesScope;
 extern void *dluma_editor_theme_controls_hold_listview(HWND window);
 extern void *dluma_editor_theme_controls_hold_button(HWND window);
 extern int dluma_editor_theme_controls_listview_alive(HWND window, void *token);
+extern int dluma_editor_theme_controls_token_generation(HWND window, void *token, uint64_t generation);
 extern void dluma_editor_theme_controls_release_listview(void *token);
+extern int dluma_editor_theme_properties_grid_valid(HWND, void *, uint64_t);
+extern int dluma_editor_theme_properties_grid_begin(HWND, void *, uint64_t);
+extern void dluma_editor_theme_properties_grid_fail(HWND, void *, uint64_t);
 static SRWLOCK properties_lock;
 static DWORD properties_tls=TLS_OUT_OF_INDEXES, properties_protection;
 static BYTE *editor_base;
@@ -60,8 +69,10 @@ typedef struct PropertiesIat {
     int installed, pending;
 } PropertiesIat;
 static PropertiesIat boolean_rectangle_iat, boolean_text_iat;
+static PropertiesIat properties_region_iat;
 static BOOL (WINAPI *original_rectangle)(HDC,int,int,int,int);
 static COLORREF (WINAPI *original_text_color)(HDC,COLORREF);
+static HRGN (WINAPI *original_rect_region)(const RECT *);
 static BYTE *mfc_base;
 static void *boolean_vtable, *boolean_draw;
 
@@ -101,6 +112,49 @@ static COLORREF role(const DlumaEditorThemeResolved *theme, unsigned int index)
 {
     uint32_t c=theme->argb[index]; return RGB((c>>16)&255U,(c>>8)&255U,c&255U);
 }
+static int properties_dc_translation(HDC dc, POINT *origin)
+{
+    POINT basis[3]={{0,0},{1,0},{0,1}};
+    if (!dc || GetMapMode(dc)!=MM_TEXT || GetGraphicsMode(dc)!=GM_COMPATIBLE ||
+        !LPtoDP(dc,basis,3) || (int64_t)basis[1].x-basis[0].x!=1 ||
+        basis[1].y!=basis[0].y || basis[2].x!=basis[0].x ||
+        (int64_t)basis[2].y-basis[0].y!=1) return 0;
+    *origin=basis[0]; return 1;
+}
+static void properties_clip_failed(PropertiesScope *draw)
+{
+    PropertiesScope *scope=draw;
+    while (scope) {
+        if (scope->kind==3 && scope->child==draw->child && scope->object==draw->object) {
+            scope->paint_content_failed=1; return;
+        }
+        scope=properties_unmask(scope->previous);
+    }
+}
+static HRGN WINAPI properties_rect_region(const RECT *rect)
+{
+    uintptr_t site=(uintptr_t)_ReturnAddress()-(uintptr_t)editor_base;
+    PropertiesScope *scope=properties_raw(); RECT device; POINT origin;
+    HRGN result;
+    InterlockedIncrement(&properties_callbacks);
+    __try {
+        if (!InterlockedCompareExchange(&properties_tls_failed,0,0) && scope &&
+            !((uintptr_t)scope&1U) && scope->kind==1 &&
+            (site==0x4E6B82U || site==0x4E6F6CU) && GetObjectType(scope->dc)==OBJ_MEMDC) {
+            /* Native row rectangles use client coordinates; GDI regions use
+               device coordinates even when the list's buffer has an origin. */
+            if (memory_readable(rect,sizeof(*rect)) && properties_dc_translation(scope->dc,&origin)) {
+                device=*rect;
+                if (LPtoDP(scope->dc,(POINT *)&device,2)) rect=&device;
+                else properties_clip_failed(scope);
+            } else properties_clip_failed(scope);
+        }
+        result=original_rect_region(rect);
+    } __finally {
+        InterlockedDecrement(&properties_callbacks);
+    }
+    return result;
+}
 static HBRUSH WINAPI properties_brush(int index)
 {
     uintptr_t site=(uintptr_t)_ReturnAddress()-(uintptr_t)editor_base;
@@ -112,6 +166,18 @@ static HBRUSH WINAPI properties_brush(int index)
     if (!brush) brush=original_brush(index);
     InterlockedDecrement(&properties_callbacks);
     return brush;
+}
+/* Locate only the active print for this same admitted object and DC. */
+static PropertiesScope *boolean_buffer_scope(PropertiesScope *scope, HDC dc)
+{
+    PropertiesScope *current=scope;
+    if (!scope || ((uintptr_t)scope & 1U) || scope->kind!=2) return NULL;
+    while (current) {
+        if (current->kind==2 && current->boolean_buffer==dc && current->child==scope->child &&
+            current->object==scope->object && current->control_token==scope->control_token) return current;
+        current=properties_unmask(current->previous);
+    }
+    return NULL;
 }
 static BOOL WINAPI boolean_rectangle(HDC dc, int left, int top, int right, int bottom)
 {
@@ -128,6 +194,11 @@ static BOOL WINAPI boolean_rectangle(HDC dc, int left, int top, int right, int b
             }
         }
         result=original_rectangle(dc,left,top,right,bottom);
+        if (result && scope && !((uintptr_t)scope&1U) && scope->kind==2 && scope->dc==dc &&
+            site==0x5146ACU && scope->rectangle_seen) {
+            PropertiesScope *paint=boolean_buffer_scope(scope,dc);
+            if (paint) paint->boolean_rectangle_done=1;
+        }
     } __finally {
         if (old_pen && old_pen!=HGDI_ERROR) (void)SelectObject(dc,old_pen);
         if (old_brush && old_brush!=HGDI_ERROR) (void)SelectObject(dc,old_brush);
@@ -139,16 +210,25 @@ static COLORREF WINAPI boolean_text_color(HDC dc, COLORREF value)
 {
     uintptr_t site=(uintptr_t)_ReturnAddress()-(uintptr_t)mfc_base;
     PropertiesScope *scope=properties_raw(); COLORREF result;
+    int prior=scope && !((uintptr_t)scope&1U) && scope->kind==2 && scope->text_seen;
     InterlockedIncrement(&properties_callbacks);
-    if (!InterlockedCompareExchange(&properties_tls_failed,0,0) && scope && !((uintptr_t)scope&1U) &&
-        scope->kind==2 && scope->rectangle_seen && scope->dc==dc &&
-        (site==0x28326EU || site==0x28327FU) && !scope->text_seen) {
-        scope->text_seen=1;
-        if (value==RGB(0,0,0)) value=scope->button_text;
-        else if (value==RGB(128,128,128)) value=scope->button_disabled;
-    }
-    result=original_text_color(dc,value);
-    InterlockedDecrement(&properties_callbacks);
+    __try {
+        if (!InterlockedCompareExchange(&properties_tls_failed,0,0) && scope && !((uintptr_t)scope&1U) &&
+            scope->kind==2 && scope->rectangle_seen && scope->dc==dc &&
+            (site==0x28326EU || site==0x28327FU) && !prior) {
+            scope->text_seen=1;
+            if (value==RGB(0,0,0)) value=scope->button_text;
+            else if (value==RGB(128,128,128)) value=scope->button_disabled;
+        }
+        result=original_text_color(dc,value);
+        /* MFC calls the output HDC at most once per setter. The native
+           renderer restores text color after its DrawText call. */
+        if (result!=CLR_INVALID && prior && scope && !((uintptr_t)scope&1U) && scope->kind==2 &&
+            scope->dc==dc && (site==0x28326EU || site==0x28327FU)) {
+            PropertiesScope *paint=boolean_buffer_scope(scope,dc);
+            if (paint) paint->boolean_text_done=1;
+        }
+    } __finally { InterlockedDecrement(&properties_callbacks); }
     return result;
 }
 static int properties_exchange(void *expected, void *replacement)
@@ -229,17 +309,28 @@ done:
 }
 static int properties_install(void)
 {
-    HMODULE user=GetModuleHandleW(L"user32.dll"); int ok=0;
-    if (!user) return 0;
+    HMODULE user=GetModuleHandleW(L"user32.dll"), gdi=GetModuleHandleW(L"gdi32.dll"); int ok=0;
+    if (!user || !gdi) return 0;
     AcquireSRWLockExclusive(&properties_lock);
     if (properties_stopping || !properties_resolved) goto done;
-    if (properties_installed) { ok=!properties_pending; goto done; }
+    if (properties_installed && properties_region_iat.installed) {
+        ok=!properties_pending && !properties_region_iat.pending; goto done;
+    }
     if (properties_tls==TLS_OUT_OF_INDEXES) properties_tls=TlsAlloc();
     if (properties_tls==TLS_OUT_OF_INDEXES) goto done;
     original_brush=(HBRUSH (WINAPI *)(int))(void *)GetProcAddress(user,"GetSysColorBrush");
-    if (!original_brush) goto done;
-    properties_installed=properties_exchange((void *)original_brush,(void *)properties_brush);
-    ok=properties_installed && !properties_pending;
+    original_rect_region=(HRGN (WINAPI *)(const RECT *))(void *)GetProcAddress(gdi,"CreateRectRgnIndirect");
+    properties_region_iat.slot=(PVOID volatile *)dluma_editor_theme_profile_address(
+        DLUMA_EDITOR_THEME_PROFILE_EDITOR,PROPERTIES_REGION_IAT,sizeof(void *));
+    if (!original_brush || !original_rect_region || !properties_region_iat.slot) goto done;
+    properties_region_iat.original=(void *)original_rect_region;
+    properties_region_iat.replacement=(void *)properties_rect_region;
+    if (!properties_region_iat.installed)
+        properties_region_iat.installed=boolean_exchange(&properties_region_iat,
+            properties_region_iat.original,properties_region_iat.replacement);
+    if (properties_region_iat.installed && !properties_region_iat.pending && !properties_installed)
+        properties_installed=properties_exchange((void *)original_brush,(void *)properties_brush);
+    ok=properties_installed && !properties_pending && properties_region_iat.installed && !properties_region_iat.pending;
 done:
     ReleaseSRWLockExclusive(&properties_lock); return ok;
 }
@@ -260,6 +351,11 @@ static int properties_identity(HWND owner, HWND child, BYTE **object)
         list!=dialog+offset || *(void **)dialog!=owner_vtable || *(void **)list!=list_vtable ||
         *(HWND *)(dialog+64U)!=owner || *(HWND *)(list+64U)!=child) return 0;
     *object=list; return 1;
+}
+int dluma_editor_theme_properties_is_list(HWND window)
+{
+    BYTE *object=NULL;
+    return properties_identity(GetParent(window),window,&object);
 }
 static int boolean_identity(HWND owner, HWND child, BYTE **object)
 {
@@ -349,16 +445,31 @@ static void properties_mask_before(uint64_t *scratch)
     }
 }
 
+static PropertiesScope *properties_row_paint(HWND owner, const DRAWITEMSTRUCT *draw)
+{
+    PropertiesScope *scope;
+    if (!memory_readable(draw,sizeof(*draw)) || draw->CtlType!=ODT_LISTVIEW || draw->itemID==(UINT)-1 ||
+        !draw->hwndItem || GetParent(draw->hwndItem)!=owner) return NULL;
+    for (scope=properties_unmask(properties_raw()); scope; scope=properties_unmask(scope->previous))
+        if (scope->kind==3 && scope->child==draw->hwndItem) return scope;
+    return NULL;
+}
+
 static void properties_before(HWND owner, LPARAM lparam, const DlumaEditorThemeResolved *theme, uint64_t *scratch)
 {
     DRAWITEMSTRUCT *draw=(DRAWITEMSTRUCT *)lparam; PropertiesScope *scope;
+    PropertiesScope *paint=properties_row_paint(owner,draw);
     BYTE *object=NULL; void *token=NULL; unsigned int i;
-    if (!scratch || *scratch) return;
+    if (!scratch || *scratch) {
+        if (paint) paint->paint_content_failed=1;
+        return;
+    }
     if (theme && theme->size==sizeof(*theme) && theme->version==1 && draw && draw->CtlType==ODT_LISTVIEW &&
         draw->hwndItem && draw->hDC && draw->itemID!=(UINT)-1 &&
         !InterlockedCompareExchange(&properties_tls_failed,0,0)) {
         token=dluma_editor_theme_controls_hold_listview(draw->hwndItem);
-        if (token && properties_identity(owner,draw->hwndItem,&object) && properties_install()) {
+        if (token && properties_identity(owner,draw->hwndItem,&object) &&
+            (!paint || (paint->control_token==token && paint->object==object)) && properties_install()) {
             scope=(PropertiesScope *)HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,sizeof(*scope));
             if (scope) {
                 scope->kind=1; scope->owner=owner; scope->child=draw->hwndItem; scope->dc=draw->hDC;
@@ -375,7 +486,10 @@ static void properties_before(HWND owner, LPARAM lparam, const DlumaEditorThemeR
                 if (TlsSetValue(properties_tls,scope)) {
                     InterlockedIncrement(&properties_frames); *scratch=(uint64_t)(uintptr_t)scope;
                     if (!dluma_editor_ui_invocation_cleanup(DLUMA_EDITOR_UI_OWNER_THEME,
-                        DLUMA_EDITOR_UI_SLOT_PROPERTIES,properties_after)) { properties_after(scratch); return; }
+                        DLUMA_EDITOR_UI_SLOT_PROPERTIES,properties_after)) {
+                        if (paint) paint->paint_content_failed=1;
+                        properties_after(scratch); return;
+                    }
                     for (i=0;i<PROPERTIES_COLOR_COUNT;++i) scope->original[i]=*(DWORD *)(object+color_offsets[i]);
                     scope->fields_active=1;
                     for (i=0;i<PROPERTIES_COLOR_COUNT;++i) *(DWORD *)(object+color_offsets[i])=scope->applied[i];
@@ -386,6 +500,7 @@ static void properties_before(HWND owner, LPARAM lparam, const DlumaEditorThemeR
         }
         if (token) dluma_editor_theme_controls_release_listview(token);
     }
+    if (paint) paint->paint_content_failed=1;
     if (theme && theme->size==sizeof(*theme) && theme->version==1 && draw && draw->CtlType==ODT_BUTTON &&
         draw->hwndItem && draw->hDC && !InterlockedCompareExchange(&properties_tls_failed,0,0)) {
         if (boolean_scope_before(owner,draw->hwndItem,draw->hDC,theme,scratch)) return;
@@ -405,28 +520,71 @@ static void properties_after(uint64_t *scratch)
         if (!TlsSetValue(properties_tls,scope->previous)) { InterlockedIncrement(&properties_tls_failed); return; }
         if (scope->button_brush) DeleteObject(scope->button_brush);
         if (scope->button_pen) DeleteObject(scope->button_pen);
+        if (scope->paint_damage) DeleteObject(scope->paint_damage);
         dluma_editor_theme_controls_release_listview(scope->control_token);
         HeapFree(GetProcessHeap(),0,scope);
     }
     InterlockedDecrement(&properties_frames);
 }
 
-/* Native grid lines use system colors even when the property list is dark.
- * Repaint their geometry after the list's own paint, without changing its
- * extended styles or painting over child value editors. */
-static void properties_paint_separators(HWND window, const DlumaEditorThemeResolved *theme)
+static void properties_paint_before(HWND window, uint64_t *scratch, const DlumaEditorThemeResolved *theme)
 {
-    HWND header; BYTE *object=NULL; void *token; HDC dc=NULL; HPEN pen=NULL, old=NULL;
-    HBRUSH surface=NULL; RECT client, header_rect, item, unused; POINT origin;
-    int saved=0, count, top, visible, columns, last, line_top, unused_top, i;
-    if (!theme || theme->size!=sizeof(*theme) || theme->version!=1) return;
-    token=dluma_editor_theme_controls_hold_listview(window);
+    PropertiesScope *scope;
+    BYTE *object = NULL;
+    void *token;
+    HRGN damage;
+    int region;
+    if (!scratch || *scratch || !theme || theme->size!=sizeof(*theme) || theme->version!=1 ||
+        theme->kind==DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST) return;
+    token = dluma_editor_theme_controls_hold_listview(window);
     if (!token) return;
-    if (!properties_identity(GetParent(window),window,&object) ||
-        !(ListView_GetExtendedListViewStyle(window) & LVS_EX_GRIDLINES) ||
-        !dluma_editor_theme_controls_listview_alive(window,token)) goto done;
+    if (!properties_identity(GetParent(window), window, &object) || !properties_tls_ready() || !properties_install()) {
+        dluma_editor_theme_properties_grid_fail(window,token,theme->generation);
+        dluma_editor_theme_controls_release_listview(token); return;
+    }
+    damage = CreateRectRgn(0, 0, 0, 0);
+    region = damage ? GetUpdateRgn(window, damage, FALSE) : ERROR;
+    if (region == ERROR || region == NULLREGION) {
+        if (damage) DeleteObject(damage);
+        if (region==ERROR) dluma_editor_theme_properties_grid_fail(window,token,theme->generation);
+        dluma_editor_theme_controls_release_listview(token);
+        return;
+    }
+    scope = (PropertiesScope *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*scope));
+    if (scope) {
+        scope->kind = 3; scope->owner = scope->child = window;
+        scope->object = object; scope->control_token = token; scope->paint_damage = damage;
+        scope->paint_generation = theme->generation;
+        scope->previous = properties_raw();
+        if (TlsSetValue(properties_tls, scope)) {
+            InterlockedIncrement(&properties_frames); *scratch = (uint64_t)(uintptr_t)scope;
+            if (!dluma_editor_ui_invocation_cleanup(DLUMA_EDITOR_UI_OWNER_THEME,
+                DLUMA_EDITOR_UI_SLOT_PROPERTIES, properties_after)) { dluma_editor_theme_properties_grid_fail(window,token,theme->generation); properties_after(scratch); return; }
+            if (!dluma_editor_theme_properties_grid_begin(window,token,scope->paint_generation)) properties_after(scratch);
+            return;
+        }
+        HeapFree(GetProcessHeap(), 0, scope);
+    }
+    DeleteObject(damage);
+    dluma_editor_theme_properties_grid_fail(window,token,theme->generation);
+    dluma_editor_theme_controls_release_listview(token);
+}
+
+/* Keep the separator pass within the damage captured before native BeginPaint.
+ * Native row painting and the list background own all other client pixels. */
+static int properties_paint_separators(HWND window, const DlumaEditorThemeResolved *theme, HRGN *damage, void *token, uint64_t generation, BYTE *expected_object, HDC dc)
+{
+    HWND header; BYTE *object=NULL; HPEN pen=NULL, old=NULL;
+    RECT client, header_rect, item; POINT origin;
+    HRGN device_damage=NULL;
+    int saved=0, count, top, visible, columns, line_top, row_height=0, next_line=0, i, painted=0;
+    if (!theme || theme->size!=sizeof(*theme) || theme->version!=1 || !damage || !*damage ||
+        !dc || GetObjectType(dc)!=OBJ_MEMDC) return 0;
+    if (!properties_identity(GetParent(window),window,&object) || object!=expected_object ||
+        !dluma_editor_theme_properties_grid_valid(window,token,generation)) goto done;
     header=ListView_GetHeader(window);
-    if (!header || !IsWindowVisible(header) || !GetClientRect(window,&client) ||
+    if (!dluma_editor_theme_controls_listview_alive(window,token) || !header ||
+        GetParent(header)!=window || !IsWindowVisible(header) || !GetClientRect(window,&client) ||
         !GetWindowRect(header,&header_rect)) goto done;
     origin.x=header_rect.left; origin.y=header_rect.bottom;
     if (!ScreenToClient(window,&origin)) goto done;
@@ -434,64 +592,166 @@ static void properties_paint_separators(HWND window, const DlumaEditorThemeResol
     if (client.top>=client.bottom) goto done;
     count=ListView_GetItemCount(window); top=ListView_GetTopIndex(window);
     visible=ListView_GetCountPerPage(window); columns=Header_GetItemCount(header);
-    if (count<0 || visible<0 || columns<=0 || columns>256) goto done;
+    if (!dluma_editor_theme_controls_listview_alive(window,token) || GetParent(header)!=window ||
+        count<0 || visible<0 || columns<=0 || columns>256) goto done;
     if (visible>4096) visible=4096;
-    line_top=client.top; unused_top=client.bottom;
-    if (!count) { top=0; unused_top=client.top; }
+    line_top=client.top;
+    if (!count) { top=0; }
     else {
         if (top<0 || top>=count) goto done;
-        last=count-1-top>visible+1 ? top+visible+1 : count-1;
         if (!dluma_editor_theme_controls_listview_alive(window,token) ||
             !ListView_GetItemRect(window,top,&item,LVIR_BOUNDS)) goto done;
         if (item.top>line_top) line_top=item.top;
-        if (!dluma_editor_theme_controls_listview_alive(window,token) ||
-            !ListView_GetItemRect(window,last,&item,LVIR_BOUNDS)) goto done;
-        if (last==count-1 && item.bottom<client.bottom)
-            unused_top=item.bottom>client.top ? item.bottom : client.top;
+        row_height=item.bottom-item.top;
+        if (row_height<=0) goto done;
     }
-    if (line_top>=client.bottom) goto done;
-    dc=GetDCEx(window,NULL,DCX_CACHE|DCX_CLIPCHILDREN);
-    if (!dc) goto done;
+    if (line_top>=client.bottom) { painted=1; goto done; }
+    if (!dluma_editor_theme_controls_listview_alive(window,token) ||
+        !properties_identity(GetParent(window),window,&object) || object!=expected_object || GetParent(header)!=window) goto done;
+    if (!dluma_editor_theme_controls_listview_alive(window,token)) goto done;
     saved=SaveDC(dc);
-    if (!saved || IntersectClipRect(dc,client.left,client.top,client.right,client.bottom)==ERROR) goto done;
-    if (unused_top<client.bottom) {
-        surface=CreateSolidBrush(role(theme,DLUMA_EDITOR_THEME_ROLE_SURFACE));
-        if (!surface) goto done;
-        unused=client; unused.top=unused_top;
-        (void)FillRect(dc,&unused,surface);
-    }
+    /* Keep the paint damage in the same device coordinates as native clips. */
+    if (!saved || !properties_dc_translation(dc,&origin)) goto done;
+    device_damage=CreateRectRgn(0,0,0,0);
+    if (!device_damage || CombineRgn(device_damage,*damage,NULL,RGN_COPY)==ERROR ||
+        OffsetRgn(device_damage,origin.x,origin.y)==ERROR || ExtSelectClipRgn(dc,device_damage,RGN_AND)==ERROR ||
+        IntersectClipRect(dc,client.left,client.top,client.right,client.bottom)==ERROR) goto done;
     pen=CreatePen(PS_SOLID,1,role(theme,DLUMA_EDITOR_THEME_ROLE_BORDER));
     if (!pen) goto done;
     old=(HPEN)SelectObject(dc,pen);
     if (!old || old==(HPEN)HGDI_ERROR) { old=NULL; goto done; }
     for (i=0;i<columns;++i) {
         RECT column; POINT edge;
-        if (!dluma_editor_theme_controls_listview_alive(window,token) ||
-            !Header_GetItemRect(header,i,&column)) break;
+        if (!dluma_editor_theme_properties_grid_valid(window,token,generation) ||
+            !Header_GetItemRect(header,i,&column)) goto done;
+        if (!dluma_editor_theme_properties_grid_valid(window,token,generation) || GetParent(header)!=window) goto done;
         edge.x=column.right; edge.y=0;
         SetLastError(ERROR_SUCCESS);
-        if (!MapWindowPoints(header,window,&edge,1) && GetLastError()!=ERROR_SUCCESS) break;
+        if (!MapWindowPoints(header,window,&edge,1) && GetLastError()!=ERROR_SUCCESS) goto done;
         if (edge.x>client.left && edge.x<client.right) {
-            (void)MoveToEx(dc,edge.x,line_top,NULL);
-            (void)LineTo(dc,edge.x,client.bottom);
+            if (!MoveToEx(dc,edge.x,line_top,NULL) || !LineTo(dc,edge.x,client.bottom)) goto done;
         }
     }
     for (i=top;i<count && i-top<=visible+1;++i) {
-        if (!dluma_editor_theme_controls_listview_alive(window,token) ||
-            !ListView_GetItemRect(window,i,&item,LVIR_BOUNDS)) break;
+        if (!dluma_editor_theme_properties_grid_valid(window,token,generation) ||
+            !ListView_GetItemRect(window,i,&item,LVIR_BOUNDS)) goto done;
+        if (!dluma_editor_theme_properties_grid_valid(window,token,generation)) goto done;
         if (item.bottom>client.top && item.bottom<=client.bottom) {
-            (void)MoveToEx(dc,client.left,item.bottom-1,NULL);
-            (void)LineTo(dc,client.right,item.bottom-1);
+            if (!MoveToEx(dc,client.left,item.bottom-1,NULL) || !LineTo(dc,client.right,item.bottom-1)) goto done;
         }
+        next_line=item.bottom-1;
         if (item.bottom>=client.bottom) break;
     }
+    /* The native grid continues below the last populated row. */
+    if (row_height>0 && i==count && next_line<client.bottom) {
+        for (i=0;i<4096 && client.bottom-next_line>row_height;++i) {
+            next_line+=row_height;
+            if (next_line>=client.top) {
+                if (!MoveToEx(dc,client.left,next_line,NULL) || !LineTo(dc,client.right,next_line)) goto done;
+            }
+        }
+    }
+    painted=dluma_editor_theme_properties_grid_valid(window,token,generation);
 done:
     if (old) (void)SelectObject(dc,old);
     if (pen) (void)DeleteObject(pen);
-    if (surface) (void)DeleteObject(surface);
     if (saved) (void)RestoreDC(dc,saved);
-    if (dc) (void)ReleaseDC(window,dc);
-    dluma_editor_theme_controls_release_listview(token);
+    if (device_damage) (void)DeleteObject(device_damage);
+    return painted;
+}
+
+int dluma_editor_theme_properties_custom_draw(HWND owner, LPARAM lparam, LRESULT *result)
+{
+    NMCUSTOMDRAW *draw=(NMCUSTOMDRAW *)lparam;
+    PropertiesScope *scope=properties_raw(); BYTE *object=NULL;
+    DlumaEditorThemeResolved theme;
+    if (!draw || !result || !scope || ((uintptr_t)scope & 1U) || scope->kind!=3 ||
+        draw->hdr.hwndFrom!=scope->child || GetParent(scope->child)!=owner ||
+        !properties_identity(owner,scope->child,&object) || object!=scope->object ||
+        !dluma_editor_theme_properties_grid_valid(scope->child,scope->control_token,scope->paint_generation)) return 0;
+    if (draw->dwDrawStage==CDDS_PREPAINT) {
+        if (!(*result & CDRF_SKIPDEFAULT)) *result |= CDRF_NOTIFYPOSTPAINT;
+    } else if (draw->dwDrawStage==CDDS_POSTPAINT && !(*result & CDRF_SKIPDEFAULT)) {
+        ZeroMemory(&theme,sizeof(theme)); theme.size=sizeof(theme); theme.version=1;
+        if (dluma_editor_theme_copy_snapshot(&theme) && theme.generation==scope->paint_generation)
+            scope->paint_post_done=properties_paint_separators(scope->child,&theme,&scope->paint_damage,
+                scope->control_token,scope->paint_generation,scope->object,draw->hdc);
+    }
+    return 1;
+}
+
+/* Called only from the retained WM_PAINT invocation on the button owner thread. */
+int dluma_editor_theme_properties_boolean_erase(HWND window)
+{
+    PropertiesScope *scope=properties_unmask(properties_raw());
+    while (scope) {
+        if (scope->kind==2 && scope->child==window && scope->boolean_erase &&
+            dluma_editor_theme_controls_listview_alive(window,scope->control_token)) return 1;
+        scope=properties_unmask(scope->previous);
+    }
+    return 0;
+}
+int dluma_editor_theme_properties_paint_boolean(HWND window, const DlumaEditorThemeResolved *theme)
+{
+    PropertiesScope *scope=properties_raw(); BYTE *object=NULL;
+    RECT rect, after, damage; PAINTSTRUCT paint; HDC compatible=NULL, buffer=NULL, dc=NULL;
+    HBITMAP bitmap=NULL; HGDIOBJ old_bitmap=NULL, old_font=NULL;
+    HFONT font; DWORD layout; UINT align; int rop, ok=0, began=0;
+    if (!theme || theme->kind==DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST || !scope ||
+        ((uintptr_t)scope&1U) || scope->kind!=2 || scope->child!=window || scope->boolean_buffer ||
+        !dluma_editor_theme_controls_token_generation(window,scope->control_token,theme->generation) ||
+        !boolean_identity(scope->owner,window,&object) || object!=scope->object || !boolean_install()) return 0;
+    if (!GetClientRect(window,&rect) || rect.right<=rect.left || rect.bottom<=rect.top) return 0;
+    ZeroMemory(&paint,sizeof(paint)); SetRectEmpty(&damage);
+    __try {
+        compatible=GetDC(window);
+        if (!compatible) __leave;
+        buffer=CreateCompatibleDC(compatible);
+        if (buffer) bitmap=CreateCompatibleBitmap(compatible,rect.right-rect.left,rect.bottom-rect.top);
+        ReleaseDC(window,compatible); compatible=NULL;
+        if (!bitmap) __leave;
+        old_bitmap=SelectObject(buffer,bitmap);
+        if (!old_bitmap || old_bitmap==HGDI_ERROR) { old_bitmap=NULL; __leave; }
+        if (!dluma_editor_theme_controls_token_generation(window,scope->control_token,theme->generation) ||
+            !boolean_identity(scope->owner,window,&object) || object!=scope->object) __leave;
+        (void)GetUpdateRect(window,&damage,FALSE);
+        scope->boolean_buffer=buffer; scope->boolean_rectangle_done=scope->boolean_text_done=0;
+        scope->boolean_erase=1; ok=-1;
+        dc=BeginPaint(window,&paint); began=dc!=NULL;
+        scope->boolean_erase=0;
+        if (!dc) __leave;
+        damage=paint.rcPaint;
+        layout=GetLayout(dc); align=GetTextAlign(dc); rop=GetROP2(dc);
+        if (layout==GDI_ERROR || align==GDI_ERROR || !rop || SetLayout(buffer,layout)==GDI_ERROR ||
+            SetTextAlign(buffer,align)==GDI_ERROR || !SetROP2(buffer,rop) ||
+            !SetBkMode(buffer,GetBkMode(dc)) || SetTextColor(buffer,GetTextColor(dc))==CLR_INVALID ||
+            SetBkColor(buffer,GetBkColor(dc))==CLR_INVALID) __leave;
+        font=(HFONT)SendMessageW(window,WM_GETFONT,0,0);
+        if (font) { old_font=SelectObject(buffer,font); if (!old_font || old_font==HGDI_ERROR) { old_font=NULL; __leave; } }
+        if (!dluma_editor_theme_controls_token_generation(window,scope->control_token,theme->generation) ||
+            !boolean_identity(scope->owner,window,&object) || object!=scope->object) __leave;
+        (void)SendMessageW(window,WM_PRINTCLIENT,(WPARAM)buffer,PRF_CLIENT);
+        if (!scope->boolean_rectangle_done || !scope->boolean_text_done ||
+            !dluma_editor_theme_controls_token_generation(window,scope->control_token,theme->generation) ||
+            !boolean_identity(scope->owner,window,&object) || object!=scope->object ||
+            !GetClientRect(window,&after) || !EqualRect(&rect,&after)) __leave;
+        if (!IsRectEmpty(&paint.rcPaint) && !BitBlt(dc,paint.rcPaint.left,paint.rcPaint.top,
+            paint.rcPaint.right-paint.rcPaint.left,paint.rcPaint.bottom-paint.rcPaint.top,
+            buffer,paint.rcPaint.left,paint.rcPaint.top,SRCCOPY)) __leave;
+        ok=1;
+    } __finally {
+        if (AbnormalTermination()) ok=-1;
+        scope->boolean_erase=0; scope->boolean_buffer=NULL;
+        if (began) EndPaint(window,&paint);
+        if (ok<0 && dluma_editor_theme_controls_listview_alive(window,scope->control_token) && !IsRectEmpty(&damage))
+            InvalidateRect(window,&damage,TRUE);
+        if (old_font) SelectObject(buffer,old_font);
+        if (old_bitmap) SelectObject(buffer,old_bitmap);
+        if (bitmap) DeleteObject(bitmap);
+        if (buffer) DeleteDC(buffer);
+        if (compatible) ReleaseDC(window,compatible);
+    }
+    return ok;
 }
 
 void dluma_editor_theme_properties_message(HWND owner, unsigned int stage, UINT message,
@@ -506,6 +766,13 @@ void dluma_editor_theme_properties_message(HWND owner, unsigned int stage, UINT 
     if (!scratch) return;
     if (stage==DLUMA_EDITOR_UI_BEFORE) {
         if (message==WM_DRAWITEM) properties_before(owner,lparam,theme,scratch);
+        else if (message==WM_PAINT) {
+            properties_paint_before(owner,scratch,theme);
+            if (!*scratch && theme && theme->size==sizeof(*theme) && theme->version==1 &&
+                !InterlockedCompareExchange(&properties_tls_failed,0,0) &&
+                boolean_scope_before(GetParent(owner),owner,NULL,theme,scratch)) return;
+            if (!*scratch) properties_mask_before(scratch);
+        }
         else if (!*scratch) {
             if (message!=WM_NCDESTROY && theme && theme->size==sizeof(*theme) && theme->version==1 &&
                 !InterlockedCompareExchange(&properties_tls_failed,0,0) &&
@@ -514,8 +781,12 @@ void dluma_editor_theme_properties_message(HWND owner, unsigned int stage, UINT 
         }
     }
     else if (stage==DLUMA_EDITOR_UI_AFTER) {
+        if (message==WM_PAINT && *scratch && !(*scratch & 2U)) {
+            scope=(PropertiesScope *)(uintptr_t)*scratch;
+            if (scope->kind==3 && scope->child==owner && (!scope->paint_post_done || scope->paint_content_failed))
+                dluma_editor_theme_properties_grid_fail(owner,scope->control_token,scope->paint_generation);
+        }
         properties_after(scratch);
-        if (message==WM_PAINT) properties_paint_separators(owner,theme);
     }
 }
 
@@ -540,6 +811,7 @@ void dluma_editor_theme_properties_stop(void)
     if (properties_installed && properties_exchange((void *)properties_brush,(void *)original_brush)) properties_installed=0;
     if (!properties_installed && properties_pending && VirtualProtect((void *)properties_slot,sizeof(void *),properties_protection,&ignored)) properties_pending=0;
     boolean_restore(&boolean_rectangle_iat); boolean_restore(&boolean_text_iat);
+    boolean_restore(&properties_region_iat);
     ReleaseSRWLockExclusive(&properties_lock);
 }
 int dluma_editor_theme_properties_drained(void)
@@ -548,6 +820,7 @@ int dluma_editor_theme_properties_drained(void)
     AcquireSRWLockShared(&properties_lock);
     drained=!properties_installed && !properties_pending && !boolean_rectangle_iat.installed &&
         !boolean_rectangle_iat.pending && !boolean_text_iat.installed && !boolean_text_iat.pending;
+    drained=drained && !properties_region_iat.installed && !properties_region_iat.pending;
     ReleaseSRWLockShared(&properties_lock);
     return drained && InterlockedCompareExchange(&properties_callbacks,0,0)==0 &&
         InterlockedCompareExchange(&properties_frames,0,0)==0 && InterlockedCompareExchange(&properties_tls_failed,0,0)==0;

@@ -43,7 +43,10 @@ struct DlumaQuestAuthoringTransaction {
     unsigned int binding_count;
     unsigned int custom;
     unsigned int had_old_output;
+    unsigned int old_output_snapshot_valid;
+    BY_HANDLE_FILE_INFORMATION old_output_identity;
     char old_output_sha256[DLUMA_SHA256_HEX_CAPACITY];
+    DlumaQuestAuthoringOutput output;
     char diagnostic[256];
 };
 
@@ -675,8 +678,15 @@ static int dluma_quest_authoring_snapshot_old_output(
     file = CreateFileW(
         transaction->output_lexical, GENERIC_READ, FILE_SHARE_READ,
         0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-    if (file == INVALID_HANDLE_VALUE) return 1;
+    if (file == INVALID_HANDLE_VALUE) {
+        DWORD error = GetLastError();
+        transaction->old_output_snapshot_valid =
+            error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+        return 1;
+    }
     transaction->had_old_output = 1U;
+    transaction->old_output_snapshot_valid = GetFileInformationByHandle(
+        file, &transaction->old_output_identity) != 0;
     if (!dluma_quest_authoring_read_handle(
             file, DLUMA_QUEST_AUTHORING_MAX_OUTPUT_BYTES,
             &bytes, &size, transaction->old_output_sha256)) {
@@ -1484,6 +1494,7 @@ int dluma_quest_authoring_finish(
     source_after_sha256[0] = 0;
     if (!transaction || transaction->source_file == INVALID_HANDLE_VALUE)
         return 0;
+    memset(&transaction->output, 0, sizeof(transaction->output));
     if (!GetFileInformationByHandle(
             transaction->source_file, &source_after) ||
         source_after.dwVolumeSerialNumber !=
@@ -1551,7 +1562,26 @@ int dluma_quest_authoring_finish(
         goto done;
     }
     result = 1;
+    transaction->output.custom_sidecar_published = 1U;
 done:
+    if (result) {
+        const BY_HANDLE_FILE_INFORMATION* before =
+            &transaction->old_output_identity;
+        transaction->output.verified = output_size != 0U;
+        transaction->output.fresh = transaction->old_output_snapshot_valid &&
+            (!transaction->had_old_output ||
+             dluma_stricmp(transaction->old_output_sha256, output_sha256) ||
+             before->dwVolumeSerialNumber != output_info.dwVolumeSerialNumber ||
+             before->nFileIndexHigh != output_info.nFileIndexHigh ||
+             before->nFileIndexLow != output_info.nFileIndexLow ||
+             before->ftLastWriteTime.dwHighDateTime !=
+                output_info.ftLastWriteTime.dwHighDateTime ||
+             before->ftLastWriteTime.dwLowDateTime !=
+                output_info.ftLastWriteTime.dwLowDateTime);
+        dluma_str_copy(transaction->output.sha256,
+            DLUMA_ARRAY_COUNT(transaction->output.sha256), output_sha256);
+        transaction->output.last_write = output_info.ftLastWriteTime;
+    }
     if (source_after_bytes) dluma_free(source_after_bytes);
     if (output_bytes) dluma_free(output_bytes);
     if (output != INVALID_HANDLE_VALUE) CloseHandle(output);
@@ -1601,4 +1631,33 @@ const char* dluma_quest_authoring_compiler_source_sha256(
     return transaction && transaction->custom &&
         transaction->lowered_sha256[0]
         ? transaction->lowered_sha256 : 0;
+}
+
+int dluma_quest_authoring_source_matches(
+    const DlumaQuestAuthoringTransaction* transaction,
+    const WCHAR* project_root, const WCHAR* source_path,
+    const BY_HANDLE_FILE_INFORMATION* source_identity,
+    const char* source_sha256)
+{
+    return transaction && project_root && source_path && source_identity &&
+        source_sha256 && transaction->source_file != INVALID_HANDLE_VALUE &&
+        transaction->source_sha256[0] &&
+        dluma_final_path_equal_or_under(transaction->project_root, project_root) &&
+        dluma_final_path_equal_or_under(project_root, transaction->project_root) &&
+        dluma_final_path_equal_or_under(transaction->source_final, source_path) &&
+        dluma_final_path_equal_or_under(source_path, transaction->source_final) &&
+        transaction->source_identity.dwVolumeSerialNumber ==
+            source_identity->dwVolumeSerialNumber &&
+        transaction->source_identity.nFileIndexHigh == source_identity->nFileIndexHigh &&
+        transaction->source_identity.nFileIndexLow == source_identity->nFileIndexLow &&
+        dluma_stricmp(transaction->source_sha256, source_sha256) == 0;
+}
+
+void dluma_quest_authoring_output(
+    const DlumaQuestAuthoringTransaction* transaction,
+    DlumaQuestAuthoringOutput* output)
+{
+    if (!output) return;
+    memset(output, 0, sizeof(*output));
+    if (transaction) *output = transaction->output;
 }

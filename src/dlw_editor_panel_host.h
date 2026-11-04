@@ -31,6 +31,9 @@ extern "C" {
 int dluma_editor_panel_host_create(HWND owner, HWND source,
     const WCHAR *source_title, const WCHAR *panel_title,
     DlumaEditorPanelNotify notify, void *context, DlumaEditorPanelRef *out);
+/* Fill an existing native view without adding a Source/Graph tab row. */
+int dluma_editor_panel_host_create_view(HWND owner,
+    DlumaEditorPanelNotify notify, void *context, DlumaEditorPanelRef *out);
 /* Call after stock layout. The source keeps its native parent/notifications. */
 int dluma_editor_panel_host_layout(const DlumaEditorPanelRef *panel);
 int dluma_editor_panel_host_show(const DlumaEditorPanelRef *panel, int visible);

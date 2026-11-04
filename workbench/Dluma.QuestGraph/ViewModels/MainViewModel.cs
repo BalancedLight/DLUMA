@@ -376,7 +376,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     private async Task<QuestDocumentSaveReceipt> SaveCurrentSidecarAsync(
-        QuestDocumentViewModel document, string savedSourceHash)
+        QuestDocumentViewModel document, string savedSourceHash, bool announceSaved = true)
     {
         if (document.PreserveExistingSidecar)
         {
@@ -435,10 +435,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
             state.SourceHash = savedSourceHash;
             state.Fingerprint = snapshot.Fingerprint;
-            document.MarkLayoutSaved(snapshot);
+            document.MarkLayoutSaved(snapshot, announceSaved);
             if (document.IsLayoutDirty)
                 document.Status = "Layout changed while it was being saved.";
-            GlobalStatus = document.Status;
+            if (announceSaved || document.IsLayoutDirty)
+                GlobalStatus = document.Status;
             return new(true, !document.IsLayoutDirty, false, document.Status);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -590,9 +591,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 request,
                 TimeSpan.FromMinutes(2)).ConfigureAwait(true);
             var receipt = result.Receipt;
-            var compileStatus = receipt.StockCommandDispatched
-                ? "Compile sent"
-                : receipt.Message;
+            var compileStatus = receipt.Message;
             document.Status = compileStatus;
             GlobalStatus = compileStatus;
         }
@@ -996,10 +995,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     if (message.Revision > document.Revision)
                         document.ReplaceConnectedSnapshot(new SourceChangedMessage(message.DocumentId, message.Revision,
                             message.EncodingName, message.Bytes, message.Sha256), _catalog);
-                    if (document.MarkSourceSaved(message.Revision, message.Sha256, message.Bytes) &&
+                    var announceSaved = !document.HasConfirmedSave(message.Revision, message.Sha256);
+                    if (document.MarkSourceSaved(message.Revision, message.Sha256, message.Bytes, announceSaved) &&
                         !_suppressCloseSidecars.Contains(message.DocumentId) &&
                         string.Equals(document.SourceSha256, message.Sha256, StringComparison.OrdinalIgnoreCase))
-                        _ = await SaveCurrentSidecarAsync(document, message.Sha256).ConfigureAwait(true);
+                        // A delayed save notification must not replace a newer command result.
+                        _ = await SaveCurrentSidecarAsync(document, message.Sha256, announceSaved: false).ConfigureAwait(true);
                     break;
                 }
                 case "closePreflight":

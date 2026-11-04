@@ -7,6 +7,7 @@ public partial class QuestDocumentView
 {
     static QuestDocumentView()
     {
+        RegisterContextMenuHandler();
         EventManager.RegisterClassHandler(
             typeof(QuestDocumentView),
             Connector.PendingConnectionCompletedEvent,

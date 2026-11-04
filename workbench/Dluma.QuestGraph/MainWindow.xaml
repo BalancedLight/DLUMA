@@ -28,22 +28,28 @@
     </Grid.RowDefinitions>
 
     <Border Grid.Row="0" Background="{DynamicResource EditorTheme.Panel}" BorderBrush="{DynamicResource EditorTheme.Border}" BorderThickness="0,0,0,1" Padding="12,10">
-      <DockPanel LastChildFill="True">
-        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-          <Button Content="Open PXSL" Command="{Binding OpenCommand}" ToolTip="Open a persisted PXSL document (Ctrl+O)" />
-          <Button Content="Save" Command="{Binding SaveCommand}" ToolTip="Save (Ctrl+S)" />
-          <Button Content="Save All" Command="{Binding SaveAllCommand}" />
-          <Button Content="Save Copy" Command="{Binding SaveCopyCommand}" />
-          <Button Content="Compile" Style="{StaticResource PrimaryButton}" Command="{Binding CompileCommand}" ToolTip="Compile (F7)" />
-          <Separator Margin="5,0,12,0" />
-          <Button Content="Load Definitions" Command="{Binding LoadCatalogCommand}" />
-        </StackPanel>
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <StackPanel Orientation="Horizontal">
+            <Button Content="Open PXSL" Command="{Binding OpenCommand}" ToolTip="Open a persisted PXSL document (Ctrl+O)" />
+            <Button Content="Save" Command="{Binding SaveCommand}" ToolTip="Save (Ctrl+S)" />
+            <Button Content="Save All" Command="{Binding SaveAllCommand}" />
+            <Button Content="Save Copy" Command="{Binding SaveCopyCommand}" />
+            <Button Content="Compile" Style="{StaticResource PrimaryButton}" Command="{Binding CompileCommand}" ToolTip="Compile (F7)" />
+            <Separator Margin="5,0,12,0" />
+            <Button Content="Load Definitions" Command="{Binding LoadCatalogCommand}" />
+          </StackPanel>
+        </ScrollViewer>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="8,0,0,0">
           <Ellipse Width="9" Height="9" Fill="{DynamicResource EditorTheme.Accent}" Margin="0,0,8,0" />
           <TextBlock Text="{Binding ConnectionStatus}"
                      Foreground="{DynamicResource EditorTheme.MutedText}" />
         </StackPanel>
-      </DockPanel>
+      </Grid>
     </Border>
 
     <Grid Grid.Row="1">

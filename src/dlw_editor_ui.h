@@ -19,6 +19,7 @@ enum {
     DLUMA_EDITOR_UI_OWNER_GRAPH = 3,
     DLUMA_EDITOR_UI_OWNER_THEME = 4,
     DLUMA_EDITOR_UI_OWNER_SPLASH = 5,
+    DLUMA_EDITOR_UI_OWNER_WIKI = 6,
     DLUMA_EDITOR_UI_SLOT_FEATURE = 0,
     DLUMA_EDITOR_UI_SLOT_CONTROLS = 1,
     DLUMA_EDITOR_UI_SLOT_SCINTILLA = 2,
@@ -35,7 +36,9 @@ typedef int (*DlumaEditorUiListener)(
 typedef void (*DlumaEditorUiObserver)(HWND window, UINT message,
     WPARAM wparam, LPARAM lparam, void *context);
 
+/* Start arms the service; activation begins enrollment after subscribers are ready. */
 int dluma_editor_ui_start(void);
+int dluma_editor_ui_activate(void);
 /* Nonblocking: 0 means owner-thread cleanup is still pending. */
 int dluma_editor_ui_stop(void);
 int dluma_editor_ui_callbacks_drained(void);

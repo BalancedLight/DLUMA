@@ -17,6 +17,7 @@
 #include "dlw_editor_theme.h"
 #include "dlw_editor_panel_host.h"
 #include "dlw_editor_splash.h"
+#include "dlw_editor_wiki.h"
 
 #define DLUMA_EDITOR_CALLBACK_THREAD_CAPACITY 256U
 
@@ -224,6 +225,7 @@ static int dluma_editor_animation_refresh_watcher_stop(void)
 }
 int dluma_editor_host_start(void)
 {
+    int ui_started;
     LONG state = dluma_atomic_compare_exchange(
         &g_dluma_editor_host.start_state, 1, 0);
     if (state != 0)
@@ -235,7 +237,8 @@ int dluma_editor_host_start(void)
         return 0;
     }
     dluma_load_config();
-    if (!dluma_editor_ui_start())
+    ui_started = dluma_editor_ui_start();
+    if (!ui_started)
         dluma_log_line("WARN", "Editor window service could not start.");
     (void)dluma_editor_splash_start();
     dluma_editor_host_crash_context_update("host_start", 0, 0);
@@ -251,6 +254,15 @@ int dluma_editor_host_start(void)
             "Editor exit observer was unavailable; crash dialogs will remain fail-open during shutdown.");
     if (!dluma_editor_theme_start())
         dluma_log_line("WARN", "Editor appearance could not be initialized.");
+    if (!dluma_editor_wiki_start(g_dluma.config_path))
+        dluma_log_line("WARN", "Editor Wiki could not be initialized.");
+    if (ui_started && !dluma_editor_ui_activate()) {
+        dluma_log_line("WARN", "Editor window service could not activate.");
+        (void)dluma_editor_wiki_stop();
+        (void)dluma_editor_theme_stop();
+        dluma_editor_splash_stop();
+        (void)dluma_editor_ui_stop();
+    }
     if (!dluma_discord_presence_start())
         dluma_log_line("WARN", "Editor Discord Rich Presence controller could not start.");
     if (!dluma_editor_presence_start())
@@ -419,6 +431,7 @@ int dluma_editor_host_callbacks_drained(void)
         dluma_native_mods_editor_callbacks_drained() &&
         (!g_dluma_editor_host.shutdown_requested ||
          (g_dluma_editor_host.shutdown_finished &&
+          dluma_editor_wiki_callbacks_drained() &&
           dluma_editor_theme_callbacks_drained() &&
           dluma_editor_splash_callbacks_drained() &&
           dluma_editor_ui_callbacks_drained() &&
@@ -428,16 +441,17 @@ int dluma_editor_host_callbacks_drained(void)
 static DWORD WINAPI dluma_editor_host_shutdown_worker(LPVOID context)
 {
     ULONGLONG started = GetTickCount64();
-    int graph_stopped = 0, presence_stopped = 0, theme_stopped = 0, ui_stopped = 0;
+    int graph_stopped = 0, presence_stopped = 0, theme_stopped = 0, ui_stopped = 0, wiki_stopped = 0;
     (void)context;
     (void)dluma_editor_animation_refresh_watcher_stop();
     while (GetTickCount64() - started < 5000ULL) {
         if (!graph_stopped) graph_stopped = dluma_editor_quest_graph_bridge_stop();
         if (!presence_stopped) presence_stopped = dluma_editor_presence_stop();
-        if (!theme_stopped) theme_stopped = dluma_editor_theme_stop();
+        if (!wiki_stopped) wiki_stopped = dluma_editor_wiki_stop();
+        if (wiki_stopped && !theme_stopped) theme_stopped = dluma_editor_theme_stop();
         dluma_editor_splash_stop();
-        if (!ui_stopped) ui_stopped = dluma_editor_ui_stop();
-        if (graph_stopped && presence_stopped && theme_stopped && ui_stopped &&
+        if (wiki_stopped && !ui_stopped) ui_stopped = dluma_editor_ui_stop();
+        if (wiki_stopped && graph_stopped && presence_stopped && theme_stopped && ui_stopped &&
             dluma_editor_panel_host_callbacks_drained() &&
             dluma_editor_splash_callbacks_drained()) {
             dluma_atomic_exchange(&g_dluma_editor_host.shutdown_finished, 1);

@@ -7,17 +7,13 @@ namespace Dluma.QuestGraph.Views;
 
 public partial class QuestDocumentView
 {
-    private static readonly bool s_contextMenuHandlerRegistered =
-        RegisterContextMenuHandler();
-
-    private static bool RegisterContextMenuHandler()
+    private static void RegisterContextMenuHandler()
     {
         EventManager.RegisterClassHandler(
             typeof(QuestDocumentView),
             ContextMenuService.ContextMenuOpeningEvent,
             new ContextMenuEventHandler(OnContextMenuOpeningRouted),
             handledEventsToo: true);
-        return true;
     }
 
     private static void OnContextMenuOpeningRouted(

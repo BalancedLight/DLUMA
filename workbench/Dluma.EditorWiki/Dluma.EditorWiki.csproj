@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <RuntimeFrameworkVersion>10.0.13</RuntimeFrameworkVersion>
+    <RollForward>Disable</RollForward>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <Compile Include="..\Dluma.QuestGraph\Services\EditorThemeService.cs" Link="Services\EditorThemeService.cs" />
+    <Compile Include="..\Dluma.QuestGraph\Services\QuestBridgeClient.cs" Link="Services\QuestBridgeClient.cs" />
+    <Compile Include="..\Dluma.QuestGraph\Services\QuestBridgeClient.Restore.cs" Link="Services\QuestBridgeClient.Restore.cs" />
+    <Compile Include="..\Dluma.QuestGraph\Protocol\*.cs" Link="Protocol\%(Filename)%(Extension)" />
+    <Compile Include="..\Dluma.QuestGraph\IoGlobalUsings.cs" Link="IoGlobalUsings.cs" />
+    <ProjectReference Include="..\Dluma.QuestGraph.Core\Dluma.QuestGraph.Core.csproj" />
+    <Compile Include="..\..\build\generated\editor-theme\EditorThemeRoles.g.cs" Link="Generated\EditorThemeRoles.g.cs" />
+    <Page Include="..\..\build\generated\editor-theme\ThemeDefaults.xaml" Link="Themes\ThemeDefaults.xaml" />
+  </ItemGroup>
+  <Target Name="GenerateEditorTheme" BeforeTargets="PrepareForBuild">
+    <Exec Command="python &quot;$(MSBuildProjectDirectory)\..\..\tools\generate_editor_theme.py&quot;" />
+  </Target>
+  <ItemGroup>
+    <Content Include="Licenses\WebView2-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Licenses\WebView2-NOTICE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -36,6 +36,20 @@ QUEST_GRAPH_ARTIFACTS = (
     "THIRD_PARTY_NOTICES.md",
     "Licenses/Nodify-MIT.txt",
 )
+EDITOR_WIKI_ARTIFACTS = (
+    "Dluma.EditorWiki.exe",
+    "Dluma.EditorWiki.dll",
+    "Dluma.EditorWiki.deps.json",
+    "Dluma.EditorWiki.runtimeconfig.json",
+    "Dluma.QuestGraph.Core.dll",
+    "Microsoft.Web.WebView2.Core.dll",
+    "Microsoft.Web.WebView2.Wpf.dll",
+    "Microsoft.Web.WebView2.WinForms.dll",
+    "WebView2Loader.dll",
+    "runtimes/win-x64/native/WebView2Loader.dll",
+    "Licenses/WebView2-LICENSE.txt",
+    "Licenses/WebView2-NOTICE.txt",
+)
 EDITOR_THEME_ARTIFACTS = (
     "dluma_editor_theme_system.dll",
     "Dluma.EditorTheme.Framework.dll",
@@ -92,6 +106,7 @@ def collect_sources(
     quest_graph_output: Path,
     editor_theme_output: Path,
     loader_symbol_manifest: Path | None = None,
+    editor_wiki_output: Path | None = None,
 ) -> list[SourceFile]:
     hostfxr = require_regular_file(
         dotnet_root / "host" / "fxr" / runtime_version / "hostfxr.dll",
@@ -214,6 +229,18 @@ def collect_sources(
                 PurePosixPath("quest-graph") / PurePosixPath(name),
             )
         )
+    if editor_wiki_output is not None:
+        editor_wiki_output = editor_wiki_output.resolve()
+        for name in EDITOR_WIKI_ARTIFACTS:
+            files.append(
+                SourceFile(
+                    require_regular_file(
+                        editor_wiki_output.joinpath(*PurePosixPath(name).parts),
+                        f"Editor Wiki artifact {name}",
+                    ),
+                    PurePosixPath("editor-wiki") / PurePosixPath(name),
+                )
+            )
     for name in EDITOR_THEME_ARTIFACTS:
         files.append(
             SourceFile(
@@ -337,6 +364,7 @@ def verify_runtime(
     *,
     expected_catalog_hash: str | None = None,
     expected_runtime_version: str | None = None,
+    require_editor_wiki: bool = False,
 ) -> dict[str, object]:
     runtime_root = ensure_runtime_child(output_dir)
     manifest_path = runtime_root / MANIFEST_NAME
@@ -378,6 +406,8 @@ def verify_runtime(
     files = actual_manifest.get("files")
     if not isinstance(files, list) or not files:
         raise ValueError("runtime manifest files must be a non-empty array")
+    if len(files) > MAXIMUM_RUNTIME_FILES:
+        raise ValueError("runtime manifest exceeds the native file limit")
 
     expected_paths: set[str] = set()
     previous_key = ""
@@ -472,6 +502,15 @@ def verify_runtime(
         },
     }
     missing_required = sorted(required_paths - expected_paths)
+    wiki_paths = {
+        (PurePosixPath("editor-wiki") / artifact).as_posix().casefold()
+        for artifact in EDITOR_WIKI_ARTIFACTS
+    }
+    if require_editor_wiki or any(path.startswith("editor-wiki/") for path in expected_paths):
+        missing_required.extend(sorted(wiki_paths - expected_paths))
+        unexpected_wiki = sorted(path for path in expected_paths if path.startswith("editor-wiki/") and path not in wiki_paths)
+        if unexpected_wiki:
+            raise ValueError(f"runtime manifest has unexpected Editor Wiki files: {unexpected_wiki}")
     if missing_required:
         raise ValueError(
             f"runtime manifest omits required files: {missing_required}"
@@ -492,6 +531,8 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--managed-output", type=Path)
     parser.add_argument("--quest-graph-output", type=Path)
+    parser.add_argument("--editor-wiki-output", type=Path)
+    parser.add_argument("--require-editor-wiki", action="store_true")
     parser.add_argument("--editor-theme-output", type=Path)
     parser.add_argument("--prepare-runtime", action="store_true")
     parser.add_argument("--dotnet-root", type=Path)
@@ -512,6 +553,8 @@ def main() -> int:
             return 0
         if not all((args.output_dir, args.managed_output, args.quest_graph_output, args.editor_theme_output)):
             parser.error("--output-dir, --managed-output, --quest-graph-output and --editor-theme-output are required")
+        if args.require_editor_wiki and args.editor_wiki_output is None:
+            parser.error("--editor-wiki-output is required with --require-editor-wiki")
         sources = collect_sources(
             dotnet_root,
             args.managed_output,
@@ -519,6 +562,7 @@ def main() -> int:
             args.quest_graph_output,
             args.editor_theme_output,
             args.loader_symbol_manifest,
+            args.editor_wiki_output,
         )
         manifest = build_manifest(
             sources,
@@ -531,6 +575,7 @@ def main() -> int:
                 manifest,
                 expected_catalog_hash=manifest["catalog_sha256"],
                 expected_runtime_version=args.runtime_version,
+                require_editor_wiki=args.require_editor_wiki,
             )
             action = "Verified"
         else:
@@ -540,6 +585,7 @@ def main() -> int:
                 manifest,
                 expected_catalog_hash=manifest["catalog_sha256"],
                 expected_runtime_version=args.runtime_version,
+                require_editor_wiki=args.require_editor_wiki,
             )
             action = "Built and verified"
         total_size = sum(record["size"] for record in manifest["files"])

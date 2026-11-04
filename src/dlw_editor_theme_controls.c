@@ -3,6 +3,10 @@
 #endif
 #include <windows.h>
 #include <commctrl.h>
+#pragma warning(push)
+#pragma warning(disable: 4201) /* Windows SDK Rich Edit anonymous unions. */
+#include <richedit.h>
+#pragma warning(pop)
 #include <dwmapi.h>
 #include <stdint.h>
 #include <string.h>
@@ -12,6 +16,7 @@
 #include "dlw_editor_theme_scintilla.h"
 #include "dlw_editor_theme_profile.h"
 #include "dlw_editor_theme_properties.h"
+#include "dlw_editor_theme_hints.h"
 #include "../build/generated/editor-theme/editor_theme_palette.generated.h"
 
 extern int dluma_editor_is_main_window(HWND window, DWORD expected_process_id);
@@ -20,7 +25,7 @@ typedef enum ControlFamily {
     FAMILY_FRAME, FAMILY_DIALOG, FAMILY_EDIT, FAMILY_STATIC, FAMILY_BUTTON,
     FAMILY_COMBO, FAMILY_LIST, FAMILY_LISTVIEW, FAMILY_TREE, FAMILY_HEADER,
     FAMILY_TAB, FAMILY_TOOLBAR, FAMILY_TRACKBAR, FAMILY_TOOLTIP,
-    FAMILY_STATUS, FAMILY_SCROLLBAR, FAMILY_SOURCE, FAMILY_WORKSPACE
+    FAMILY_STATUS, FAMILY_SCROLLBAR, FAMILY_SOURCE, FAMILY_WORKSPACE, FAMILY_HINTS
 } ControlFamily;
 
 typedef struct ThemeResources {
@@ -36,6 +41,8 @@ typedef struct ThemeResources {
     COLORREF stock_colors[7];
 } ThemeResources;
 
+typedef struct ToolbarScope ToolbarScope;
+
 typedef struct ThemedControl {
     ControlFamily family;
     ThemeResources *resources;
@@ -48,6 +55,26 @@ typedef struct ThemedControl {
     int font_owned;
     int colors_owned;
     int colors_dirty;
+    int report_grid_wanted;
+    int report_grid_owned;
+    int properties_grid_known, properties_grid_wanted, properties_grid_owned, properties_grid_sending;
+    int properties_buffer_wanted;
+    uint64_t properties_grid_failed_generation;
+    int properties_grid_failed;
+    unsigned int scrollbar_forwarding;
+    uint64_t boolean_print_failed_generation;
+    int boolean_print_failed, boolean_print_busy;
+    int opaque_buffer_busy, opaque_erase_active, opaque_buffer_failed;
+    int edge_owned, edge_sending, edge_external, edge_failed;
+    int header_clip_owned, header_clip_sending, header_clip_external, header_clip_failed;
+    ToolbarScope *toolbar_scope;
+    uint64_t toolbar_failed_generation;
+    int toolbar_buffer_failed;
+    int hints_busy, hints_foreground_owned, hints_background_owned;
+    int hints_background_system;
+    unsigned int hints_stream_depth;
+    void *hints_frozen_document;
+    COLORREF hints_original_background, hints_foreground;
     BOOL original_dark_frame;
     int dark_frame_owned;
     BOOL applied_dark_frame;
@@ -58,6 +85,18 @@ typedef struct ThemedControl {
     BOOL (WINAPI *image_draw)(HIMAGELIST, int, HDC, int, int, UINT);
     BOOL (WINAPI *image_size)(HIMAGELIST, int *, int *);
 } ThemedControl;
+
+struct ToolbarScope {
+    ToolbarScope *previous;
+    ThemedControl *control;
+    ThemeResources *resources;
+    HWND window;
+    BYTE *object;
+    HDC buffer;
+    COLORREF original_color, applied_color;
+    UINT message;
+    int color_owned, erase_suppressed, prepaint, postpaint, failed;
+};
 
 static SRWLOCK resources_lock;
 static ThemeResources *all_resources;
@@ -81,8 +120,28 @@ static COLORREF color(const ThemeResources *, unsigned int);
 static int dip(const ThemeResources *, int);
 static void glyph(HDC, RECT, COLORREF, int, int);
 static void control_finish_detach(HWND, ThemedControl *);
+static void control_release(ThemedControl *);
 static int ordinary_background(const ThemeResources *, COLORREF);
 static int ordinary_foreground(const ThemeResources *, COLORREF);
+static int picker_listview(HWND, HWND, ThemedControl *);
+static int report_listview(HWND, ThemedControl *);
+static void report_grid_apply(HWND, ThemedControl *, ThemeResources *);
+static void hints_apply(HWND, ThemedControl *, ThemeResources *);
+static void hints_restore(HWND, ThemedControl *);
+
+static int hints_alive(HWND window, ThemedControl *control)
+{
+    return GetPropW(window, control_property) == control && !control->detached;
+}
+
+static void hints_finish_pending(HWND window, ThemedControl *control)
+{
+    if (!control->applying && !control->hints_busy && control->pending_detach) {
+        control->pending_detach = 0;
+        if (IsWindow(window)) control_finish_detach(window, control);
+        else control_release(control);
+    }
+}
 
 typedef struct ChecklistScope {
     struct ChecklistScope *previous;
@@ -317,7 +376,7 @@ static void menu_prepare(HWND owner, HMENU menu, int menu_bar)
         ZeroMemory(&info, sizeof(info)); info.cbSize = sizeof(info);
         info.fMask = MIIM_FTYPE | MIIM_DATA | MIIM_STRING | MIIM_BITMAP | MIIM_SUBMENU;
         if (!GetMenuItemInfoW(menu, (UINT)i, TRUE, &info) ||
-            info.fType & (MFT_OWNERDRAW | MFT_BITMAP) || info.hbmpItem) continue;
+            info.fType & (MFT_OWNERDRAW | MFT_BITMAP | MFT_SEPARATOR) || info.hbmpItem) continue;
         item = (ThemeMenuItem *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*item));
         if (!item) continue;
         item->owner = owner; item->menu = menu;
@@ -563,9 +622,97 @@ int dluma_editor_theme_controls_listview_alive(HWND window, void *token)
     return control && GetWindowThreadProcessId(window,NULL)==GetCurrentThreadId() &&
         GetPropW(window,control_property)==control && !control->detached;
 }
+int dluma_editor_theme_controls_token_generation(HWND window, void *token, uint64_t generation)
+{
+    ThemedControl *control=(ThemedControl *)token;
+    return dluma_editor_theme_controls_listview_alive(window,token) && control->resources &&
+        control->resources->theme.generation==generation &&
+        control->resources->theme.kind!=DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST;
+}
 void dluma_editor_theme_controls_release_listview(void *token)
 {
     control_release((ThemedControl *)token);
+}
+
+/* Separate from report custom draw: these lists own their row renderer. */
+int dluma_editor_theme_properties_grid_valid(HWND window, void *token, uint64_t generation)
+{
+    ThemedControl *c=(ThemedControl *)token;
+    return dluma_editor_theme_controls_listview_alive(window,token) && c->resources &&
+        c->resources->theme.generation==generation &&
+        c->resources->theme.kind!=DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST &&
+        c->properties_grid_owned && c->properties_grid_wanted;
+}
+void dluma_editor_theme_properties_grid_restore(HWND window, void *token)
+{
+    ThemedControl *c=(ThemedControl *)token; DWORD style, wanted;
+    const DWORD mask=LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER;
+    if (!dluma_editor_theme_controls_listview_alive(window,token) || !c->properties_grid_owned) return;
+    c->properties_grid_owned=0;
+    style=ListView_GetExtendedListViewStyle(window);
+    if (!dluma_editor_theme_controls_listview_alive(window,token)) return;
+    wanted=(c->properties_grid_wanted ? LVS_EX_GRIDLINES : 0) |
+        (c->properties_buffer_wanted ? LVS_EX_DOUBLEBUFFER : 0);
+    if ((style & mask)!=wanted) {
+        ++c->properties_grid_sending;
+        (void)ListView_SetExtendedListViewStyleEx(window,mask,wanted);
+        --c->properties_grid_sending;
+    }
+}
+void dluma_editor_theme_properties_grid_fail(HWND window, void *token, uint64_t generation)
+{
+    ThemedControl *c=(ThemedControl *)token;
+    if (!dluma_editor_theme_properties_grid_valid(window,token,generation)) return;
+    c->properties_grid_failed=1; c->properties_grid_failed_generation=generation;
+    dluma_editor_theme_properties_grid_restore(window,token);
+    if (dluma_editor_theme_controls_listview_alive(window,token)) InvalidateRect(window,NULL,FALSE);
+}
+int dluma_editor_theme_properties_grid_begin(HWND window, void *token, uint64_t generation)
+{
+    ThemedControl *c=(ThemedControl *)token; DWORD style;
+    if (!dluma_editor_theme_controls_listview_alive(window,token) || !c->resources ||
+        c->resources->theme.generation!=generation ||
+        c->resources->theme.kind==DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST) return 0;
+    if (c->properties_grid_failed && c->properties_grid_failed_generation==generation) return 0;
+    c->properties_grid_failed=0;
+    style=ListView_GetExtendedListViewStyle(window);
+    if (!dluma_editor_theme_controls_listview_alive(window,token)) return 0;
+    if (!c->properties_grid_known) {
+        c->properties_grid_known=1;
+        c->properties_grid_wanted=(style & LVS_EX_GRIDLINES)!=0;
+        c->properties_buffer_wanted=(style & LVS_EX_DOUBLEBUFFER)!=0;
+    }
+    if (!c->properties_grid_wanted) return 0;
+    if (!c->properties_grid_owned) {
+        if (!(style & LVS_EX_GRIDLINES)) return 0;
+        c->properties_grid_owned=1;
+        ++c->properties_grid_sending;
+        (void)ListView_SetExtendedListViewStyleEx(window,LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER,LVS_EX_DOUBLEBUFFER);
+        --c->properties_grid_sending;
+    }
+    if (!dluma_editor_theme_properties_grid_valid(window,token,generation)) {
+        dluma_editor_theme_properties_grid_restore(window,token); return 0;
+    }
+    style=ListView_GetExtendedListViewStyle(window);
+    if (!dluma_editor_theme_properties_grid_valid(window,token,generation)) return 0;
+    if ((style & (LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER)) != LVS_EX_DOUBLEBUFFER) {
+        dluma_editor_theme_properties_grid_fail(window,token,generation); return 0;
+    }
+    return 1;
+}
+
+static int hints_window(HWND window)
+{
+    static const int siblings[] = { 1, 1977, 1883, 1884, 2328, 3150 };
+    WCHAR name[64], title[128]; HWND parent = GetParent(window); unsigned int i;
+    if (!parent || GetDlgCtrlID(window) != 3181 ||
+        !GetClassNameW(window, name, 64) || lstrcmpiW(name, L"RichEdit20A") ||
+        !GetClassNameW(parent, name, 64) || lstrcmpW(name, L"#32770") ||
+        !GetWindowTextW(parent, title, 128) || lstrcmpW(title, L"Dying Light Developer Tools Hints") ||
+        !dluma_editor_theme_profile_admit(DLUMA_EDITOR_THEME_PROFILE_EDITOR)) return 0;
+    for (i = 0; i < sizeof(siblings) / sizeof(siblings[0]); ++i)
+        if (!GetDlgItem(parent, siblings[i])) return 0;
+    return 1;
 }
 
 static int family_for_window(HWND window, ControlFamily *family)
@@ -574,6 +721,7 @@ static int family_for_window(HWND window, ControlFamily *family)
     if (!GetClassNameW(window, name, 128)) return 0;
     if (!lstrcmpiW(name, L"#32770")) *family = FAMILY_DIALOG;
     else if (!lstrcmpiW(name, L"Edit")) *family = FAMILY_EDIT;
+    else if (!lstrcmpiW(name, L"RichEdit20A") && hints_window(window)) *family = FAMILY_HINTS;
     else if (!lstrcmpiW(name, L"Static")) *family = FAMILY_STATIC;
     else if (!lstrcmpiW(name, L"Button")) *family = FAMILY_BUTTON;
     else if (!lstrcmpiW(name, L"ComboBox") || !lstrcmpiW(name, L"ComboBoxEx32")) *family = FAMILY_COMBO;
@@ -630,6 +778,7 @@ int dluma_editor_theme_controls_attach(HWND window)
         control->original_background = ListView_GetBkColor(window);
         control->original_text = ListView_GetTextColor(window);
         control->original_text_background = ListView_GetTextBkColor(window);
+        control->report_grid_wanted = (ListView_GetExtendedListViewStyle(window) & LVS_EX_GRIDLINES) != 0;
     } else if (family == FAMILY_TREE) {
         control->original_background = TreeView_GetBkColor(window);
         control->original_text = TreeView_GetTextColor(window);
@@ -670,6 +819,296 @@ static void frame_color(HWND window, ThemedControl *control, int restore)
     FreeLibrary(dwm);
 }
 
+/* Ownership covers only the client edge; all other style bits remain native. */
+/* CToolBarEx keeps its nonclient color separately from the common control. */
+#define TOOLBAR_VTABLE_RVA 0x15BDDE8U
+#define TOOLBAR_FIRST_METHOD_RVA 0x50FC20U
+#define TOOLBAR_OBJECT_SIZE 608U
+#define TOOLBAR_COLOR_OFFSET 384U
+
+static int toolbar_identity(HWND window, ThemedControl *control, BYTE **object)
+{
+    HMODULE mfc;
+    void *vtable, *first, *permanent;
+    BYTE *candidate;
+    MEMORY_BASIC_INFORMATION memory;
+    DWORD pid=0, access;
+    if (!control || control->detached || control->family!=FAMILY_TOOLBAR ||
+        GetPropW(window,control_property)!=control ||
+        GetWindowThreadProcessId(window,&pid)!=GetCurrentThreadId() || pid!=GetCurrentProcessId()) return 0;
+    mfc=GetModuleHandleW(L"mfc100.dll");
+    if (!mfc || !dluma_editor_theme_profile_admit(DLUMA_EDITOR_THEME_PROFILE_EDITOR) ||
+        !dluma_editor_theme_profile_admit(DLUMA_EDITOR_THEME_PROFILE_MFC)) return 0;
+    vtable=dluma_editor_theme_profile_address(DLUMA_EDITOR_THEME_PROFILE_EDITOR,TOOLBAR_VTABLE_RVA,sizeof(void *));
+    first=dluma_editor_theme_profile_address(DLUMA_EDITOR_THEME_PROFILE_EDITOR,TOOLBAR_FIRST_METHOD_RVA,1);
+    permanent=dluma_editor_theme_profile_address(DLUMA_EDITOR_THEME_PROFILE_MFC,0x26B460U,1);
+    if (!vtable || !first || !permanent || *(void **)vtable!=first ||
+        (void *)GetProcAddress(mfc,(LPCSTR)(ULONG_PTR)4194U)!=permanent) return 0;
+    candidate=(BYTE *)((ChecklistPermanentFn)permanent)(window);
+    if (!checklist_memory(candidate,TOOLBAR_OBJECT_SIZE) || *(void **)candidate!=vtable ||
+        *(HWND *)(candidate+64U)!=window || ((uintptr_t)(candidate+TOOLBAR_COLOR_OFFSET)&3U) ||
+        !VirtualQuery(candidate+TOOLBAR_COLOR_OFFSET,&memory,sizeof(memory))) return 0;
+    access=memory.Protect&0xffU;
+    if (access!=PAGE_READWRITE && access!=PAGE_WRITECOPY &&
+        access!=PAGE_EXECUTE_READWRITE && access!=PAGE_EXECUTE_WRITECOPY) return 0;
+    if (GetPropW(window,control_property)!=control || control->detached) return 0;
+    *object=candidate; return 1;
+}
+
+static int toolbar_scope_alive(const ToolbarScope *scope)
+{
+    return scope && !scope->control->detached && GetPropW(scope->window,control_property)==scope->control &&
+        GetWindowThreadProcessId(scope->window,NULL)==GetCurrentThreadId();
+}
+
+static void toolbar_restore_color(ToolbarScope *scope)
+{
+    BYTE *object=NULL;
+    if (!scope->color_owned) return;
+    if (toolbar_scope_alive(scope) && toolbar_identity(scope->window,scope->control,&object) && object==scope->object)
+        (void)InterlockedCompareExchange((volatile LONG *)(object+TOOLBAR_COLOR_OFFSET),
+            (LONG)scope->original_color,(LONG)scope->applied_color);
+    scope->color_owned=0;
+}
+
+static void toolbar_restore_active(ThemedControl *control)
+{
+    ToolbarScope *scope;
+    for (scope=control->toolbar_scope; scope; scope=scope->previous) toolbar_restore_color(scope);
+}
+
+static void toolbar_fail_paint(ThemedControl *control, uint64_t generation)
+{
+    ToolbarScope *scope;
+    control->toolbar_buffer_failed=1;
+    control->toolbar_failed_generation=generation;
+    for (scope=control->toolbar_scope; scope; scope=scope->previous)
+        if (scope->message==WM_PAINT && scope->resources->theme.generation==generation) scope->failed=1;
+}
+
+static void toolbar_scope_after(uint64_t *scratch)
+{
+    ToolbarScope *scope;
+    ThemedControl *control;
+    if (!scratch || !*scratch) return;
+    scope=(ToolbarScope *)(uintptr_t)*scratch; *scratch=0;
+    control=scope->control;
+    toolbar_restore_color(scope);
+    if (scope->message==WM_PAINT && (scope->erase_suppressed || scope->prepaint) &&
+        (scope->failed || !scope->prepaint || !scope->postpaint)) {
+        toolbar_fail_paint(control,scope->resources->theme.generation);
+        if (toolbar_scope_alive(scope)) InvalidateRect(scope->window,NULL,FALSE);
+    }
+    control->toolbar_scope=scope->previous;
+    resources_release(scope->resources);
+    control_release(control);
+    HeapFree(GetProcessHeap(),0,scope);
+}
+
+static void toolbar_scope_before(HWND window, ThemedControl *control, UINT message, uint64_t *scratch)
+{
+    ToolbarScope *scope;
+    ThemeResources *resources;
+    BYTE *object=NULL;
+    COLORREF original;
+    if (!control || control->family!=FAMILY_TOOLBAR || !(resources=control->resources) ||
+        resources->theme.kind==DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST) return;
+    if (message==WM_PAINT && control->toolbar_buffer_failed &&
+        control->toolbar_failed_generation==resources->theme.generation) return;
+    if (!scratch || *scratch || !toolbar_identity(window,control,&object)) {
+        if (message==WM_PAINT) toolbar_fail_paint(control,resources->theme.generation);
+        return;
+    }
+    scope=(ToolbarScope *)HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,sizeof(*scope));
+    if (!scope) {
+        if (message==WM_PAINT) toolbar_fail_paint(control,resources->theme.generation);
+        return;
+    }
+    ++control->references; resources_retain(resources);
+    scope->control=control; scope->resources=resources; scope->window=window;
+    scope->object=object; scope->message=message;
+    *scratch=(uint64_t)(uintptr_t)scope;
+    if (!dluma_editor_ui_invocation_cleanup(DLUMA_EDITOR_UI_OWNER_THEME,
+        DLUMA_EDITOR_UI_SLOT_CONTROLS,toolbar_scope_after)) {
+        *scratch=0;
+        if (message==WM_PAINT) toolbar_fail_paint(control,resources->theme.generation);
+        resources_release(resources); control_release(control); HeapFree(GetProcessHeap(),0,scope);
+        return;
+    }
+    scope->previous=control->toolbar_scope; control->toolbar_scope=scope;
+    if (message==WM_NCPAINT) {
+        original=*(COLORREF *)(object+TOOLBAR_COLOR_OFFSET);
+        if (ordinary_background(resources,original)) {
+            scope->original_color=original;
+            scope->applied_color=color(resources,DLUMA_EDITOR_THEME_ROLE_BORDER);
+            scope->color_owned=(COLORREF)InterlockedCompareExchange(
+                (volatile LONG *)(object+TOOLBAR_COLOR_OFFSET),(LONG)scope->applied_color,(LONG)original)==original;
+        }
+    }
+}
+
+static ToolbarScope *toolbar_paint_scope(ThemedControl *control)
+{
+    ToolbarScope *scope;
+    BYTE *object=NULL;
+    if (!control || !control->resources || (control->toolbar_buffer_failed &&
+        control->toolbar_failed_generation==control->resources->theme.generation)) return NULL;
+    for (scope=control->toolbar_scope; scope; scope=scope->previous) {
+        if (scope->message!=WM_PAINT) continue;
+        if (!toolbar_scope_alive(scope) || control->resources!=scope->resources ||
+            scope->resources->theme.kind==DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST ||
+            !toolbar_identity(scope->window,control,&object) || object!=scope->object) return NULL;
+        return scope;
+    }
+    return NULL;
+}
+
+static void toolbar_custom_draw(ThemedControl *control, NMCUSTOMDRAW *draw, LRESULT *result)
+{
+    ToolbarScope *scope=toolbar_paint_scope(control);
+    RECT client;
+    if (!scope || draw->hdr.hwndFrom!=scope->window) return;
+    if (draw->dwDrawStage==CDDS_PREPAINT) {
+        if ((*result&CDRF_SKIPDEFAULT) || GetObjectType(draw->hdc)!=OBJ_MEMDC ||
+            !GetClientRect(scope->window,&client) ||
+            !FillRect(draw->hdc,&client,scope->resources->brushes[DLUMA_EDITOR_THEME_ROLE_PANEL])) {
+            scope->failed=1; return;
+        }
+        scope->buffer=draw->hdc; scope->prepaint=1;
+        *result|=CDRF_NOTIFYPOSTPAINT;
+    } else if (draw->dwDrawStage==CDDS_POSTPAINT) {
+        if (!scope->prepaint || draw->hdc!=scope->buffer || GetObjectType(draw->hdc)!=OBJ_MEMDC)
+            scope->failed=1;
+        else scope->postpaint=1;
+    }
+}
+
+static int edge_valid(HWND window, ThemedControl *control, int detaching)
+{
+    return GetWindowThreadProcessId(window,NULL)==GetCurrentThreadId() &&
+        GetPropW(window,detaching ? detaching_property : control_property)==control &&
+        (detaching || !control->detached);
+}
+static int edge_eligible(HWND window, ThemedControl *control)
+{
+    LONG_PTR style=GetWindowLongPtrW(window,GWL_STYLE);
+    WCHAR parent_class[64]; HWND parent;
+    if (!(style & WS_CHILD)) return 0;
+    if (control->family==FAMILY_LISTVIEW)
+        return dluma_editor_theme_properties_is_list(window) && edge_valid(window,control,0);
+    if (control->family!=FAMILY_EDIT || (style & (ES_MULTILINE | WS_VSCROLL | WS_HSCROLL))) return 0;
+    parent=GetParent(window);
+    if (!parent || !GetClassNameW(parent,parent_class,64)) return 0;
+    return lstrcmpiW(parent_class,L"ComboBox") && lstrcmpiW(parent_class,L"ComboBoxEx32") &&
+        edge_valid(window,control,0);
+}
+/* Set one style bit while retaining the control identity across messages. */
+static int control_style_bit(HWND window, ThemedControl *control, int detaching,
+    int index, LONG_PTR bit, int wanted, int *sending)
+{
+    LONG_PTR style, previous; DWORD error;
+    int ok=0;
+    if (!edge_valid(window,control,detaching)) return 0;
+    ++*sending;
+    SetLastError(ERROR_SUCCESS); style=GetWindowLongPtrW(window,index);
+    if (!style && GetLastError()!=ERROR_SUCCESS) goto done;
+    if (!!(style & bit)!=!!wanted) {
+        SetLastError(ERROR_SUCCESS);
+        previous=SetWindowLongPtrW(window,index,wanted ? style | bit : style & ~bit);
+        error=GetLastError();
+        if ((!previous && error!=ERROR_SUCCESS) || !edge_valid(window,control,detaching)) goto done;
+        SetLastError(ERROR_SUCCESS); style=GetWindowLongPtrW(window,index);
+        if ((!style && GetLastError()!=ERROR_SUCCESS) || !!(style & bit)!=!!wanted ||
+            !edge_valid(window,control,detaching)) goto done;
+    }
+    if (!SetWindowPos(window,NULL,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_FRAMECHANGED) ||
+        !edge_valid(window,control,detaching)) goto done;
+    SetLastError(ERROR_SUCCESS); style=GetWindowLongPtrW(window,index);
+    if ((!style && GetLastError()!=ERROR_SUCCESS) || !edge_valid(window,control,detaching)) goto done;
+    ok=!!(style & bit)==!!wanted;
+done:
+    --*sending;
+    return ok;
+}
+static int edge_change(HWND window, ThemedControl *control, int restore, int detaching)
+{
+    return control_style_bit(window,control,detaching,GWL_EXSTYLE,WS_EX_CLIENTEDGE,restore,&control->edge_sending);
+}
+static void edge_restore(HWND window, ThemedControl *control, int detaching)
+{
+    LONG_PTR style;
+    if (!control->edge_owned || !edge_valid(window,control,detaching)) return;
+    SetLastError(ERROR_SUCCESS); style=GetWindowLongPtrW(window,GWL_EXSTYLE);
+    if (!style && GetLastError()!=ERROR_SUCCESS) return;
+    if (edge_change(window,control,1,detaching)) control->edge_owned=0;
+}
+static void edge_apply(HWND window, ThemedControl *control, ThemeResources *resources)
+{
+    LONG_PTR style;
+    if (!edge_valid(window,control,0)) return;
+    if (resources->theme.kind==DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST || !edge_eligible(window,control)) {
+        edge_restore(window,control,0); return;
+    }
+    if (control->edge_owned || control->edge_external || control->edge_failed || !edge_valid(window,control,0)) return;
+    SetLastError(ERROR_SUCCESS); style=GetWindowLongPtrW(window,GWL_EXSTYLE);
+    if ((!style && GetLastError()!=ERROR_SUCCESS) || !(style & WS_EX_CLIENTEDGE)) return;
+    control->edge_owned=1;
+    if (!edge_change(window,control,0,0)) {
+        control->edge_failed=1;
+        if (edge_valid(window,control,0)) edge_restore(window,control,0);
+    }
+}
+
+/* The list header can overlap an inline sibling at its lower edge. */
+static int header_clip_eligible(HWND window, ThemedControl *control)
+{
+    HWND parent, header;
+    if (!edge_valid(window,control,0) || control->family!=FAMILY_HEADER) return 0;
+    parent=GetParent(window);
+    if (!parent || !dluma_editor_theme_properties_is_list(parent) || !edge_valid(window,control,0) ||
+        GetParent(window)!=parent) return 0;
+    header=ListView_GetHeader(parent);
+    return header==window && edge_valid(window,control,0) && GetParent(window)==parent;
+}
+static void header_clip_restore(HWND window, ThemedControl *control, int detaching)
+{
+    if (!control->header_clip_owned || !edge_valid(window,control,detaching)) return;
+    if (control_style_bit(window,control,detaching,GWL_STYLE,WS_CLIPSIBLINGS,0,&control->header_clip_sending))
+        control->header_clip_owned=0;
+}
+static void header_clip_apply(HWND window, ThemedControl *control)
+{
+    LONG_PTR style;
+    if (!edge_valid(window,control,0) || control->family!=FAMILY_HEADER) return;
+    if (!header_clip_eligible(window,control)) { header_clip_restore(window,control,0); return; }
+    if (control->header_clip_owned || control->header_clip_external || control->header_clip_failed ||
+        !edge_valid(window,control,0)) return;
+    SetLastError(ERROR_SUCCESS); style=GetWindowLongPtrW(window,GWL_STYLE);
+    if ((!style && GetLastError()!=ERROR_SUCCESS) || (style & WS_CLIPSIBLINGS)) return;
+    control->header_clip_owned=1;
+    if (!control_style_bit(window,control,0,GWL_STYLE,WS_CLIPSIBLINGS,1,&control->header_clip_sending)) {
+        control->header_clip_failed=1;
+        if (edge_valid(window,control,0)) header_clip_restore(window,control,0);
+    }
+}
+/* A header can qualify after its first application in the same generation. */
+static int header_clip_pending(HWND window, ThemedControl *control)
+{
+    return control->family==FAMILY_HEADER && !control->header_clip_owned &&
+        !control->header_clip_external && !control->header_clip_failed &&
+        !(GetWindowLongPtrW(window,GWL_STYLE) & WS_CLIPSIBLINGS) &&
+        dluma_editor_theme_properties_is_list(GetParent(window));
+}
+
+static int edge_pending(HWND window, ThemedControl *control,
+    const DlumaEditorThemeResolved *theme)
+{
+    if (theme->kind==DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST) return control->edge_owned;
+    return !control->edge_owned && !control->edge_external && !control->edge_failed &&
+        (GetWindowLongPtrW(window,GWL_EXSTYLE) & WS_EX_CLIENTEDGE) &&
+        edge_eligible(window,control);
+}
+
 void dluma_editor_theme_controls_apply(HWND window,
                                        const DlumaEditorThemeResolved *theme)
 {
@@ -678,7 +1117,8 @@ void dluma_editor_theme_controls_apply(HWND window,
     HFONT current_font;
     if (!control || !theme || GetWindowThreadProcessId(window, NULL) != GetCurrentThreadId()) return;
     if (control->applying) { (void)dluma_editor_ui_request_refresh(); return; }
-    if (!control->colors_dirty && control->resources && control->resources->theme.generation == theme->generation) {
+    if (!header_clip_pending(window,control) && !edge_pending(window,control,theme) &&
+        !control->colors_dirty && control->resources && control->resources->theme.generation == theme->generation) {
         UINT dpi = window_dpi(window);
         if (control->resources->dpi == dpi && control->resources->font_height == font_height_for_dpi(dpi)) return;
     }
@@ -688,8 +1128,11 @@ void dluma_editor_theme_controls_apply(HWND window,
     resources = resources_acquire(window, theme);
     if (!resources) { control->colors_dirty=1; control->applying = 0; control_release(control); return; }
     previous = control->resources; control->previous_resources = previous; control->resources = resources;
-    if (control->family != FAMILY_FRAME && control->family != FAMILY_SCROLLBAR &&
-        control->family != FAMILY_SOURCE && control->family != FAMILY_WORKSPACE &&
+    edge_apply(window,control,resources);
+    if (!control->detached) header_clip_apply(window,control);
+    if (!control->detached && GetPropW(window,control_property)==control &&
+        control->family != FAMILY_FRAME && control->family != FAMILY_SCROLLBAR &&
+        control->family != FAMILY_SOURCE && control->family != FAMILY_WORKSPACE && control->family != FAMILY_HINTS &&
         !(control->family == FAMILY_TAB && (control->style & TCS_VERTICAL))) {
         current_font = (HFONT)SendMessageW(window, WM_GETFONT, 0, 0);
         if (!control->detached && (current_font == control->original_font || (control->font_owned && previous && current_font == previous->font))) {
@@ -697,7 +1140,9 @@ void dluma_editor_theme_controls_apply(HWND window,
             (void)SendMessageW(window, WM_SETFONT, (WPARAM)resources->font, FALSE);
         } else control->font_owned = 0;
     }
-    if (!control->detached && control->family == FAMILY_LISTVIEW) {
+    if (!control->detached && control->family == FAMILY_HINTS) {
+        hints_apply(window, control, resources);
+    } else if (!control->detached && control->family == FAMILY_LISTVIEW) {
         COLORREF current=ListView_GetBkColor(window);
         if (!control->detached && (ordinary_background(resources,current) || (previous && current==color(previous,DLUMA_EDITOR_THEME_ROLE_SURFACE))))
             ListView_SetBkColor(window, color(resources, DLUMA_EDITOR_THEME_ROLE_SURFACE));
@@ -708,6 +1153,9 @@ void dluma_editor_theme_controls_apply(HWND window,
         if (!control->detached && (ordinary_foreground(resources,current) || (previous && current==color(previous,DLUMA_EDITOR_THEME_ROLE_TEXT))))
             ListView_SetTextColor(window, color(resources, DLUMA_EDITOR_THEME_ROLE_TEXT));
         control->colors_owned = 1;
+        if (!control->detached) report_grid_apply(window, control, resources);
+        if (!control->detached && resources->theme.kind == DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST)
+            dluma_editor_theme_properties_grid_restore(window, control);
     } else if (!control->detached && control->family == FAMILY_TREE) {
         COLORREF current=TreeView_GetBkColor(window);
         if (!control->detached && (current==CLR_NONE || ordinary_background(resources,current) || (previous && current==color(previous,DLUMA_EDITOR_THEME_ROLE_SURFACE))))
@@ -733,6 +1181,11 @@ void dluma_editor_theme_controls_apply(HWND window,
     if (!control->detached) (void)RedrawWindow(window, NULL, NULL,
         RDW_INVALIDATE | RDW_FRAME | (control->family==FAMILY_WORKSPACE ?
             RDW_ERASE | RDW_NOCHILDREN : RDW_ALLCHILDREN));
+    /* Refresh the dialog background without erasing its child windows. */
+    if (!control->detached && control->family == FAMILY_DIALOG &&
+        GetPropW(window, control_property) == control && control->resources == resources)
+        (void)RedrawWindow(window, NULL, NULL,
+            RDW_INVALIDATE | RDW_ERASE | RDW_NOCHILDREN);
     control->applying = 0;
     if (control->pending_detach) {
         control->pending_detach = 0;
@@ -744,6 +1197,75 @@ void dluma_editor_theme_controls_apply(HWND window,
     control_release(control);
 }
 
+static void hints_apply(HWND window, ThemedControl *control, ThemeResources *resources)
+{
+    COLORREF foreground, background;
+    LRESULT prior;
+    int high_contrast, outcome;
+    if (control->hints_busy || !hints_alive(window, control) || !resources ||
+        !(GetWindowLongPtrW(window, GWL_STYLE) & ES_READONLY)) return;
+    control->hints_busy = 1;
+    high_contrast = resources->theme.kind == DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST;
+    foreground = color(resources, DLUMA_EDITOR_THEME_ROLE_TEXT);
+    background = color(resources, DLUMA_EDITOR_THEME_ROLE_SURFACE);
+    if (control->hints_foreground_owned) {
+        outcome = dluma_editor_theme_hints_foreground(window, control, control->hints_foreground, 0,
+                foreground, high_contrast);
+        if (!outcome) goto unsupported;
+        control->hints_foreground_owned = !high_contrast;
+        control->hints_foreground = foreground;
+        if (!hints_alive(window, control)) goto done;
+        if (outcome != 1) goto unsupported;
+    } else if (!high_contrast) {
+        outcome = dluma_editor_theme_hints_foreground(window, control, 0, 1, foreground, 0);
+        if (!outcome) goto unsupported;
+        control->hints_foreground_owned = 1;
+        control->hints_foreground = foreground;
+        if (!hints_alive(window, control)) goto done;
+        if (outcome != 1) goto unsupported;
+    }
+    control->hints_foreground = foreground;
+    if (!control->hints_background_owned) {
+        prior = SendMessageW(window, EM_SETBKGNDCOLOR, high_contrast ? TRUE : FALSE,
+                             high_contrast ? 0 : (LPARAM)background);
+        control->hints_original_background = (COLORREF)prior;
+        control->hints_background_system = 0;
+        control->hints_background_owned = 1;
+        if (!hints_alive(window, control)) goto done;
+    } else {
+        (void)SendMessageW(window, EM_SETBKGNDCOLOR, high_contrast ? TRUE : FALSE,
+                           high_contrast ? 0 : (LPARAM)background);
+    }
+    goto done;
+unsupported:
+    if (hints_alive(window, control) && control->hints_background_owned) {
+        (void)SendMessageW(window, EM_SETBKGNDCOLOR, control->hints_background_system ? TRUE : FALSE,
+            control->hints_background_system ? 0 : (LPARAM)control->hints_original_background);
+        control->hints_background_owned = 0;
+    }
+done:
+    if (hints_alive(window, control) && control->resources != resources) {
+        control->colors_dirty = 1;
+        (void)dluma_editor_ui_request_refresh();
+    }
+    control->hints_busy = 0;
+    hints_finish_pending(window, control);
+}
+
+static void hints_restore(HWND window, ThemedControl *control)
+{
+    if (control->hints_busy) return;
+    control->hints_busy = 1;
+    if (control->hints_foreground_owned) {
+        if (dluma_editor_theme_hints_foreground(window, control, control->hints_foreground, 0, 0, 1))
+            control->hints_foreground_owned = 0;
+    }
+    if (GetPropW(window, detaching_property) == control && control->hints_background_owned)
+        (void)SendMessageW(window, EM_SETBKGNDCOLOR, control->hints_background_system ? TRUE : FALSE,
+            control->hints_background_system ? 0 : (LPARAM)control->hints_original_background);
+    control->hints_busy = 0;
+}
+
 static void outline(HDC dc, const RECT *rect, COLORREF foreground, int width)
 {
     HPEN pen = CreatePen(PS_SOLID, width, foreground);
@@ -753,6 +1275,74 @@ static void outline(HDC dc, const RECT *rect, COLORREF foreground, int width)
     old_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
     Rectangle(dc, rect->left, rect->top, rect->right, rect->bottom);
     SelectObject(dc, old_brush); SelectObject(dc, old_pen); DeleteObject(pen);
+}
+
+static void restore_paint_damage(HWND, ThemedControl *, PAINTSTRUCT *);
+
+static int paint_static_frame(HWND window, ThemedControl *control)
+{
+    UINT type = (UINT)(control->style & SS_TYPEMASK);
+    ThemeResources *r = control->resources;
+    PAINTSTRUCT paint;
+    RECT rect;
+    HDC dc;
+    HPEN pen;
+    HGDIOBJ previous, previous_brush;
+    if (type != SS_ETCHEDFRAME && type != SS_ETCHEDHORZ && type != SS_ETCHEDVERT)
+        return 0;
+    if (!r || r->theme.kind == DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST) return 0;
+    pen = CreatePen(PS_SOLID, dip(r, 1), color(r, DLUMA_EDITOR_THEME_ROLE_BORDER));
+    if (!pen) return 0;
+    ZeroMemory(&paint, sizeof(paint));
+    dc = BeginPaint(window, &paint);
+    if (!dc) { DeleteObject(pen); restore_paint_damage(window, control, &paint); return 0; }
+    GetClientRect(window, &rect);
+    previous = SelectObject(dc, pen);
+    if (type == SS_ETCHEDFRAME) {
+        RECT edge = rect;
+        int thickness = dip(r, 2);
+        edge.bottom = min(rect.bottom, rect.top + thickness);
+        FillRect(dc, &edge, r->brushes[DLUMA_EDITOR_THEME_ROLE_WINDOW]);
+        edge = rect; edge.top = max(rect.top, rect.bottom - thickness);
+        FillRect(dc, &edge, r->brushes[DLUMA_EDITOR_THEME_ROLE_WINDOW]);
+        edge = rect; edge.right = min(rect.right, rect.left + thickness);
+        FillRect(dc, &edge, r->brushes[DLUMA_EDITOR_THEME_ROLE_WINDOW]);
+        edge = rect; edge.left = max(rect.left, rect.right - thickness);
+        FillRect(dc, &edge, r->brushes[DLUMA_EDITOR_THEME_ROLE_WINDOW]);
+        previous_brush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+        Rectangle(dc, rect.left, rect.top, rect.right, rect.bottom);
+        SelectObject(dc, previous_brush);
+    } else {
+        FillRect(dc, &rect, r->brushes[DLUMA_EDITOR_THEME_ROLE_WINDOW]);
+        if (type == SS_ETCHEDHORZ) {
+            int y = (rect.top + rect.bottom) / 2;
+            MoveToEx(dc, rect.left, y, NULL); LineTo(dc, rect.right, y);
+        } else {
+            int x = (rect.left + rect.right) / 2;
+            MoveToEx(dc, x, rect.top, NULL); LineTo(dc, x, rect.bottom);
+        }
+    }
+    SelectObject(dc, previous); DeleteObject(pen);
+    EndPaint(window, &paint);
+    return 1;
+}
+
+static void fit_button_font(HDC dc, ThemedControl *control, const WCHAR *text,
+                            const RECT *bounds, UINT flags)
+{
+    RECT measured = *bounds;
+    HFONT current;
+    if (!(flags & DT_SINGLELINE) || !control->original_font ||
+        control->original_font == control->resources->font) return;
+    if (!DrawTextW(dc, text, -1, &measured, flags | DT_CALCRECT)) return;
+    if (measured.right - measured.left <= bounds->right - bounds->left &&
+        measured.bottom - measured.top <= bounds->bottom - bounds->top) return;
+    current = (HFONT)SelectObject(dc, control->original_font);
+    measured = *bounds;
+    if (!DrawTextW(dc, text, -1, &measured, flags | DT_CALCRECT) ||
+        measured.right - measured.left > bounds->right - bounds->left ||
+        measured.bottom - measured.top > bounds->bottom - bounds->top)
+        SelectObject(dc, current);
 }
 
 static void glyph(HDC dc, RECT rect, COLORREF foreground, int radio, int checked)
@@ -792,31 +1382,65 @@ static void restore_paint_damage(HWND window, ThemedControl *control, PAINTSTRUC
         !IsRectEmpty(&damaged)) (void)InvalidateRect(window, &damaged, FALSE);
 }
 
-static int paint_button(HWND window, ThemedControl *control)
+typedef int (*OpaquePaintFn)(HWND, ThemedControl *, HDC);
+/* 1 = buffered paint completed, 0 = preallocation unavailable, -1 =
+   paint began but failed; the caller falls back to stock for that damage. */
+static int paint_opaque_buffer(HWND window, ThemedControl *control, OpaquePaintFn draw)
 {
-    ThemeResources *r = control->resources;
-    UINT type = (UINT)(control->style & BS_TYPEMASK);
-    PAINTSTRUCT paint;
-    HDC dc;
-    RECT rect, text_rect;
-    WCHAR text[1024];
-    LRESULT state;
-    unsigned int background;
-    COLORREF foreground;
-    HFONT old_font;
-    UINT flags;
-    int saved = 0;
-    if (type == BS_OWNERDRAW || type == BS_USERBUTTON ||
-        (control->style & (BS_ICON | BS_BITMAP))) return 0;
-    ZeroMemory(&paint, sizeof(paint));
-    dc = BeginPaint(window, &paint);
-    if (!dc) { restore_paint_damage(window, control, &paint); return 0; }
-    if (type == BS_GROUPBOX && (!(saved = SaveDC(dc)) ||
-        !exclude_overlapping_windows(window, dc))) {
-        if (saved) RestoreDC(dc, saved);
-        restore_paint_damage(window, control, &paint);
-        return 0;
+    ThemeResources *r=control->resources; LONG_PTR style=control->style;
+    RECT rect, after, damage; PAINTSTRUCT paint;
+    HDC reference=NULL, buffer=NULL, dc=NULL; HBITMAP bitmap=NULL; HGDIOBJ old_bitmap=NULL;
+    DWORD layout; int ok=0, began=0;
+    if (!r || !GetClientRect(window,&rect) || rect.right<=rect.left || rect.bottom<=rect.top) return 0;
+    ++control->references; resources_retain(r);
+    ZeroMemory(&paint,sizeof(paint)); SetRectEmpty(&damage);
+    __try {
+        reference=GetDC(window);
+        if (!reference) __leave;
+        buffer=CreateCompatibleDC(reference);
+        if (buffer) bitmap=CreateCompatibleBitmap(reference,rect.right-rect.left,rect.bottom-rect.top);
+        ReleaseDC(window,reference); reference=NULL;
+        if (!bitmap) __leave;
+        old_bitmap=SelectObject(buffer,bitmap);
+        if (!old_bitmap || old_bitmap==HGDI_ERROR) { old_bitmap=NULL; __leave; }
+        if (!edge_valid(window,control,0) || control->resources!=r || GetWindowLongPtrW(window,GWL_STYLE)!=style) __leave;
+        (void)GetUpdateRect(window,&damage,FALSE);
+        control->opaque_buffer_busy=1; control->opaque_erase_active=1; ok=-1;
+        dc=BeginPaint(window,&paint); began=dc!=NULL;
+        control->opaque_erase_active=0;
+        if (!dc) __leave;
+        damage=paint.rcPaint; layout=GetLayout(dc);
+        if (layout==GDI_ERROR || SetLayout(buffer,layout)==GDI_ERROR || !edge_valid(window,control,0) ||
+            control->resources!=r || !draw(window,control,buffer) || !edge_valid(window,control,0) ||
+            control->resources!=r || GetWindowLongPtrW(window,GWL_STYLE)!=style ||
+            !GetClientRect(window,&after) || !EqualRect(&rect,&after)) __leave;
+        if (!IsRectEmpty(&paint.rcPaint) && !BitBlt(dc,paint.rcPaint.left,paint.rcPaint.top,
+            paint.rcPaint.right-paint.rcPaint.left,paint.rcPaint.bottom-paint.rcPaint.top,
+            buffer,paint.rcPaint.left,paint.rcPaint.top,SRCCOPY)) __leave;
+        ok=1;
+    } __finally {
+        if (AbnormalTermination()) ok=-1;
+        control->opaque_erase_active=0; control->opaque_buffer_busy=0;
+        if (began) EndPaint(window,&paint);
+        if (ok<0) {
+            control->opaque_buffer_failed=1;
+            if (edge_valid(window,control,0) && !IsRectEmpty(&damage)) InvalidateRect(window,&damage,TRUE);
+        }
+        if (old_bitmap) SelectObject(buffer,old_bitmap);
+        if (bitmap) DeleteObject(bitmap);
+        if (buffer) DeleteDC(buffer);
+        if (reference) ReleaseDC(window,reference);
+        resources_release(r); control_release(control);
     }
+    return ok;
+}
+
+static int draw_button_buffer(HWND window, ThemedControl *control, HDC dc)
+{
+    ThemeResources *r=control->resources;
+    UINT type=(UINT)(control->style & BS_TYPEMASK), flags;
+    RECT rect, text_rect; WCHAR text[1024]; LRESULT state;
+    unsigned int background; COLORREF foreground; HFONT old_font;
     GetClientRect(window, &rect); text_rect = rect;
     state = SendMessageW(window, BM_GETSTATE, 0, 0);
     background = state & BST_PUSHED ? DLUMA_EDITOR_THEME_ROLE_SELECTION :
@@ -855,12 +1479,39 @@ static int paint_button(HWND window, ThemedControl *control)
             DLUMA_EDITOR_THEME_ROLE_ACCENT : DLUMA_EDITOR_THEME_ROLE_BORDER), dip(r, 1));
         flags |= DT_CENTER; InflateRect(&text_rect, -dip(r, 4), -dip(r, 2));
     }
+    fit_button_font(dc, control, text, &text_rect, flags);
     (void)DrawTextW(dc, text, -1, &text_rect, flags);
     if ((state & BST_FOCUS) && !(SendMessageW(window, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS)) {
         RECT focus = rect; InflateRect(&focus, -dip(r, 3), -dip(r, 3));
         DrawFocusRect(dc, &focus);
     }
     SelectObject(dc, old_font);
+    return 1;
+}
+
+static int paint_button(HWND window, ThemedControl *control)
+{
+    UINT type = (UINT)(control->style & BS_TYPEMASK);
+    PAINTSTRUCT paint;
+    HDC dc;
+    int saved = 0;
+    if (type == BS_OWNERDRAW || type == BS_USERBUTTON ||
+        (control->style & (BS_ICON | BS_BITMAP))) return 0;
+    if (control->opaque_buffer_busy) return 0;
+    if (type!=BS_GROUPBOX && !control->opaque_buffer_failed) {
+        int buffered=paint_opaque_buffer(window,control,draw_button_buffer);
+        if (buffered) return buffered>0;
+    }
+    ZeroMemory(&paint, sizeof(paint));
+    dc = BeginPaint(window, &paint);
+    if (!dc) { restore_paint_damage(window, control, &paint); return 0; }
+    if (type == BS_GROUPBOX && (!(saved = SaveDC(dc)) ||
+        !exclude_overlapping_windows(window, dc))) {
+        if (saved) RestoreDC(dc, saved);
+        restore_paint_damage(window, control, &paint);
+        return 0;
+    }
+    (void)draw_button_buffer(window,control,dc);
     if (saved) RestoreDC(dc, saved);
     EndPaint(window, &paint);
     return 1;
@@ -991,23 +1642,11 @@ static int paint_tabs(HWND window, ThemedControl *control)
     return 1;
 }
 
-static int paint_combo(HWND window, ThemedControl *control)
+static int draw_combo_content(HWND window, ThemedControl *control, HDC dc, COMBOBOXINFO info, int focused)
 {
-    ThemeResources *r = control->resources;
-    COMBOBOXINFO info;
-    PAINTSTRUCT paint;
-    HDC dc;
-    RECT rect, text_rect, arrow;
-    HFONT previous;
-    WCHAR text[2048];
-    HPEN pen;
-    HGDIOBJ previous_pen;
-    int x, y, delta, focused;
-    if (control->style & (CBS_OWNERDRAWFIXED | CBS_OWNERDRAWVARIABLE)) return 0;
-    ZeroMemory(&info, sizeof(info)); info.cbSize = sizeof(info);
-    if (!GetComboBoxInfo(window, &info)) return 0;
-    focused = GetFocus() == window || (info.hwndItem && GetFocus() == info.hwndItem);
-    dc = BeginPaint(window, &paint);
+    ThemeResources *r=control->resources; RECT rect, text_rect, arrow;
+    HFONT previous; WCHAR text[2048]; HPEN pen; HGDIOBJ previous_pen;
+    int x, y, delta;
     GetClientRect(window, &rect);
     if ((control->style & 3) != CBS_DROPDOWNLIST && info.hwndItem) {
         RECT edit_rect;
@@ -1040,7 +1679,37 @@ static int paint_combo(HWND window, ThemedControl *control)
         !(SendMessageW(window, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS)) {
         RECT focus = info.rcItem; InflateRect(&focus, -dip(r, 2), -dip(r, 2)); DrawFocusRect(dc, &focus);
     }
-    SelectObject(dc, previous); EndPaint(window, &paint);
+    SelectObject(dc, previous);
+    return 1;
+}
+
+static int draw_combo_buffer(HWND window, ThemedControl *control, HDC dc)
+{
+    COMBOBOXINFO info; int focused;
+    ZeroMemory(&info,sizeof(info)); info.cbSize=sizeof(info);
+    if (!GetComboBoxInfo(window,&info)) return 0;
+    focused=GetFocus()==window || (info.hwndItem && GetFocus()==info.hwndItem);
+    return draw_combo_content(window,control,dc,info,focused);
+}
+
+static int paint_combo(HWND window, ThemedControl *control)
+{
+    COMBOBOXINFO info;
+    PAINTSTRUCT paint;
+    HDC dc;
+    int focused;
+    if (control->style & (CBS_OWNERDRAWFIXED | CBS_OWNERDRAWVARIABLE)) return 0;
+    if (control->opaque_buffer_busy) return 0;
+    if ((control->style & 3)==CBS_DROPDOWNLIST && !control->opaque_buffer_failed) {
+        int buffered=paint_opaque_buffer(window,control,draw_combo_buffer);
+        if (buffered) return buffered>0;
+    }
+    ZeroMemory(&info, sizeof(info)); info.cbSize = sizeof(info);
+    if (!GetComboBoxInfo(window, &info)) return 0;
+    focused=GetFocus()==window || (info.hwndItem && GetFocus()==info.hwndItem);
+    dc = BeginPaint(window, &paint);
+    (void)draw_combo_content(window,control,dc,info,focused);
+    EndPaint(window, &paint);
     return 1;
 }
 
@@ -1177,18 +1846,240 @@ static int paint_status(HWND window, ThemedControl *control)
     return 1;
 }
 
+static int picker_listview(HWND parent, HWND window, ThemedControl *control)
+{
+    WCHAR parent_class[32]; DWORD parent_pid = 0, child_pid = 0;
+    LONG_PTR style;
+    if (!control || control->detached || control->family != FAMILY_LISTVIEW ||
+        GetDlgCtrlID(window) != 1934 || GetParent(window) != parent ||
+        GetWindowThreadProcessId(parent, &parent_pid) != GetCurrentThreadId() ||
+        GetWindowThreadProcessId(window, &child_pid) != GetCurrentThreadId() ||
+        parent_pid != GetCurrentProcessId() || child_pid != parent_pid ||
+        !GetClassNameW(parent, parent_class, 32) ||
+        lstrcmpiW(parent_class, L"#32770")) return 0;
+    style = GetWindowLongPtrW(window, GWL_STYLE);
+    return (style & LVS_TYPEMASK) == LVS_REPORT &&
+        (style & (LVS_OWNERDATA | LVS_SINGLESEL)) == (LVS_OWNERDATA | LVS_SINGLESEL);
+}
+
+static int report_listview(HWND window, ThemedControl *control)
+{
+    LONG_PTR style;
+    if (!control || control->detached || control->family != FAMILY_LISTVIEW ||
+        GetWindowThreadProcessId(window, NULL) != GetCurrentThreadId()) return 0;
+    style = GetWindowLongPtrW(window, GWL_STYLE);
+    return (style & LVS_TYPEMASK) == LVS_REPORT && !(style & LVS_OWNERDRAWFIXED);
+}
+
+/* Keep the native row renderer; draw its report separators in the palette. */
+static void report_grid_apply(HWND window, ThemedControl *control, ThemeResources *resources)
+{
+    DWORD style;
+    int themed, qualified = report_listview(window, control);
+    if (!qualified && !control->report_grid_owned) return;
+    style = ListView_GetExtendedListViewStyle(window);
+    if (GetPropW(window, control_property) != control || control->detached ||
+        control->resources != resources) return;
+    themed = qualified && control->report_grid_wanted && resources->theme.kind != DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST;
+    if (themed) {
+        control->report_grid_owned = 1;
+        if (style & LVS_EX_GRIDLINES)
+            (void)ListView_SetExtendedListViewStyleEx(window, LVS_EX_GRIDLINES, 0);
+    } else if (control->report_grid_owned) {
+        control->report_grid_owned = 0;
+        if (!(style & LVS_EX_GRIDLINES) && control->report_grid_wanted)
+            (void)ListView_SetExtendedListViewStyleEx(window, LVS_EX_GRIDLINES, LVS_EX_GRIDLINES);
+    }
+}
+
+static void report_grid_paint(HWND window, ThemedControl *control, HDC dc)
+{
+    ThemeResources *r = control->resources;
+    HWND header;
+    RECT body, bounds, line;
+    LRESULT columns, items, top;
+    int saved = 0, i;
+    if (!dc || !r || !control->report_grid_owned || !control->report_grid_wanted ||
+        r->theme.kind == DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST ||
+        !report_listview(window, control)) return;
+    ++control->references;
+    resources_retain(r);
+#define REPORT_GRID_VALID() (GetPropW(window, control_property) == control && !control->detached && control->resources == r)
+    __try {
+        if (!GetClientRect(window, &body)) __leave;
+        header = ListView_GetHeader(window);
+        if (!REPORT_GRID_VALID() || !header || GetParent(header) != window ||
+            !GetWindowRect(header, &bounds)) __leave;
+        SetLastError(0);
+        if (!MapWindowPoints(NULL, window, (POINT *)&bounds, 2) && GetLastError()) __leave;
+        if (bounds.bottom > body.top) body.top = bounds.bottom;
+        if (IsRectEmpty(&body)) __leave;
+        columns = Header_GetItemCount(header);
+        if (!REPORT_GRID_VALID() || columns < 1 || columns > 256) __leave;
+        saved = SaveDC(dc);
+        if (!saved || IntersectClipRect(dc, body.left, body.top, body.right, body.bottom) == ERROR) __leave;
+        for (i = 0; i < (int)columns; ++i) {
+            if (!Header_GetItemRect(header, i, &bounds) || !REPORT_GRID_VALID()) __leave;
+            SetLastError(0);
+            if (!MapWindowPoints(header, window, (POINT *)&bounds, 2) && GetLastError()) __leave;
+            if (bounds.right <= bounds.left || bounds.right <= body.left || bounds.right > body.right) continue;
+            line = body; line.left = max(bounds.left, bounds.right - dip(r, 1)); line.right = bounds.right;
+            FillRect(dc, &line, r->brushes[DLUMA_EDITOR_THEME_ROLE_BORDER]);
+        }
+        items = ListView_GetItemCount(window);
+        if (!REPORT_GRID_VALID() || items < 1) __leave;
+        top = ListView_GetTopIndex(window);
+        if (!REPORT_GRID_VALID() || top < 0 || top >= items) __leave;
+        for (i = 0; i < 4096 && top + i < items; ++i) {
+            bounds.left = LVIR_BOUNDS;
+            if (!SendMessageW(window, LVM_GETITEMRECT, (WPARAM)(top + i), (LPARAM)&bounds) ||
+                !REPORT_GRID_VALID() || bounds.bottom <= bounds.top) __leave;
+            if (bounds.top >= body.bottom) break;
+            if (bounds.bottom <= body.top || bounds.bottom > body.bottom) continue;
+            line = body; line.top = max(bounds.top, bounds.bottom - dip(r, 1)); line.bottom = bounds.bottom;
+            FillRect(dc, &line, r->brushes[DLUMA_EDITOR_THEME_ROLE_BORDER]);
+        }
+    } __finally {
+        if (saved) RestoreDC(dc, saved);
+        resources_release(r);
+        control_release(control);
+    }
+#undef REPORT_GRID_VALID
+}
+
+/* Custom-draw state can retain a highlight after the native row is deselected. */
+static int listview_selected(HWND parent, HWND window, ThemedControl *child,
+                           ThemeResources *resources, ULONG_PTR item, int *selected)
+{
+    LRESULT count, state;
+    int valid = 0;
+    if (!selected || item > 0x7FFFFFFFU || child->family != FAMILY_LISTVIEW ||
+        GetParent(window) != parent || GetWindowThreadProcessId(window, NULL) != GetCurrentThreadId()) return 0;
+    ++child->references;
+    resources_retain(resources);
+    __try {
+        count = SendMessageW(window, LVM_GETITEMCOUNT, 0, 0);
+        if (count <= 0 || item >= (ULONG_PTR)count ||
+            GetPropW(window, control_property) != child || child->detached ||
+            child->resources != resources || GetParent(window) != parent) __leave;
+        state = SendMessageW(window, LVM_GETITEMSTATE, (WPARAM)item, LVIS_SELECTED);
+        if ((state != 0 && state != LVIS_SELECTED) ||
+            GetPropW(window, control_property) != child || child->detached ||
+            child->resources != resources || GetParent(window) != parent) __leave;
+        *selected = (state & LVIS_SELECTED) != 0;
+        valid = 1;
+    } __finally {
+        resources_release(resources);
+        control_release(child);
+    }
+    return valid;
+}
+
+static int theme_item_background(const ThemeResources *r, COLORREF value)
+{
+    return ordinary_background(r, value) ||
+        value == color(r, DLUMA_EDITOR_THEME_ROLE_HOVER) ||
+        value == color(r, DLUMA_EDITOR_THEME_ROLE_SELECTION) ||
+        value == color(r, DLUMA_EDITOR_THEME_ROLE_INACTIVE_SELECTION);
+}
+
+/* Linear sRGB for byte channels, independent of the native math runtime. */
+static const double linear_srgb[256] = {
+    0.000000000000, 0.000303526984, 0.000607053967, 0.000910580951, 0.001214107934, 0.001517634918, 0.001821161901, 0.002124688885,
+    0.002428215868, 0.002731742852, 0.003035269835, 0.003346535764, 0.003676507324, 0.004024717018, 0.004391442037, 0.004776953481,
+    0.005181516702, 0.005605391624, 0.006048833023, 0.006512090793, 0.006995410187, 0.007499032043, 0.008023192985, 0.008568125618,
+    0.009134058702, 0.009721217320, 0.010329823030, 0.010960094006, 0.011612245180, 0.012286488357, 0.012983032342, 0.013702083047,
+    0.014443843596, 0.015208514423, 0.015996293366, 0.016807375753, 0.017641954488, 0.018500220128, 0.019382360957, 0.020288563057,
+    0.021219010376, 0.022173884793, 0.023153366178, 0.024157632449, 0.025186859627, 0.026241221895, 0.027320891639, 0.028426039504,
+    0.029556834438, 0.030713443733, 0.031896033073, 0.033104766571, 0.034339806809, 0.035601314875, 0.036889450401, 0.038204371595,
+    0.039546235277, 0.040915196907, 0.042311410621, 0.043735029257, 0.045186204386, 0.046665086337, 0.048171824227, 0.049706565984,
+    0.051269458374, 0.052860647023, 0.054480276442, 0.056128490050, 0.057805430191, 0.059511238163, 0.061246054232, 0.063010017653,
+    0.064803266693, 0.066625938644, 0.068478169844, 0.070360095697, 0.072271850682, 0.074213568380, 0.076185381481, 0.078187421805,
+    0.080219820314, 0.082282707130, 0.084376211544, 0.086500462037, 0.088655586286, 0.090841711183, 0.093058962847, 0.095307466631,
+    0.097587347142, 0.099898728247, 0.102241733088, 0.104616484091, 0.107023102978, 0.109461710778, 0.111932427837, 0.114435373827,
+    0.116970667759, 0.119538427988, 0.122138772230, 0.124771817561, 0.127437680436, 0.130136476690, 0.132868321554, 0.135633329655,
+    0.138431615032, 0.141263291140, 0.144128470858, 0.147027266498, 0.149959789811, 0.152926151996, 0.155926463708, 0.158960835061,
+    0.162029375639, 0.165132194502, 0.168269400190, 0.171441100733, 0.174647403656, 0.177888415984, 0.181164244250, 0.184474994500,
+    0.187820772301, 0.191201682741, 0.194617830442, 0.198069319560, 0.201556253794, 0.205078736390, 0.208636870145, 0.212230757414,
+    0.215860500114, 0.219526199729, 0.223227957317, 0.226965873510, 0.230740048524, 0.234550582161, 0.238397573812, 0.242281122466,
+    0.246201326708, 0.250158284730, 0.254152094331, 0.258182852922, 0.262250657530, 0.266355604803, 0.270497791013, 0.274677312060,
+    0.278894263477, 0.283148740430, 0.287440837727, 0.291770649818, 0.296138270798, 0.300543794416, 0.304987314070, 0.309468922818,
+    0.313988713376, 0.318546778125, 0.323143209113, 0.327778098057, 0.332451536346, 0.337163615048, 0.341914424909, 0.346704056355,
+    0.351532599500, 0.356400144146, 0.361306779784, 0.366252595599, 0.371237680474, 0.376262122991, 0.381326011433, 0.386429433787,
+    0.391572477750, 0.396755230726, 0.401977779832, 0.407240211902, 0.412542613484, 0.417885070848, 0.423267669986, 0.428690496614,
+    0.434153636175, 0.439657173841, 0.445201194516, 0.450785782838, 0.456411023180, 0.462076999654, 0.467783796112, 0.473531496148,
+    0.479320183101, 0.485149940056, 0.491020849848, 0.496932995061, 0.502886458033, 0.508881320855, 0.514917665377, 0.520995573204,
+    0.527115125706, 0.533276404011, 0.539479489012, 0.545724461370, 0.552011401512, 0.558340389634, 0.564711505705, 0.571124829465,
+    0.577580440430, 0.584078417891, 0.590618840919, 0.597201788364, 0.603827338855, 0.610495570808, 0.617206562420, 0.623960391675,
+    0.630757136346, 0.637596873994, 0.644479681971, 0.651405637420, 0.658374817279, 0.665387298282, 0.672443156958, 0.679542469633,
+    0.686685312435, 0.693871761292, 0.701101891933, 0.708375779892, 0.715693500506, 0.723055128922, 0.730460740090, 0.737910408773,
+    0.745404209540, 0.752942216776, 0.760524504675, 0.768151147248, 0.775822218317, 0.783537791526, 0.791297940333, 0.799102738014,
+    0.806952257669, 0.814846572216, 0.822785754396, 0.830769876775, 0.838799011741, 0.846873231510, 0.854992608124, 0.863157213454,
+    0.871367119199, 0.879622396888, 0.887923117882, 0.896269353374, 0.904661174391, 0.913098651793, 0.921581856277, 0.930110858375,
+    0.938685728458, 0.947306536733, 0.955973353249, 0.964686247894, 0.973445290398, 0.982250550333, 0.991102097114, 1.000000000000,
+};
+
+static double color_luminance(COLORREF value)
+{
+    return linear_srgb[GetRValue(value)] * 0.2126 +
+        linear_srgb[GetGValue(value)] * 0.7152 +
+        linear_srgb[GetBValue(value)] * 0.0722;
+}
+
+static double gray_contrast(unsigned int gray, double background)
+{
+    double foreground = color_luminance(RGB(gray, gray, gray));
+    return foreground > background ? (foreground + 0.05) / (background + 0.05) :
+        (background + 0.05) / (foreground + 0.05);
+}
+
+static COLORREF readable_gray_text(COLORREF foreground, COLORREF background)
+{
+    unsigned int low, high, middle, gray = GetRValue(foreground);
+    double luminance;
+    if ((foreground & 0xFF000000U) || (background & 0xFF000000U) ||
+        gray != GetGValue(foreground) || gray != GetBValue(foreground)) return foreground;
+    luminance = color_luminance(background);
+    if (gray_contrast(gray, luminance) >= 4.5) return foreground;
+    if (gray_contrast(0, luminance) >= gray_contrast(255, luminance)) {
+        low = 0; high = gray;
+        while (low < high) {
+            middle = (low + high + 1U) / 2U;
+            if (gray_contrast(middle, luminance) >= 4.5) low = middle;
+            else high = middle - 1U;
+        }
+    } else {
+        low = gray; high = 255;
+        while (low < high) {
+            middle = (low + high) / 2U;
+            if (gray_contrast(middle, luminance) >= 4.5) high = middle;
+            else low = middle + 1U;
+        }
+    }
+    return RGB(low, low, low);
+}
+
 static int custom_draw(HWND window, LPARAM lparam, LRESULT *result)
 {
     NMCUSTOMDRAW *draw = (NMCUSTOMDRAW *)lparam;
     ThemedControl *child;
     ThemeResources *r;
     unsigned int background, foreground;
-    (void)window;
+    int is_picker, selected;
     if (!draw || draw->hdr.code != NM_CUSTOMDRAW) return 0;
+    if (dluma_editor_theme_properties_custom_draw(window,lparam,result)) return 0;
     child = (ThemedControl *)GetPropW(draw->hdr.hwndFrom, control_property);
-    if (!child || !(r = child->resources) || (*result & CDRF_SKIPDEFAULT)) return 0;
+    if (!child || !(r = child->resources)) return 0;
+    if (child->family==FAMILY_TOOLBAR) toolbar_custom_draw(child,draw,result);
+    if (*result & CDRF_SKIPDEFAULT) return 0;
     if (draw->dwDrawStage == CDDS_PREPAINT) {
         *result |= CDRF_NOTIFYITEMDRAW;
+        if (child->family == FAMILY_LISTVIEW && child->report_grid_owned)
+            *result |= CDRF_NOTIFYPOSTPAINT;
+        return 0;
+    }
+    if (draw->dwDrawStage == CDDS_POSTPAINT && child->family == FAMILY_LISTVIEW && child->report_grid_owned) {
+        report_grid_paint(draw->hdr.hwndFrom, child, draw->hdc);
         return 0;
     }
     if (draw->dwDrawStage == CDDS_ITEMPOSTPAINT && child->family == FAMILY_TOOLBAR) {
@@ -1197,15 +2088,20 @@ static int custom_draw(HWND window, LPARAM lparam, LRESULT *result)
     }
     if (draw->dwDrawStage != CDDS_ITEMPREPAINT &&
         draw->dwDrawStage != (CDDS_ITEMPREPAINT | CDDS_SUBITEM)) return 0;
+    is_picker = picker_listview(window, draw->hdr.hwndFrom, child);
+    selected = (draw->uItemState & CDIS_SELECTED) != 0;
+    if (child->family == FAMILY_LISTVIEW && !listview_selected(window, draw->hdr.hwndFrom, child, r,
+                                     draw->dwItemSpec, &selected)) return 0;
     background = DLUMA_EDITOR_THEME_ROLE_SURFACE;
     foreground = DLUMA_EDITOR_THEME_ROLE_TEXT;
-    if (draw->uItemState & CDIS_SELECTED) {
+    if (selected) {
         int active = GetFocus() == draw->hdr.hwndFrom;
         background = active ? DLUMA_EDITOR_THEME_ROLE_SELECTION : DLUMA_EDITOR_THEME_ROLE_INACTIVE_SELECTION;
         foreground = active || r->theme.kind == DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST ? DLUMA_EDITOR_THEME_ROLE_SELECTION_TEXT : DLUMA_EDITOR_THEME_ROLE_TEXT;
     } else if (draw->uItemState & CDIS_HOT) background = DLUMA_EDITOR_THEME_ROLE_HOVER;
     else if (child->family == FAMILY_LISTVIEW && (draw->dwItemSpec & 1U)) background = DLUMA_EDITOR_THEME_ROLE_ALTERNATE;
-    if (draw->uItemState & (CDIS_DISABLED | CDIS_GRAYED)) foreground = DLUMA_EDITOR_THEME_ROLE_DISABLED_TEXT;
+    if ((draw->uItemState & (CDIS_DISABLED | CDIS_GRAYED)) ||
+        (is_picker && !IsWindowEnabled(draw->hdr.hwndFrom))) foreground = DLUMA_EDITOR_THEME_ROLE_DISABLED_TEXT;
     if (child->family == FAMILY_TRACKBAR) {
         if (draw->dwItemSpec == TBCD_CHANNEL || draw->dwItemSpec == TBCD_THUMB) {
             RECT rect = draw->rc;
@@ -1218,12 +2114,17 @@ static int custom_draw(HWND window, LPARAM lparam, LRESULT *result)
         }
     } else if (child->family == FAMILY_LISTVIEW) {
         NMLVCUSTOMDRAW *list = (NMLVCUSTOMDRAW *)draw;
-        int state_color=(draw->uItemState & (CDIS_SELECTED | CDIS_DISABLED | CDIS_GRAYED))!=0;
-        if (state_color || list->clrTextBk==CLR_DEFAULT || list->clrTextBk==CLR_NONE ||
-            ordinary_background(r,list->clrTextBk)) {
-            if (state_color || list->clrText==CLR_DEFAULT || ordinary_foreground(r,list->clrText))
+        int state_color=selected || (draw->uItemState & (CDIS_DISABLED | CDIS_GRAYED))!=0;
+        if (is_picker || state_color || list->clrTextBk==CLR_DEFAULT || list->clrTextBk==CLR_NONE ||
+            theme_item_background(r,list->clrTextBk)) {
+            if (is_picker || state_color || list->clrText==CLR_DEFAULT || ordinary_foreground(r,list->clrText) ||
+                list->clrText==color(r,DLUMA_EDITOR_THEME_ROLE_SELECTION_TEXT))
                 list->clrText=color(r,foreground);
             list->clrTextBk=color(r,background);
+        } else if (!selected && r->theme.kind != DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST &&
+            !(draw->uItemState & (CDIS_DISABLED | CDIS_GRAYED)) && IsWindowEnabled(draw->hdr.hwndFrom)) {
+            /* Keep native cell indicators while making neutral labels readable. */
+            list->clrText=readable_gray_text(list->clrText,list->clrTextBk);
         }
         *result |= CDRF_NOTIFYSUBITEMDRAW;
     } else if (child->family == FAMILY_TREE) {
@@ -1252,7 +2153,7 @@ static int custom_draw(HWND window, LPARAM lparam, LRESULT *result)
     return 0;
 }
 
-static void paint_edit_border(HWND window, ThemedControl *control)
+static void paint_control_border(HWND window, ThemedControl *control)
 {
     ThemeResources *r = control->resources;
     LONG_PTR style, exstyle;
@@ -1265,7 +2166,9 @@ static void paint_edit_border(HWND window, ThemedControl *control)
         GetWindowThreadProcessId(window, &pid) != GetCurrentThreadId() || pid != GetCurrentProcessId()) return;
     style = GetWindowLongPtrW(window, GWL_STYLE);
     exstyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
-    if (!(style & WS_CHILD) || !((style & WS_BORDER) || (exstyle & WS_EX_CLIENTEDGE)) ||
+    if (!(style & WS_CHILD) || !((style & WS_BORDER) || (exstyle & WS_EX_CLIENTEDGE) ||
+        (control->family == FAMILY_BUTTON && (style & BS_TYPEMASK) == BS_GROUPBOX &&
+         (exstyle & (WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME)))) ||
         !GetWindowRect(window, &bounds) || !GetClientRect(window, &client)) return;
     SetLastError(0);
     if (!MapWindowPoints(window, NULL, (POINT *)&client, 2) && GetLastError()) return;
@@ -1301,7 +2204,8 @@ static void paint_edit_border(HWND window, ThemedControl *control)
         }
         if (overlap) goto done;
     }
-    FillRect(dc, &frame, r->brushes[GetFocus() == window && IsWindowEnabled(window) ?
+    FillRect(dc, &frame, r->brushes[control->family == FAMILY_EDIT &&
+        GetFocus() == window && IsWindowEnabled(window) ?
         DLUMA_EDITOR_THEME_ROLE_ACCENT : DLUMA_EDITOR_THEME_ROLE_BORDER]);
 done:
     RestoreDC(dc, saved);
@@ -1362,6 +2266,141 @@ static void paint_scrollbar(HWND window, ThemedControl *control, LONG object, LO
     ReleaseDC(window, dc);
 }
 
+static int standalone_scrollbar(HWND window, ThemedControl *control, ThemeResources *resources)
+{
+    return control && !control->detached && control->family == FAMILY_SCROLLBAR &&
+        GetPropW(window, control_property) == control && control->resources == resources && resources &&
+        resources->theme.kind != DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST &&
+        !(GetWindowLongPtrW(window, GWL_STYLE) & (SBS_SIZEBOX | SBS_SIZEGRIP));
+}
+
+static int draw_scrollbar_client(HWND window, HDC dc, const RECT *client,
+    const SCROLLBARINFO *info, int vertical, ThemeResources *resources)
+{
+    RECT track = info->rcScrollBar, thumb, arrow;
+    HPEN pen = NULL;
+    HGDIOBJ previous = NULL;
+    int end, ok = 0, enabled = IsWindowEnabled(window);
+    SetLastError(ERROR_SUCCESS);
+    if (!MapWindowPoints(NULL, window, (POINT *)&track, 2) && GetLastError() != ERROR_SUCCESS) return 0;
+    if (track.left < client->left || track.top < client->top || track.right > client->right ||
+        track.bottom > client->bottom || IsRectEmpty(&track) || info->dxyLineButton < 0) return 0;
+    if (!FillRect(dc, client, resources->brushes[DLUMA_EDITOR_THEME_ROLE_PANEL])) return 0;
+    thumb = track;
+    if (vertical) {
+        thumb.top += info->xyThumbTop; thumb.bottom = track.top + info->xyThumbBottom;
+        InflateRect(&thumb, -dip(resources, 3), 0);
+    } else {
+        thumb.left += info->xyThumbTop; thumb.right = track.left + info->xyThumbBottom;
+        InflateRect(&thumb, 0, -dip(resources, 3));
+    }
+    if (!IsRectEmpty(&thumb) && !(info->rgstate[3] & (STATE_SYSTEM_INVISIBLE | STATE_SYSTEM_OFFSCREEN))) {
+        unsigned int role = !enabled || (info->rgstate[3] & STATE_SYSTEM_UNAVAILABLE) ?
+            DLUMA_EDITOR_THEME_ROLE_BORDER : (info->rgstate[3] & STATE_SYSTEM_PRESSED) ?
+            DLUMA_EDITOR_THEME_ROLE_ACCENT : DLUMA_EDITOR_THEME_ROLE_MUTED_TEXT;
+        if (!FillRect(dc, &thumb, resources->brushes[role])) return 0;
+        if (enabled && GetFocus() == window && !DrawFocusRect(dc, &thumb)) return 0;
+    }
+    arrow = track;
+    if (vertical) arrow.bottom = min(arrow.bottom, arrow.top + info->dxyLineButton);
+    else arrow.right = min(arrow.right, arrow.left + info->dxyLineButton);
+    for (end = 0; end < 2; ++end) {
+        DWORD state = info->rgstate[end ? 5 : 1];
+        int x = (arrow.left + arrow.right) / 2, y = (arrow.top + arrow.bottom) / 2;
+        int direction = end ? 1 : -1, delta = dip(resources, 3);
+        if ((state & STATE_SYSTEM_PRESSED) && !FillRect(dc, &arrow,
+            resources->brushes[DLUMA_EDITOR_THEME_ROLE_HOVER])) goto done;
+        pen = CreatePen(PS_SOLID, dip(resources, 1), color(resources,
+            !enabled || (state & STATE_SYSTEM_UNAVAILABLE) ? DLUMA_EDITOR_THEME_ROLE_DISABLED_TEXT :
+            DLUMA_EDITOR_THEME_ROLE_MUTED_TEXT));
+        if (!pen) goto done;
+        previous = SelectObject(dc, pen);
+        if (!previous || previous == HGDI_ERROR) { previous = NULL; goto done; }
+        if (vertical) {
+            if (!MoveToEx(dc, x - delta, y - direction * delta / 2, NULL) ||
+                !LineTo(dc, x, y + direction * delta / 2) ||
+                !LineTo(dc, x + delta, y - direction * delta / 2)) goto done;
+            OffsetRect(&arrow, 0, track.bottom - track.top - info->dxyLineButton);
+        } else {
+            if (!MoveToEx(dc, x - direction * delta / 2, y - delta, NULL) ||
+                !LineTo(dc, x + direction * delta / 2, y) ||
+                !LineTo(dc, x - direction * delta / 2, y + delta)) goto done;
+            OffsetRect(&arrow, track.right - track.left - info->dxyLineButton, 0);
+        }
+        SelectObject(dc, previous); previous = NULL;
+        DeleteObject(pen); pen = NULL;
+    }
+    ok = 1;
+done:
+    if (previous) SelectObject(dc, previous);
+    if (pen) DeleteObject(pen);
+    return ok;
+}
+
+static int paint_scrollbar_client(HWND window, ThemedControl *control, ThemeResources *resources)
+{
+    SCROLLBARINFO info;
+    PAINTSTRUCT paint;
+    RECT client;
+    HDC dc = NULL, buffer = NULL;
+    HBITMAP bitmap = NULL;
+    HGDIOBJ previous = NULL;
+    int painted = 0, width, height, vertical;
+    if (!standalone_scrollbar(window, control, resources) || !GetClientRect(window, &client)) return 0;
+    width = client.right - client.left; height = client.bottom - client.top;
+    if (width <= 0 || height <= 0) return 0;
+    resources_retain(resources);
+    ZeroMemory(&info, sizeof(info)); info.cbSize = sizeof(info);
+    if (!GetScrollBarInfo(window, OBJID_CLIENT, &info) ||
+        !standalone_scrollbar(window, control, resources)) goto finished;
+    vertical = (GetWindowLongPtrW(window, GWL_STYLE) & SBS_VERT) != 0;
+    ZeroMemory(&paint, sizeof(paint));
+    dc = BeginPaint(window, &paint);
+    if (!dc) { restore_paint_damage(window, control, &paint); goto finished; }
+    buffer = CreateCompatibleDC(dc);
+    if (!buffer) goto done;
+    bitmap = CreateCompatibleBitmap(dc, width, height);
+    if (!bitmap) goto done;
+    previous = SelectObject(buffer, bitmap);
+    if (!previous || previous == HGDI_ERROR) { previous = NULL; goto done; }
+    if (!standalone_scrollbar(window, control, resources) ||
+        !draw_scrollbar_client(window, buffer, &client, &info, vertical, resources) ||
+        !standalone_scrollbar(window, control, resources)) goto done;
+    painted = BitBlt(dc, client.left, client.top, width, height, buffer, 0, 0, SRCCOPY) != 0;
+done:
+    if (previous) SelectObject(buffer, previous);
+    if (bitmap) DeleteObject(bitmap);
+    if (buffer) DeleteDC(buffer);
+    if (painted) EndPaint(window, &paint);
+    else restore_paint_damage(window, control, &paint);
+finished:
+    resources_release(resources);
+    return painted;
+}
+
+static int scrollbar_state_message(HWND window, ThemedControl *control, ThemeResources *resources,
+    UINT message, WPARAM wparam, LPARAM lparam, LRESULT *result)
+{
+    UINT forwarded = message;
+    if (!standalone_scrollbar(window, control, resources) || control->scrollbar_forwarding) return 0;
+    if (message == SBM_SETSCROLLINFO && wparam) wparam = FALSE;
+    else if (message == SBM_SETPOS && lparam) lparam = FALSE;
+    else if (message == SBM_SETRANGEREDRAW) forwarded = SBM_SETRANGE;
+    else return 0;
+    /* Keep the native range, position, notifications and return value. Only
+       its immediate drawing is replaced by the next buffered paint. */
+    resources_retain(resources);
+    ++control->scrollbar_forwarding;
+    __try {
+        *result = SendMessageW(window, forwarded, wparam, lparam);
+        if (standalone_scrollbar(window, control, resources)) InvalidateRect(window, NULL, FALSE);
+    } __finally {
+        --control->scrollbar_forwarding;
+        resources_release(resources);
+    }
+    return 1;
+}
+
 static int erase_dialog_background(HWND window, HDC dc, HBRUSH brush)
 {
     RECT client;
@@ -1419,16 +2458,135 @@ static int controls_message_impl(HWND window, unsigned int stage,
 {
     ThemedControl *control = (ThemedControl *)GetPropW(window, control_property);
     ThemeResources *r = control ? control->resources : fallback;
+    if (control && stage==DLUMA_EDITOR_UI_AFTER && message==WM_STYLECHANGED &&
+        (INT_PTR)wparam==GWL_EXSTYLE && lparam && !control->edge_sending) {
+        STYLESTRUCT *change=(STYLESTRUCT *)lparam;
+        if ((change->styleOld ^ change->styleNew) & WS_EX_CLIENTEDGE) {
+            control->edge_owned=0; control->edge_external=1;
+        }
+    }
+    if (control && stage==DLUMA_EDITOR_UI_AFTER && message==WM_STYLECHANGED &&
+        (INT_PTR)wparam==GWL_STYLE && lparam && !control->header_clip_sending) {
+        STYLESTRUCT *change=(STYLESTRUCT *)lparam;
+        if ((change->styleOld ^ change->styleNew) & WS_CLIPSIBLINGS) {
+            control->header_clip_owned=0; control->header_clip_external=1;
+        }
+    }
     if (control && stage==DLUMA_EDITOR_UI_AFTER &&
         (message==WM_STYLECHANGED || (control->family==FAMILY_EDIT && message==EM_SETREADONLY)))
         control->style=GetWindowLongPtrW(window,GWL_STYLE);
+    if (control && stage==DLUMA_EDITOR_UI_AFTER && message==WM_STYLECHANGED &&
+        (INT_PTR)wparam==GWL_STYLE && control->edge_owned && !control->edge_sending) {
+        control->colors_dirty=1;
+        if (r) { DlumaEditorThemeResolved theme=r->theme; dluma_editor_theme_controls_apply(window,&theme); }
+    }
     if (stage == DLUMA_EDITOR_UI_AFTER && message == WM_NOTIFY)
         return custom_draw(window, lparam, result);
     if (!r) return 0;
+    if (stage == DLUMA_EDITOR_UI_AFTER && message == WM_INITDIALOG && control &&
+        control->family == FAMILY_DIALOG) {
+        HWND child = GetDlgItem(window, 3181);
+        if (child && hints_window(child) && dluma_editor_theme_controls_attach(child))
+            dluma_editor_theme_controls_apply(child, &r->theme);
+    }
+    if (control && control->family == FAMILY_HINTS && !control->hints_busy) {
+        if (stage == DLUMA_EDITOR_UI_BEFORE && message == EM_STREAMIN && (wparam & SF_RTF)) {
+            ++control->hints_stream_depth;
+            if (control->hints_stream_depth != 1 || !control->hints_foreground_owned) return 0;
+            control->hints_busy = 1;
+            control->hints_frozen_document = dluma_editor_theme_hints_freeze(window, control);
+            if (!hints_alive(window, control)) {
+                if (GetPropW(window, detaching_property) != control) {
+                    dluma_editor_theme_hints_unfreeze(control->hints_frozen_document, 1);
+                    control->hints_frozen_document = NULL;
+                }
+                control->hints_busy = 0;
+                hints_finish_pending(window, control);
+                return 0;
+            }
+            if (!control->hints_frozen_document && control->hints_background_owned) {
+                (void)SendMessageW(window, EM_SETBKGNDCOLOR, control->hints_background_system ? TRUE : FALSE,
+                    control->hints_background_system ? 0 : (LPARAM)control->hints_original_background);
+                control->hints_background_owned = 0;
+            }
+            if (dluma_editor_theme_hints_foreground(window, control, control->hints_foreground, 0, 0, 1))
+                control->hints_foreground_owned = 0;
+            else if (hints_alive(window, control) && control->hints_background_owned) {
+                (void)SendMessageW(window, EM_SETBKGNDCOLOR, control->hints_background_system ? TRUE : FALSE,
+                    control->hints_background_system ? 0 : (LPARAM)control->hints_original_background);
+                control->hints_background_owned = 0;
+            }
+            control->hints_busy = 0;
+            hints_finish_pending(window, control);
+        } else if (stage == DLUMA_EDITOR_UI_AFTER && message == EM_STREAMIN && (wparam & SF_RTF)) {
+            EDITSTREAM *stream = (EDITSTREAM *)lparam;
+            int success = 0;
+            __try { success = stream && stream->dwError == 0; } __except(EXCEPTION_EXECUTE_HANDLER) { success = 0; }
+            if (control->hints_stream_depth) --control->hints_stream_depth;
+            if (!control->hints_stream_depth) {
+                if (success && hints_alive(window, control)) hints_apply(window, control, r);
+                else if (hints_alive(window, control) && control->hints_background_owned) {
+                    control->hints_busy = 1;
+                    (void)SendMessageW(window, EM_SETBKGNDCOLOR, control->hints_background_system ? TRUE : FALSE,
+                        control->hints_background_system ? 0 : (LPARAM)control->hints_original_background);
+                    control->hints_background_owned = 0;
+                    control->hints_busy = 0;
+                    hints_finish_pending(window, control);
+                }
+                if (hints_alive(window, control) && control->hints_frozen_document) {
+                    void *frozen = control->hints_frozen_document;
+                    control->hints_frozen_document = NULL;
+                    dluma_editor_theme_hints_unfreeze(frozen, 0);
+                }
+            }
+        } else if (stage == DLUMA_EDITOR_UI_AFTER && message == EM_SETBKGNDCOLOR) {
+            control->hints_background_system = wparam != 0;
+            control->hints_original_background = (COLORREF)lparam;
+            control->hints_background_owned = 1;
+            hints_apply(window, control, r);
+        } else if (stage == DLUMA_EDITOR_UI_AFTER && message == EM_SETREADONLY && wparam) {
+            hints_apply(window, control, r);
+        }
+    }
     if (control && stage==DLUMA_EDITOR_UI_AFTER && message==WM_CREATE && !control->applying &&
         (control->family==FAMILY_LISTVIEW || control->family==FAMILY_TREE)) {
         DlumaEditorThemeResolved theme=r->theme;
         /* Native creation initializes its own colors after early enrollment. */
+        control->colors_dirty=1;
+        dluma_editor_theme_controls_apply(window,&theme);
+        return 0;
+    }
+    if (control && stage==DLUMA_EDITOR_UI_AFTER && control->family==FAMILY_LISTVIEW &&
+        message==LVM_SETEXTENDEDLISTVIEWSTYLE && control->properties_grid_known &&
+        !control->properties_grid_sending &&
+        (!wparam || (wparam & (LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER)))) {
+        if (!wparam || (wparam & LVS_EX_GRIDLINES))
+            control->properties_grid_wanted=((DWORD)lparam & LVS_EX_GRIDLINES)!=0;
+        if (!wparam || (wparam & LVS_EX_DOUBLEBUFFER))
+            control->properties_buffer_wanted=((DWORD)lparam & LVS_EX_DOUBLEBUFFER)!=0;
+        control->properties_grid_failed=0;
+        if (control->properties_grid_owned && !control->properties_grid_wanted)
+            dluma_editor_theme_properties_grid_restore(window,control);
+        else if (control->properties_grid_owned && r->theme.kind!=DLUMA_EDITOR_THEME_KIND_HIGH_CONTRAST) {
+            ++control->properties_grid_sending;
+            (void)ListView_SetExtendedListViewStyleEx(window,LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER,LVS_EX_DOUBLEBUFFER);
+            --control->properties_grid_sending;
+        }
+    }
+    if (control && stage==DLUMA_EDITOR_UI_AFTER && !control->applying &&
+        control->family==FAMILY_LISTVIEW && message==LVM_SETEXTENDEDLISTVIEWSTYLE &&
+        report_listview(window, control)) {
+        DlumaEditorThemeResolved theme=r->theme;
+        if (!wparam || (wparam & LVS_EX_GRIDLINES))
+            control->report_grid_wanted=((DWORD)lparam & LVS_EX_GRIDLINES)!=0;
+        control->colors_dirty=1;
+        dluma_editor_theme_controls_apply(window,&theme);
+        return 0;
+    }
+    if (control && stage==DLUMA_EDITOR_UI_AFTER && !control->applying &&
+        control->family==FAMILY_LISTVIEW && (message==WM_STYLECHANGED || message==LVM_SETVIEW) &&
+        (control->report_grid_owned || report_listview(window, control))) {
+        DlumaEditorThemeResolved theme=r->theme;
         control->colors_dirty=1;
         dluma_editor_theme_controls_apply(window,&theme);
         return 0;
@@ -1485,19 +2643,42 @@ static int controls_message_impl(HWND window, unsigned int stage,
         dluma_editor_theme_controls_apply(window, &r->theme);
         return 0;
     }
-    if (stage == DLUMA_EDITOR_UI_AFTER &&
+    if (standalone_scrollbar(window, control, r)) {
+        if (stage == DLUMA_EDITOR_UI_BEFORE) {
+            if (scrollbar_state_message(window, control, r, message, wparam, lparam, result)) return 1;
+            if (message == WM_ERASEBKGND) { *result = 1; return 1; }
+            if (message == WM_PAINT && paint_scrollbar_client(window, control, r)) { *result = 0; return 1; }
+        } else if (stage == DLUMA_EDITOR_UI_AFTER &&
+            (message == WM_SIZE || message == WM_ENABLE || message == SBM_ENABLE_ARROWS ||
+             message == WM_SETFOCUS || message == WM_KILLFOCUS || message == WM_STYLECHANGED ||
+             message == WM_MOUSEMOVE || message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
+             message == WM_CAPTURECHANGED || message == WM_CANCELMODE ||
+             message == WM_KEYDOWN || message == WM_KEYUP)) {
+            InvalidateRect(window, NULL, FALSE);
+        }
+    }
+    if (stage == DLUMA_EDITOR_UI_AFTER && control->family != FAMILY_SCROLLBAR &&
         (message == WM_NCPAINT || message == WM_HSCROLL || message == WM_VSCROLL ||
-         message == WM_PAINT || message == WM_SIZE)) {
+         message == WM_SIZE)) {
         LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
-        if (control->family == FAMILY_EDIT) paint_edit_border(window, control);
+        if (control->family == FAMILY_EDIT || control->family == FAMILY_LISTVIEW ||
+            control->family == FAMILY_TREE || control->family == FAMILY_LIST ||
+            control->family == FAMILY_COMBO || control->family == FAMILY_TAB ||
+            control->family == FAMILY_STATIC ||
+            control->family == FAMILY_WORKSPACE ||
+            (control->family == FAMILY_BUTTON && (style & BS_TYPEMASK) == BS_GROUPBOX))
+            if (!control->edge_owned) paint_control_border(window, control);
         if (style & WS_VSCROLL) paint_scrollbar(window, control, OBJID_VSCROLL, style);
         if (style & WS_HSCROLL) paint_scrollbar(window, control, OBJID_HSCROLL, style);
-        if (control->family == FAMILY_SCROLLBAR) paint_scrollbar(window, control, OBJID_CLIENT, style);
     }
-    if (stage == DLUMA_EDITOR_UI_AFTER && control->family == FAMILY_EDIT &&
+    if (stage == DLUMA_EDITOR_UI_AFTER && control->family == FAMILY_EDIT && !control->edge_owned &&
         (message == WM_SETFOCUS || message == WM_KILLFOCUS || message == WM_ENABLE))
-        paint_edit_border(window, control);
+        paint_control_border(window, control);
     if (stage != DLUMA_EDITOR_UI_BEFORE) return 0;
+    if (message==WM_ERASEBKGND && control->opaque_erase_active &&
+        (control->family==FAMILY_BUTTON || control->family==FAMILY_COMBO)) { *result=1; return 1; }
+    if (message==WM_ERASEBKGND && control->family==FAMILY_BUTTON &&
+        dluma_editor_theme_properties_boolean_erase(window)) { *result=1; return 1; }
     if (message==WM_ERASEBKGND && control->family==FAMILY_WORKSPACE &&
         (GetWindowLongPtrW(window,GWL_STYLE) & WS_CLIPCHILDREN)) {
         RECT rect; GetClientRect(window,&rect);
@@ -1529,13 +2710,34 @@ static int controls_message_impl(HWND window, unsigned int stage,
     }
     if (message == WM_ERASEBKGND && (control->family == FAMILY_TOOLBAR ||
         control->family == FAMILY_STATUS || control->family == FAMILY_TRACKBAR)) {
+        ToolbarScope *scope=control->family==FAMILY_TOOLBAR ? toolbar_paint_scope(control) : NULL;
+        if (scope && GetObjectType((HDC)wparam)==OBJ_DC) {
+            scope->erase_suppressed=1; *result=1; return 1;
+        }
         RECT rect; GetClientRect(window, &rect);
         FillRect((HDC)wparam, &rect, r->brushes[control->family == FAMILY_TOOLBAR ?
             DLUMA_EDITOR_THEME_ROLE_PANEL : DLUMA_EDITOR_THEME_ROLE_WINDOW]);
         *result = 1; return 1;
     }
+    if (message==WM_PAINT && control->family==FAMILY_BUTTON && !control->boolean_print_busy &&
+        !(control->boolean_print_failed && control->boolean_print_failed_generation==r->theme.generation)) {
+        int painted;
+        control->boolean_print_busy=1;
+        __try { painted=dluma_editor_theme_properties_paint_boolean(window,&r->theme); }
+        __finally {
+            control->boolean_print_busy=0;
+            if (AbnormalTermination()) {
+                control->boolean_print_failed=1;
+                control->boolean_print_failed_generation=r->theme.generation;
+            }
+        }
+        if (painted>0) { *result=0; return 1; }
+        if (painted<0) { control->boolean_print_failed=1; control->boolean_print_failed_generation=r->theme.generation; }
+    }
     if (message == WM_PAINT && control->family == FAMILY_BUTTON &&
         paint_button(window, control)) { *result = 0; return 1; }
+    if (message == WM_PAINT && control->family == FAMILY_STATIC &&
+        paint_static_frame(window, control)) { *result = 0; return 1; }
     if (message == WM_PAINT && control->family == FAMILY_COMBO &&
         paint_combo(window, control)) { *result = 0; return 1; }
     if (message == WM_PAINT && control->family == FAMILY_HEADER &&
@@ -1593,20 +2795,37 @@ int dluma_editor_theme_controls_message(HWND window, unsigned int stage,
     UINT message, WPARAM wparam, LPARAM lparam, LRESULT *result)
 {
     ThemedControl *control = (ThemedControl *)GetPropW(window, control_property);
-    uint64_t *invocation = (message == WM_NCDESTROY || message == WM_DRAWITEM) ? dluma_editor_ui_invocation_slot(DLUMA_EDITOR_UI_OWNER_THEME, DLUMA_EDITOR_UI_SLOT_CONTROLS) : NULL;
+    uint64_t *invocation = (message == WM_NCDESTROY || message == WM_DRAWITEM ||
+        message == WM_PAINT || message == WM_NCPAINT) ?
+        dluma_editor_ui_invocation_slot(DLUMA_EDITOR_UI_OWNER_THEME, DLUMA_EDITOR_UI_SLOT_CONTROLS) : NULL;
     ThemeResources *resources = NULL;
     int handled;
+    /* Property geometry queries can dispatch nested window messages. Retain
+       the control before those queries, including their cleanup callbacks. */
+    if (control) {
+        ++control->references;
+        resources = control->resources;
+        resources_retain(resources);
+    }
+    if (control && stage==DLUMA_EDITOR_UI_BEFORE && message==WM_NCDESTROY)
+        toolbar_restore_active(control);
+    if (!control && stage == DLUMA_EDITOR_UI_BEFORE && message == WM_NCDESTROY) {
+        ThemedControl *detaching = (ThemedControl *)GetPropW(window, detaching_property);
+        if (detaching && detaching->family == FAMILY_HINTS) {
+            void *frozen = detaching->hints_frozen_document;
+            detaching->hints_frozen_document = NULL;
+            RemovePropW(window, detaching_property);
+            dluma_editor_theme_hints_unfreeze(frozen, 1);
+        }
+    }
     dluma_editor_theme_properties_message(window,stage,message,lparam,
-        control && control->resources ? &control->resources->theme : NULL);
+        resources ? &resources->theme : NULL);
     if (stage == DLUMA_EDITOR_UI_AFTER && message == WM_NCDESTROY && invocation && *invocation) {
         ThemedControl *destroyed = (ThemedControl *)(ULONG_PTR)*invocation;
         *invocation = 0;
         control_release(destroyed);
     }
     if (control) {
-        ++control->references;
-        resources = control->resources;
-        resources_retain(resources);
         if (stage == DLUMA_EDITOR_UI_BEFORE && message == WM_NCDESTROY && invocation) {
             ++control->references;
             *invocation = (uint64_t)(ULONG_PTR)control;
@@ -1623,7 +2842,11 @@ int dluma_editor_theme_controls_message(HWND window, unsigned int stage,
     }
     if (stage==DLUMA_EDITOR_UI_BEFORE && message==WM_DRAWITEM)
         checklist_scope_before(window,lparam,resources,invocation);
+    if (stage==DLUMA_EDITOR_UI_BEFORE && (message==WM_PAINT || message==WM_NCPAINT))
+        toolbar_scope_before(window,control,message,invocation);
     handled = controls_message_impl(window, stage, message, wparam, lparam, result, resources);
+    if (stage==DLUMA_EDITOR_UI_AFTER && (message==WM_PAINT || message==WM_NCPAINT))
+        toolbar_scope_after(invocation);
     if (stage==DLUMA_EDITOR_UI_AFTER && message==WM_DRAWITEM)
         checklist_scope_after(invocation);
     resources_release(resources);
@@ -1636,11 +2859,17 @@ static void controls_detach_internal(HWND window, int destroying)
     ThemedControl *control = (ThemedControl *)GetPropW(window, control_property);
     if (!control || GetWindowThreadProcessId(window, NULL) != GetCurrentThreadId()) return;
     if (!destroying && !SetPropW(window, detaching_property, control)) return;
+    toolbar_restore_active(control);
     control->detached = 1;
     RemovePropW(window, control_property);
     menu_release(window, NULL);
+    if (destroying && control->hints_frozen_document) {
+        void *frozen = control->hints_frozen_document;
+        control->hints_frozen_document = NULL;
+        dluma_editor_theme_hints_unfreeze(frozen, destroying);
+    }
     if (destroying) { control_release(control); return; }
-    if (control->applying) { control->pending_detach = 1; return; }
+    if (control->applying || control->hints_busy) { control->pending_detach = 1; return; }
     control_finish_detach(window, control);
 }
 
@@ -1649,6 +2878,14 @@ static void control_finish_detach(HWND window, ThemedControl *control)
     ThemeResources *r = control->resources, *previous = control->previous_resources;
 #define DETACH_VALID() (GetPropW(window, detaching_property) == control)
     if (!DETACH_VALID()) goto done;
+    edge_restore(window,control,1);
+    header_clip_restore(window,control,1);
+    if (control->family == FAMILY_HINTS) hints_restore(window, control);
+    if (control->hints_frozen_document) {
+        void *frozen = control->hints_frozen_document;
+        control->hints_frozen_document = NULL;
+        dluma_editor_theme_hints_unfreeze(frozen, !DETACH_VALID());
+    }
     if (control->font_owned && r) {
         HFONT current = (HFONT)SendMessageW(window, WM_GETFONT, 0, 0);
         if (DETACH_VALID() && (current == r->font || (previous && current == previous->font)))
@@ -1656,6 +2893,17 @@ static void control_finish_detach(HWND window, ThemedControl *control)
     }
     if (DETACH_VALID() && control->colors_owned && r) {
         if (control->family == FAMILY_LISTVIEW) {
+            if (DETACH_VALID() && control->properties_grid_owned) {
+                DWORD style=ListView_GetExtendedListViewStyle(window);
+                DWORD mask=LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER;
+                DWORD wanted=(control->properties_grid_wanted ? LVS_EX_GRIDLINES : 0) |
+                    (control->properties_buffer_wanted ? LVS_EX_DOUBLEBUFFER : 0);
+                if (DETACH_VALID() && (style & mask)!=wanted)
+                    (void)ListView_SetExtendedListViewStyleEx(window,mask,wanted);
+            }
+            if (DETACH_VALID() && control->report_grid_owned && control->report_grid_wanted &&
+                !(ListView_GetExtendedListViewStyle(window) & LVS_EX_GRIDLINES) && DETACH_VALID())
+                (void)ListView_SetExtendedListViewStyleEx(window, LVS_EX_GRIDLINES, LVS_EX_GRIDLINES);
             if (DETACH_VALID() && (ListView_GetBkColor(window) == color(r, DLUMA_EDITOR_THEME_ROLE_SURFACE) || (previous && ListView_GetBkColor(window) == color(previous, DLUMA_EDITOR_THEME_ROLE_SURFACE))) && DETACH_VALID())
                 ListView_SetBkColor(window, control->original_background);
             if (DETACH_VALID() && (ListView_GetTextBkColor(window) == color(r, DLUMA_EDITOR_THEME_ROLE_SURFACE) || (previous && ListView_GetTextBkColor(window) == color(previous, DLUMA_EDITOR_THEME_ROLE_SURFACE))) && DETACH_VALID())

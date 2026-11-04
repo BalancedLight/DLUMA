@@ -20,6 +20,8 @@ if (!dluma_editor_panel_host_create(owner, source, L"Source", L"Graph",
 
 Keep the reference for that host's lifetime. Call `dluma_editor_panel_host_layout` after native layout and `dluma_editor_panel_host_show` to switch views. The source retains its native parent and notifications.
 
+For a native view that has no source control, use `dluma_editor_panel_host_create_view`. It fills the owner's client area without adding another tab row. The native docking owner still manages docking, floating and visibility; call the host's layout function after its layout and resize events. The same binding, process lifetime, focus and close functions apply.
+
 Pass `content_window` and the host token to the authenticated companion. Its child window must already have that parent and the `WS_CHILD` style. Bind it with `dluma_editor_panel_host_bind`, the expected process ID and a live process handle. The host duplicates the handle and watches that process. Use `dluma_editor_panel_host_binding_generation` to identify the current binding.
 
 Notifications borrow the panel reference for the callback and run on the owner's UI thread:

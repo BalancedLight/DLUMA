@@ -18,6 +18,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--package-dir", required=True, type=Path)
     parser.add_argument("--mod-name", required=True)
+    parser.add_argument("--require-editor-wiki", action="store_true")
     parser.add_argument(
         "--catalog-hash",
         type=Path,
@@ -75,6 +76,7 @@ def main() -> int:
             package_dir,
             expected_catalog_hash=read_catalog_hash(args.catalog_hash),
             expected_runtime_version=RUNTIME_VERSION,
+            require_editor_wiki=args.require_editor_wiki,
         )
         runtime_paths = {
             str(record.get("path", "")).casefold()

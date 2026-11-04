@@ -9,6 +9,7 @@
 #include "dlw_log.h"
 #include "dlw_path_security.h"
 #include "dlw_project_owner_identity.h"
+#include "dlw_quest_editor.h"
 #include "core/dlw_runtime_tree.h"
 #include "core/dlw_json_reader.h"
 #include "core/dlw_quest_context_core.h"
@@ -16,6 +17,9 @@
 #include "generated/dluma_api_catalog.generated.h"
 
 #include <string.h>
+
+__declspec(dllimport) BOOL WINAPI FileTimeToSystemTime(
+    const FILETIME* file_time, SYSTEMTIME* system_time);
 
 static int dluma_qg_compare(const char* left, const char* right)
 {
@@ -257,6 +261,7 @@ __declspec(dllimport) BOOL WINAPI SetWindowPos(
     UINT flags);
 __declspec(dllimport) HWND WINAPI GetDlgItem(HWND window, int identifier);
 __declspec(dllimport) HWND WINAPI GetParent(HWND window);
+__declspec(dllimport) BOOL WINAPI IsWindowEnabled(HWND window);
 __declspec(dllimport) BOOL WINAPI EnumChildWindows(
     HWND parent, WNDENUMPROC callback, LPARAM parameter);
 __declspec(dllimport) BOOL WINAPI PostMessageW(
@@ -343,6 +348,7 @@ typedef struct DlumaQgUiRequest {
     DWORD byte_offset;
     unsigned int has_byte_offset;
     char disk_path[DLUMA_MAX_WPATH * 4U];
+    DlumaQuestEditorCompileReceipt compile_receipt;
     char error[96];
 } DlumaQgUiRequest;
 
@@ -1160,6 +1166,27 @@ static int dluma_qg_dispatch_stock_save(DlumaQgDialog* slot)
         return 0;
     (void)save(dialog_object);
     return dluma_qg_native_identity_matches(slot);
+}
+
+static HWND dluma_qg_stock_compile_control(DlumaQgDialog* slot)
+{
+    HWND button;
+    DWORD process_id = 0;
+    WCHAR class_name[16];
+    if (!slot || !slot->dialog ||
+        GetWindowThreadProcessId(slot->dialog, &process_id) != GetCurrentThreadId() ||
+        process_id != GetCurrentProcessId() ||
+        !dluma_qg_native_identity_matches(slot) ||
+        !IsWindowEnabled(slot->dialog))
+        return 0;
+    button = GetDlgItem(slot->dialog, DLUMA_QG_COMPILE_COMMAND);
+    if (!button || GetParent(button) != slot->dialog ||
+        GetWindowThreadProcessId(button, &process_id) != GetCurrentThreadId() ||
+        process_id != GetCurrentProcessId() || !IsWindowEnabled(button) ||
+        GetClassNameW(button, class_name, DLUMA_ARRAY_COUNT(class_name)) != 6 ||
+        memcmp(class_name, L"Button", sizeof(L"Button")))
+        return 0;
+    return button;
 }
 
 static int dluma_qg_scintilla_class(HWND window)
@@ -2847,22 +2874,73 @@ static DWORD dluma_qg_restore_response(
     return used;
 }
 
+static void dluma_qg_compile_time_json(const FILETIME* time, char output[32])
+{
+    SYSTEMTIME utc;
+    unsigned int values[7];
+    static const unsigned int offsets[7] = {1U, 6U, 9U, 12U, 15U, 18U, 21U};
+    static const unsigned int widths[7] = {4U, 2U, 2U, 2U, 2U, 2U, 3U};
+    unsigned int index;
+    dluma_str_copy(output, 32U, "null");
+    if ((!time->dwHighDateTime && !time->dwLowDateTime) ||
+        !FileTimeToSystemTime(time, &utc) || utc.wYear > 9999U)
+        return;
+    dluma_str_copy(output, 32U, "\"0000-00-00T00:00:00.000Z\"");
+    values[0] = utc.wYear; values[1] = utc.wMonth; values[2] = utc.wDay;
+    values[3] = utc.wHour; values[4] = utc.wMinute; values[5] = utc.wSecond;
+    values[6] = utc.wMilliseconds;
+    for (index = 0; index < 7U; ++index) {
+        unsigned int remaining = widths[index];
+        while (remaining) {
+            --remaining;
+            output[offsets[index] + remaining] = (char)('0' + values[index] % 10U);
+            values[index] /= 10U;
+        }
+    }
+}
+
 static DWORD dluma_qg_compile_response(
-    char* output, DWORD capacity, const char* request_id)
+    char* output, DWORD capacity, const char* request_id,
+    const DlumaQuestEditorCompileReceipt* receipt)
 {
     DWORD used = 0;
+    char last_write[32];
+    const char* message = receipt->output_verified && receipt->compiler_returned
+        ? "Quest output updated."
+        : receipt->matched_callbacks == 1U && receipt->verification_failed
+        ? "Compilation failed."
+        : !receipt->callback_count
+        ? "The Editor did not confirm compilation."
+        : "Compilation could not be confirmed.";
+    dluma_str_copy(last_write, DLUMA_ARRAY_COUNT(last_write), "null");
+    if (receipt->output_verified)
+        dluma_qg_compile_time_json(&receipt->output_last_write, last_write);
     if (!dluma_qg_response_begin(
             output, capacity, &used, request_id, "result") ||
         !dluma_qg_json_append(
             output, capacity, &used,
             "{\"receipt\":{\"saveAttempted\":true,"
             "\"saveSucceeded\":true,\"stockCommandDispatched\":true,"
-            "\"stockCommandCompleted\":false,"
+            "\"stockCommandCompleted\":") ||
+        !dluma_qg_json_append(output, capacity, &used,
+            receipt->compiler_returned ? "true," : "false,") ||
+        !dluma_qg_json_append(output, capacity, &used,
             "\"diagnosticsAvailable\":false,\"diagnostics\":[],"
-            "\"outputSha256\":null,\"outputLastWriteUtc\":null,"
-            "\"customSidecarPublished\":false,"
-            "\"message\":\"Stock QuestEditor compile command was dispatched; "
-            "completion and diagnostics remain unobserved in Developer Tools.\"}}}"))
+            "\"outputSha256\":") ||
+        (receipt->output_verified &&
+            !dluma_qg_json_append(output, capacity, &used, "\"")) ||
+        !dluma_qg_json_append(output, capacity, &used,
+            receipt->output_verified ? receipt->output_sha256 : "null") ||
+        (receipt->output_verified &&
+            !dluma_qg_json_append(output, capacity, &used, "\"")) ||
+        !dluma_qg_json_append(output, capacity, &used, ",\"outputLastWriteUtc\":") ||
+        !dluma_qg_json_append(output, capacity, &used, last_write) ||
+        !dluma_qg_json_append(output, capacity, &used, ",\"customSidecarPublished\":") ||
+        !dluma_qg_json_append(output, capacity, &used,
+            receipt->custom_sidecar_published ? "true," : "false,") ||
+        !dluma_qg_json_append(output, capacity, &used, "\"message\":\"") ||
+        !dluma_qg_json_append(output, capacity, &used, message) ||
+        !dluma_qg_json_append(output, capacity, &used, "\"}}}"))
         return 0;
     return used;
 }
@@ -2967,6 +3045,7 @@ static int dluma_qg_dispatch_ui(
     ULONGLONG* revision, char* response_sha256,
     unsigned int response_sha256_capacity,
     char* response_path, unsigned int response_path_capacity,
+    DlumaQuestEditorCompileReceipt* compile_receipt,
     char* error, unsigned int error_capacity)
 {
     ULONG_PTR result = 0;
@@ -2981,6 +3060,7 @@ static int dluma_qg_dispatch_ui(
          !expected_result_sha256) ||
         ((kind == DLUMA_QG_UI_SAVE || kind == DLUMA_QG_UI_COMPILE) &&
          !source_sha256) ||
+        (kind == DLUMA_QG_UI_COMPILE && !compile_receipt) ||
         (kind == DLUMA_QG_UI_RESTORE_SOURCE &&
          (!source_sha256 || !restore_source ||
           restore_source_size > DLUMA_QG_MAX_SOURCE_BYTES)) ||
@@ -3044,6 +3124,7 @@ static int dluma_qg_dispatch_ui(
             response_path, response_path_capacity,
             request->disk_path);
     dluma_str_copy(error, error_capacity, request->error);
+    if (compile_receipt) *compile_receipt = request->compile_receipt;
     dluma_qg_ui_payload_free(request);
     dluma_atomic_exchange(&request->state, 0);
     return delivered && result != 0;
@@ -3078,6 +3159,7 @@ static int dluma_qg_handle_json(
     char disk_path[DLUMA_MAX_WPATH * 4U];
     char error[96];
     char response[DLUMA_MAX_WPATH * 8U + 4096U];
+    DlumaQuestEditorCompileReceipt compile_receipt;
     DlumaQgTextEdit* edits = 0;
     DWORD edit_count = 0;
     char* restore_source = 0;
@@ -3246,6 +3328,7 @@ static int dluma_qg_handle_json(
                 (DWORD)byte_offset, &revision,
                 response_sha, sizeof(response_sha),
                 0, 0,
+                0,
                 error, sizeof(error));
             response_size = ok
                 ? dluma_qg_bridge_result_response(
@@ -3296,7 +3379,7 @@ static int dluma_qg_handle_json(
             restore_source, restore_source_size,
             restore_was_modified, 0, 0,
             &revision, response_sha, sizeof(response_sha),
-            0, 0, error, sizeof(error));
+            0, 0, 0, error, sizeof(error));
         restore_source = 0;
         response_size = ok
             ? dluma_qg_restore_response(
@@ -3348,6 +3431,7 @@ static int dluma_qg_handle_json(
             0, 0, 0, 0, 0,
             &revision, response_sha, sizeof(response_sha),
             0, 0,
+            0,
             error, sizeof(error));
         edits = 0;
         edit_count = 0;
@@ -3381,11 +3465,12 @@ static int dluma_qg_handle_json(
         strcmp(type, "saveDocument") == 0 ? disk_path : 0,
         strcmp(type, "saveDocument") == 0
             ? (unsigned int)sizeof(disk_path) : 0U,
+        strcmp(type, "compileDocument") == 0 ? &compile_receipt : 0,
         error, sizeof(error));
     if (ok) {
         response_size = dluma_stricmp(type, "compileDocument") == 0
             ? dluma_qg_compile_response(
-                response, sizeof(response), request_id)
+                response, sizeof(response), request_id, &compile_receipt)
             : dluma_qg_save_response(
                 response, sizeof(response), request_id,
                 revision, response_sha, disk_path);
@@ -4066,7 +4151,8 @@ static void dluma_qg_ui_request_execute(void)
     char disk_sha[DLUMA_SHA256_HEX_CAPACITY];
     DWORD index;
     int accepted = 0;
-    if (dluma_atomic_compare_exchange(&request->state, 0, 0) != 1)
+    /* A nested native message pump must not execute the same request again. */
+    if (dluma_atomic_compare_exchange(&request->state, 3, 1) != 1)
         return;
     request->error[0] = 0;
     if (request->kind == DLUMA_QG_UI_PANEL_READY) {
@@ -4343,6 +4429,10 @@ static void dluma_qg_ui_request_execute(void)
             goto done;
         }
     } else if (request->kind == DLUMA_QG_UI_COMPILE) {
+        ULONGLONG observation;
+        HWND compile_control;
+        int dispatched = 0;
+        int observed = 0;
         if (slot->saved_revision != slot->revision ||
             dluma_stricmp(slot->saved_sha256, current_sha) != 0) {
             dluma_str_copy(request->error,
@@ -4360,15 +4450,62 @@ static void dluma_qg_ui_request_execute(void)
                          "saved_source_identity_changed");
             goto done;
         }
-        if (!g_dluma_qg.main_subscribed || !g_dluma_qg.main_window) {
+        compile_control = dluma_qg_stock_compile_control(slot);
+        if (!g_dluma_qg.main_subscribed || !g_dluma_qg.main_window ||
+            !compile_control) {
             dluma_str_copy(request->error,
                          DLUMA_ARRAY_COUNT(request->error),
                          "stock_compile_route_unavailable");
             goto done;
         }
-        (void)SendMessageW(
-            g_dluma_qg.main_window,
-            WM_COMMAND, (WPARAM)DLUMA_QG_COMPILE_COMMAND, 0);
+        observation = dluma_quest_editor_compile_observe_begin(
+            slot->project_root, slot->source_path, current_sha);
+        if (!observation) {
+            dluma_str_copy(request->error, DLUMA_ARRAY_COUNT(request->error),
+                "compile_observation_unavailable");
+            goto done;
+        }
+        __try {
+            if (dluma_qg_stock_compile_control(slot) == compile_control) {
+                /* Deliver the stock button notification to its Source owner. */
+                (void)SendMessageW(slot->dialog, WM_COMMAND,
+                    (WPARAM)DLUMA_QG_COMPILE_COMMAND, (LPARAM)compile_control);
+                dispatched = 1;
+            }
+        } __finally {
+            observed = dluma_quest_editor_compile_observe_end(
+                observation, &request->compile_receipt);
+        }
+        dluma_log_u64("INFO", "quest_graph_compile_observation", observation);
+        dluma_log_u64("INFO", "quest_graph_compile_callbacks",
+            request->compile_receipt.callback_count);
+        dluma_log_u64("INFO", "quest_graph_compile_matches",
+            request->compile_receipt.matched_callbacks);
+        dluma_log_u64("INFO", "quest_graph_compile_nested_callbacks",
+            request->compile_receipt.nested_callbacks);
+        dluma_log_u64("INFO", "quest_graph_compile_returned",
+            request->compile_receipt.compiler_returned);
+        dluma_log_u64("INFO", "quest_graph_compile_output_verified",
+            request->compile_receipt.output_verified);
+        if (!dispatched) {
+            dluma_str_copy(request->error, DLUMA_ARRAY_COUNT(request->error),
+                "stock_compile_route_unavailable");
+            goto done;
+        }
+        if (!observed || !dluma_qg_native_identity_matches(slot) ||
+            request->expected_revision != slot->revision ||
+            strcmp(request->document_id, slot->document_id) ||
+            !dluma_qg_scintilla_read(slot->scintilla, &updated, &updated_size)) {
+            dluma_str_copy(request->error, DLUMA_ARRAY_COUNT(request->error),
+                "source_changed_during_compile");
+            goto done;
+        }
+        dluma_sha256_bytes_hex(updated, updated_size, disk_sha);
+        if (dluma_stricmp(current_sha, disk_sha)) {
+            dluma_str_copy(request->error, DLUMA_ARRAY_COUNT(request->error),
+                "source_changed_during_compile");
+            goto done;
+        }
     } else {
         dluma_str_copy(request->error,
                      DLUMA_ARRAY_COUNT(request->error),

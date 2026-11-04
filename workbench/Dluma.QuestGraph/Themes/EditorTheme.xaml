@@ -29,6 +29,24 @@
     <Setter Property="Background" Value="{DynamicResource EditorTheme.Panel}" />
     <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />
     <Setter Property="BorderBrush" Value="{DynamicResource EditorTheme.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="2" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ContextMenu">
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+            <ScrollViewer MaxHeight="480" MaxWidth="600"
+                          HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                          CanContentScroll="True" Focusable="False">
+              <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+            </ScrollViewer>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
   </Style>
   <Style TargetType="MenuItem">
     <Setter Property="Foreground" Value="{DynamicResource EditorTheme.Text}" />

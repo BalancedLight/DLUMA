@@ -12,6 +12,14 @@ typedef enum DlumaQuestAuthoringPrepareResult {
 
 typedef struct DlumaQuestAuthoringTransaction DlumaQuestAuthoringTransaction;
 
+typedef struct DlumaQuestAuthoringOutput {
+    unsigned int verified;
+    unsigned int fresh;
+    unsigned int custom_sidecar_published;
+    char sha256[DLUMA_SHA256_HEX_CAPACITY];
+    FILETIME last_write;
+} DlumaQuestAuthoringOutput;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -35,6 +43,14 @@ const char* dluma_quest_authoring_compiler_source(
     const DlumaQuestAuthoringTransaction* transaction);
 const char* dluma_quest_authoring_compiler_source_sha256(
     const DlumaQuestAuthoringTransaction* transaction);
+int dluma_quest_authoring_source_matches(
+    const DlumaQuestAuthoringTransaction* transaction,
+    const WCHAR* project_root, const WCHAR* source_path,
+    const BY_HANDLE_FILE_INFORMATION* source_identity,
+    const char* source_sha256);
+void dluma_quest_authoring_output(
+    const DlumaQuestAuthoringTransaction* transaction,
+    DlumaQuestAuthoringOutput* output);
 
 #ifdef __cplusplus
 }

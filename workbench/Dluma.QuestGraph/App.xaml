@@ -256,6 +256,7 @@
               <ToggleButton x:Name="SelectionToggle"
                             Grid.ColumnSpan="2"
                             Background="Transparent"
+                            Foreground="{TemplateBinding Foreground}"
                             BorderThickness="0"
                             Focusable="False"
                             ClickMode="Press"

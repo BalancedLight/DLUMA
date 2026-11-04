@@ -107,6 +107,142 @@ typedef struct DlumaQuestEditorState {
 
 static DlumaQuestEditorState g_dluma_quest_editor;
 
+typedef struct DlumaQuestEditorCompileObservation {
+    volatile LONG owner_thread;
+    ULONGLONG generation;
+    unsigned int depth;
+    unsigned int armed;
+    BY_HANDLE_FILE_INFORMATION source_identity;
+    DlumaDirectoryIdentity project_identity;
+    WCHAR project_root[DLUMA_MAX_WPATH];
+    WCHAR source_path[DLUMA_MAX_WPATH];
+    char source_sha256[DLUMA_SHA256_HEX_CAPACITY];
+    DlumaQuestEditorCompileReceipt receipt;
+} DlumaQuestEditorCompileObservation;
+
+static DlumaQuestEditorCompileObservation g_dluma_compile_observation;
+
+ULONGLONG dluma_quest_editor_compile_observe_begin(
+    const WCHAR* project_root, const WCHAR* source_path,
+    const char* source_sha256)
+{
+    DlumaQuestEditorCompileObservation* observation = &g_dluma_compile_observation;
+    DlumaDirectoryIdentity project;
+    HANDLE file = INVALID_HANDLE_VALUE;
+    char sha256[DLUMA_SHA256_HEX_CAPACITY];
+    if (!project_root || !source_path || !source_sha256 ||
+        dluma_atomic_compare_exchange(&g_dluma_quest_editor.stopping, 0, 0) ||
+        dluma_atomic_compare_exchange(&observation->owner_thread,
+            (LONG)GetCurrentThreadId(), 0) != 0)
+        return 0;
+    observation->armed = 0;
+    observation->depth = 0;
+    memset(&observation->receipt, 0, sizeof(observation->receipt));
+    if (!dluma_open_directory_identity(project_root, &project) ||
+        !dluma_project_regular_file_is_contained(project.final_path, source_path))
+        goto failed;
+    file = CreateFileW(source_path, GENERIC_READ,
+        FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (file == INVALID_HANDLE_VALUE ||
+        !GetFileInformationByHandle(file,
+            &observation->source_identity) ||
+        (observation->source_identity.dwFileAttributes &
+            (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
+        observation->source_identity.nNumberOfLinks != 1U ||
+        !dluma_get_final_path_checked(file,
+            observation->source_path, DLUMA_ARRAY_COUNT(observation->source_path)) ||
+        !dluma_final_path_equal_or_under(observation->source_path, project.final_path) ||
+        !dluma_sha256_handle_hex(file, 16UL * 1024UL * 1024UL,
+            sha256) || dluma_stricmp(sha256, source_sha256))
+        goto failed;
+    dluma_wstr_copy(observation->project_root,
+        DLUMA_ARRAY_COUNT(observation->project_root), project.final_path);
+    observation->project_identity = project;
+    dluma_str_copy(observation->source_sha256,
+        DLUMA_ARRAY_COUNT(observation->source_sha256), sha256);
+    /* The stock command may save before entering the compiler hook. Its own
+     * authoring transaction takes the persistent read lock and must match
+     * this file identity and hash before its result can be attributed here. */
+    CloseHandle(file);
+    observation->armed = 1U;
+    if (!++observation->generation) ++observation->generation;
+    return observation->generation;
+failed:
+    if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+    dluma_atomic_exchange(&observation->owner_thread, 0);
+    return 0;
+}
+
+int dluma_quest_editor_compile_observe_end(
+    ULONGLONG generation, DlumaQuestEditorCompileReceipt* receipt)
+{
+    DlumaQuestEditorCompileObservation* observation = &g_dluma_compile_observation;
+    int complete;
+    if (!generation || !receipt ||
+        dluma_atomic_compare_exchange(&observation->owner_thread, 0, 0) !=
+            (LONG)GetCurrentThreadId() || generation != observation->generation)
+        return 0;
+    complete = observation->depth == 0;
+    *receipt = observation->receipt;
+    if (!complete || receipt->matched_callbacks != 1U || receipt->nested_callbacks) {
+        receipt->output_verified = 0;
+        receipt->output_sha256[0] = 0;
+        memset(&receipt->output_last_write, 0, sizeof(receipt->output_last_write));
+        receipt->custom_sidecar_published = 0;
+        if (!complete || receipt->matched_callbacks != 1U)
+            receipt->compiler_returned = 0;
+    }
+    observation->armed = 0;
+    dluma_atomic_exchange(&observation->owner_thread, 0);
+    return complete;
+}
+
+static ULONGLONG dluma_quest_editor_compile_observation_enter(void)
+{
+    DlumaQuestEditorCompileObservation* observation = &g_dluma_compile_observation;
+    if (dluma_atomic_compare_exchange(&observation->owner_thread, 0, 0) !=
+            (LONG)GetCurrentThreadId() ||
+        !observation->armed)
+        return 0;
+    ++observation->receipt.callback_count;
+    if (++observation->depth > 1U) ++observation->receipt.nested_callbacks;
+    return observation->generation;
+}
+
+static void dluma_quest_editor_compile_observation_leave(
+    ULONGLONG generation, const DlumaQuestAuthoringTransaction* transaction,
+    int compiler_returned, int verification_failed)
+{
+    DlumaQuestEditorCompileObservation* observation = &g_dluma_compile_observation;
+    DlumaQuestEditorCompileReceipt* receipt = &observation->receipt;
+    DlumaQuestAuthoringOutput output;
+    DlumaDirectoryIdentity project;
+    if (!generation ||
+        dluma_atomic_compare_exchange(&observation->owner_thread, 0, 0) !=
+            (LONG)GetCurrentThreadId() || generation != observation->generation ||
+        !observation->depth)
+        return;
+    if (observation->depth == 1U &&
+        dluma_open_directory_identity(observation->project_root, &project) &&
+        dluma_directory_identity_equal(&project, &observation->project_identity) &&
+        dluma_quest_authoring_source_matches(transaction,
+            observation->project_root, observation->source_path,
+            &observation->source_identity, observation->source_sha256)) {
+        ++receipt->matched_callbacks;
+        receipt->compiler_returned = compiler_returned ? 1U : 0U;
+        receipt->verification_failed = verification_failed ? 1U : 0U;
+        dluma_quest_authoring_output(transaction, &output);
+        receipt->output_verified = compiler_returned && output.verified && output.fresh;
+        receipt->custom_sidecar_published = output.custom_sidecar_published;
+        if (receipt->output_verified) {
+            dluma_str_copy(receipt->output_sha256,
+                DLUMA_ARRAY_COUNT(receipt->output_sha256), output.sha256);
+            receipt->output_last_write = output.last_write;
+        }
+    }
+    --observation->depth;
+}
+
 static const BYTE g_dluma_quest_editor_init_prefix[DLUMA_QUEST_EDITOR_INIT_STOLEN] = {
     0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48,
     0x83, 0xEC, 0x30, 0x83, 0x79, 0x08, 0x00
@@ -1573,82 +1709,96 @@ static void __fastcall dluma_quest_editor_compile_hook(
     const char* native_compiler_source_value = native_compiler_source;
     int definitions_ready;
     int authoring_ready = 0;
+    int compiler_returned = 0;
+    int verification_failed = 0;
+    ULONGLONG observation;
     int tracked = dluma_editor_host_callback_enter();
     dluma_atomic_increment(&g_dluma_quest_editor.callbacks_in_flight);
-    definitions_ready = !dluma_atomic_compare_exchange(
-            &g_dluma_quest_editor.stopping, 0, 0) &&
-        dluma_quest_editor_ensure_edf(context);
-    if (!definitions_ready)
-        dluma_log_line(
-            "ERROR",
-            "Quest compile is continuing without loader definitions; custom directives remain fail-closed.");
-    if (source_path && dluma_is_readable(source_path, sizeof(*source_path)))
-        source_value = dluma_quest_editor_bounded_path(*source_path);
-    if (output_path && dluma_is_readable(output_path, sizeof(*output_path)))
-        output_value = dluma_quest_editor_bounded_path(*output_path);
-    if (source_value)
-        dluma_log_pair("INFO", "quest_compile_source_raw", source_value);
-    if (output_value)
-        dluma_log_pair("INFO", "quest_compile_output_raw", output_value);
-    if (definitions_ready && source_value && output_value &&
-        dluma_quest_editor_resolve_compile_paths(
-            source_value, output_value,
-            project_root, DLUMA_ARRAY_COUNT(project_root),
-            source_absolute, DLUMA_ARRAY_COUNT(source_absolute),
-            output_absolute, DLUMA_ARRAY_COUNT(output_absolute), tracked)) {
-        dluma_log_pair(
-            "INFO", "quest_compile_source_resolved", source_absolute);
-        dluma_log_pair(
-            "INFO", "quest_compile_output_resolved", output_absolute);
-        prepare = dluma_quest_authoring_prepare_for_project(
-            source_absolute, output_absolute,
-            project_root, &transaction);
-        authoring_ready = prepare == DLUMA_QUEST_AUTHORING_STOCK ||
-            prepare == DLUMA_QUEST_AUTHORING_CUSTOM;
-        if (prepare == DLUMA_QUEST_AUTHORING_CUSTOM) {
-            compiler_source =
-                dluma_quest_authoring_compiler_source(transaction);
-            if (!compiler_source) authoring_ready = 0;
-            else if (!dluma_editor_quest_native_filename_from_utf8(
-                    compiler_source, native_compiler_source,
-                    DLUMA_ARRAY_COUNT(native_compiler_source))) {
-                authoring_ready = 0;
-                dluma_log_pair("ERROR", "quest_compile_rejected",
-                    "lowered source path is not representable in the native file-API codepage");
-            } else {
-                const char* compiler_sha256 =
-                    dluma_quest_authoring_compiler_source_sha256(transaction);
-                dluma_log_pair(
-                    "INFO", "quest_compile_lowered_source", compiler_source);
-                if (compiler_sha256)
+    observation = dluma_quest_editor_compile_observation_enter();
+    __try {
+        definitions_ready = !dluma_atomic_compare_exchange(
+                &g_dluma_quest_editor.stopping, 0, 0) &&
+            dluma_quest_editor_ensure_edf(context);
+        if (!definitions_ready)
+            dluma_log_line(
+                "ERROR",
+                "Quest compile is continuing without loader definitions; custom directives remain fail-closed.");
+        if (source_path && dluma_is_readable(source_path, sizeof(*source_path)))
+            source_value = dluma_quest_editor_bounded_path(*source_path);
+        if (output_path && dluma_is_readable(output_path, sizeof(*output_path)))
+            output_value = dluma_quest_editor_bounded_path(*output_path);
+        if (source_value)
+            dluma_log_pair("INFO", "quest_compile_source_raw", source_value);
+        if (output_value)
+            dluma_log_pair("INFO", "quest_compile_output_raw", output_value);
+        if (definitions_ready && source_value && output_value &&
+            dluma_quest_editor_resolve_compile_paths(
+                source_value, output_value,
+                project_root, DLUMA_ARRAY_COUNT(project_root),
+                source_absolute, DLUMA_ARRAY_COUNT(source_absolute),
+                output_absolute, DLUMA_ARRAY_COUNT(output_absolute), tracked)) {
+            dluma_log_pair(
+                "INFO", "quest_compile_source_resolved", source_absolute);
+            dluma_log_pair(
+                "INFO", "quest_compile_output_resolved", output_absolute);
+            prepare = dluma_quest_authoring_prepare_for_project(
+                source_absolute, output_absolute,
+                project_root, &transaction);
+            authoring_ready = prepare == DLUMA_QUEST_AUTHORING_STOCK ||
+                prepare == DLUMA_QUEST_AUTHORING_CUSTOM;
+            if (prepare == DLUMA_QUEST_AUTHORING_CUSTOM) {
+                compiler_source =
+                    dluma_quest_authoring_compiler_source(transaction);
+                if (!compiler_source) authoring_ready = 0;
+                else if (!dluma_editor_quest_native_filename_from_utf8(
+                        compiler_source, native_compiler_source,
+                        DLUMA_ARRAY_COUNT(native_compiler_source))) {
+                    authoring_ready = 0;
+                    dluma_log_pair("ERROR", "quest_compile_rejected",
+                        "lowered source path is not representable in the native file-API codepage");
+                } else {
+                    const char* compiler_sha256 =
+                        dluma_quest_authoring_compiler_source_sha256(transaction);
                     dluma_log_pair(
-                        "INFO", "quest_compile_lowered_sha256",
-                        compiler_sha256);
+                        "INFO", "quest_compile_lowered_source", compiler_source);
+                    if (compiler_sha256)
+                        dluma_log_pair(
+                            "INFO", "quest_compile_lowered_sha256",
+                            compiler_sha256);
+                }
             }
         }
-    }
-    if (!definitions_ready || authoring_ready) {
-        if (original) {
-            if (prepare == DLUMA_QUEST_AUTHORING_CUSTOM)
-                original(context, &native_compiler_source_value, output_path);
-            else
-                original(context, source_path, output_path);
+        if (!definitions_ready || authoring_ready) {
+            if (original) {
+                if (prepare == DLUMA_QUEST_AUTHORING_CUSTOM)
+                    original(context, &native_compiler_source_value, output_path);
+                else
+                    original(context, source_path, output_path);
+                compiler_returned = 1;
+            }
+        } else if (prepare == DLUMA_QUEST_AUTHORING_UNAVAILABLE) {
+            dluma_log_pair(
+                "ERROR", "quest_compile_rejected",
+                "authoritative project source or authoring transaction unavailable");
         }
-    } else if (prepare == DLUMA_QUEST_AUTHORING_UNAVAILABLE) {
-        dluma_log_pair(
-            "ERROR", "quest_compile_rejected",
-            "authoritative project source or authoring transaction unavailable");
+        if (transaction && authoring_ready &&
+            !dluma_quest_authoring_finish(transaction))
+        {
+            verification_failed = 1;
+            dluma_log_pair("ERROR", "quest_compile_sidecar_failure",
+                         dluma_quest_authoring_diagnostic(transaction));
+        }
+        else if (transaction && prepare == DLUMA_QUEST_AUTHORING_REJECT)
+            dluma_log_pair("ERROR", "quest_compile_rejected",
+                         dluma_quest_authoring_diagnostic(transaction));
+        if (transaction && !authoring_ready) verification_failed = 1;
+    } __finally {
+        dluma_quest_editor_compile_observation_leave(
+            observation, transaction, compiler_returned, verification_failed);
+        dluma_quest_authoring_release(transaction);
+        dluma_atomic_decrement(&g_dluma_quest_editor.callbacks_in_flight);
+        dluma_editor_host_callback_leave(tracked);
     }
-    if (transaction && authoring_ready &&
-        !dluma_quest_authoring_finish(transaction))
-        dluma_log_pair("ERROR", "quest_compile_sidecar_failure",
-                     dluma_quest_authoring_diagnostic(transaction));
-    else if (transaction && prepare == DLUMA_QUEST_AUTHORING_REJECT)
-        dluma_log_pair("ERROR", "quest_compile_rejected",
-                     dluma_quest_authoring_diagnostic(transaction));
-    dluma_quest_authoring_release(transaction);
-    dluma_atomic_decrement(&g_dluma_quest_editor.callbacks_in_flight);
-    dluma_editor_host_callback_leave(tracked);
 }
 
 static int dluma_quest_editor_requested_module(const char* file_name)

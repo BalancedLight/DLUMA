@@ -14,6 +14,10 @@ Release packages include a private Microsoft .NET runtime and Windows Desktop ru
 
 The visual quest editor uses Nodify 7.3.0, copyright Miroiu Emanuel, under the MIT license. The complete notice is included with the quest editor in `Licenses/Nodify-MIT.txt` and `THIRD_PARTY_NOTICES.md`.
 
+## Microsoft Edge WebView2
+
+The Editor Wiki uses Microsoft.Web.WebView2 SDK 1.0.4314.35. Its SDK libraries and loader are distributed with the Microsoft copyright, license, and third-party notice in `dluma_runtime/editor-wiki/Licenses/`. The Microsoft Edge WebView2 Runtime is installed separately.
+
 ## Game assets and mod content
 
 The source-code license does not grant rights to Dying Light game data or to separately licensed mod content. Stock-derived menu and camera resources remain subject to their original rights, including `PakAssets/Camera/menubackgroundcameraactions_menu_lvl_new.scr`, `PakAssets/Camera/menuscreen3dplacement_menu_lvl_new.scr`, and the main-menu, options, and extras XUI resources. They are excluded from the project's MIT license. Confirm redistribution permission for these resources before publishing a package that includes them.
