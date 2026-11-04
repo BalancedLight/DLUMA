@@ -18,6 +18,7 @@
 #include "dlw_editor_panel_host.h"
 #include "dlw_editor_splash.h"
 #include "dlw_editor_wiki.h"
+#include "dlw_editor_source_control_host.h"
 
 #define DLUMA_EDITOR_CALLBACK_THREAD_CAPACITY 256U
 
@@ -256,9 +257,12 @@ int dluma_editor_host_start(void)
         dluma_log_line("WARN", "Editor appearance could not be initialized.");
     if (!dluma_editor_wiki_start(g_dluma.config_path))
         dluma_log_line("WARN", "Editor Wiki could not be initialized.");
+    if (!dluma_editor_source_control_host_start(g_dluma.config_path))
+        dluma_log_line("WARN", "Editor Git view could not be initialized.");
     if (ui_started && !dluma_editor_ui_activate()) {
         dluma_log_line("WARN", "Editor window service could not activate.");
         (void)dluma_editor_wiki_stop();
+        (void)dluma_editor_source_control_host_stop();
         (void)dluma_editor_theme_stop();
         dluma_editor_splash_stop();
         (void)dluma_editor_ui_stop();
@@ -432,6 +436,7 @@ int dluma_editor_host_callbacks_drained(void)
         (!g_dluma_editor_host.shutdown_requested ||
          (g_dluma_editor_host.shutdown_finished &&
           dluma_editor_wiki_callbacks_drained() &&
+          dluma_editor_source_control_host_callbacks_drained() &&
           dluma_editor_theme_callbacks_drained() &&
           dluma_editor_splash_callbacks_drained() &&
           dluma_editor_ui_callbacks_drained() &&
@@ -441,17 +446,18 @@ int dluma_editor_host_callbacks_drained(void)
 static DWORD WINAPI dluma_editor_host_shutdown_worker(LPVOID context)
 {
     ULONGLONG started = GetTickCount64();
-    int graph_stopped = 0, presence_stopped = 0, theme_stopped = 0, ui_stopped = 0, wiki_stopped = 0;
+    int graph_stopped = 0, presence_stopped = 0, theme_stopped = 0, ui_stopped = 0, wiki_stopped = 0, git_stopped = 0;
     (void)context;
     (void)dluma_editor_animation_refresh_watcher_stop();
     while (GetTickCount64() - started < 5000ULL) {
         if (!graph_stopped) graph_stopped = dluma_editor_quest_graph_bridge_stop();
         if (!presence_stopped) presence_stopped = dluma_editor_presence_stop();
-        if (!wiki_stopped) wiki_stopped = dluma_editor_wiki_stop();
+        if (!git_stopped) git_stopped = dluma_editor_source_control_host_stop();
+        if (git_stopped && !wiki_stopped) wiki_stopped = dluma_editor_wiki_stop();
         if (wiki_stopped && !theme_stopped) theme_stopped = dluma_editor_theme_stop();
         dluma_editor_splash_stop();
         if (wiki_stopped && !ui_stopped) ui_stopped = dluma_editor_ui_stop();
-        if (wiki_stopped && graph_stopped && presence_stopped && theme_stopped && ui_stopped &&
+        if (git_stopped && wiki_stopped && graph_stopped && presence_stopped && theme_stopped && ui_stopped &&
             dluma_editor_panel_host_callbacks_drained() &&
             dluma_editor_splash_callbacks_drained()) {
             dluma_atomic_exchange(&g_dluma_editor_host.shutdown_finished, 1);

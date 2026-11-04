@@ -344,6 +344,8 @@ public sealed partial class QuestBridgeClient : IDisposable
                 "closePreflight" or
                 "closeFinished" or
                 "activateDocument" or
+                "gitContext" or
+                "gitCommand" or
                 "contextSnapshot" or
                 "disconnected"))
             throw new InvalidDataException("The bridge sent an unsupported message type.");

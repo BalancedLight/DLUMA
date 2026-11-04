@@ -10,6 +10,9 @@ public static class QuestBridgePayloadValidator
         ArgumentNullException.ThrowIfNull(payload);
         switch (payload)
         {
+            case EditorGitPayload value:
+                EditorGitProtocol.Validate(value);
+                break;
             case HelloRequest value:
                 if (value.ProtocolVersion != QuestBridgeProtocol.SchemaVersion)
                     throw new InvalidDataException("Bridge protocol version is unsupported.");

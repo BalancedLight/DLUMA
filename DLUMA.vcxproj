@@ -50,6 +50,7 @@
     <DlumaManagedOutputDir>$(ProjectDir)sdk\dotnet\Dluma.Managed.Bootstrap\bin\$(Configuration)\net10.0\</DlumaManagedOutputDir>
     <DlumaQuestGraphOutputDir>$(ProjectDir)build\quest-graph\$(Configuration)\</DlumaQuestGraphOutputDir>
     <DlumaEditorWikiOutputDir>$(ProjectDir)build\editor-wiki\$(Configuration)\</DlumaEditorWikiOutputDir>
+    <DlumaEditorGitOutputDir>$(ProjectDir)build\editor-git\$(Configuration)\</DlumaEditorGitOutputDir>
     <DlumaEditorThemeOutputDir>$(ProjectDir)build\editor-theme\$(Configuration)\</DlumaEditorThemeOutputDir>
     <DlumaLocalPropsPath>$(ProjectDir)DLUMA.local.props</DlumaLocalPropsPath>
     <DlumaAutoDeployLocal Condition="'$(DlumaAutoDeployLocal)' == ''">false</DlumaAutoDeployLocal>
@@ -169,6 +170,9 @@
     <ClCompile Include="src\dlw_editor_panel_host.c" />
     <ClCompile Include="src\dlw_editor_companion_runtime.c" />
     <ClCompile Include="src\dlw_editor_wiki.c" />
+    <ClCompile Include="src\dlw_editor_source_control_host.c" />
+    <ClCompile Include="src\dlw_editor_source_control_ui.c" />
+    <ClCompile Include="src\dlw_editor_git_session.c" />
     <ClCompile Include="src\dlw_editor_wiki_session.c" />
     <ClCompile Include="src\core\dlw_editor_theme_core.c" />
     <ClCompile Include="src\dlw_editor_quest_graph_bridge.c" />
@@ -1006,6 +1010,9 @@
     <ClInclude Include="src\dlw_editor_panel_host.h" />
     <ClInclude Include="src\dlw_editor_companion_runtime.h" />
     <ClInclude Include="src\dlw_editor_wiki.h" />
+    <ClInclude Include="src\dlw_editor_source_control_host.h" />
+    <ClInclude Include="src\dlw_editor_source_control_ui.h" />
+    <ClInclude Include="src\dlw_editor_git_session.h" />
     <ClInclude Include="src\dlw_editor_wiki_session.h" />
     <ClInclude Include="src\dlw_editor_theme_system.h" />
     <ClInclude Include="src\core\dlw_editor_theme_core.h" />
@@ -1260,6 +1267,9 @@
     <RemoveDir Directories="$(DlumaEditorWikiOutputDir)" />
     <Exec Command="dotnet restore &quot;$(ProjectDir)workbench\Dluma.EditorWiki\Dluma.EditorWiki.csproj&quot; --locked-mode --nologo" />
     <Exec Command="dotnet publish &quot;$(ProjectDir)workbench\Dluma.EditorWiki\Dluma.EditorWiki.csproj&quot; -c $(Configuration) --no-restore --nologo -o &quot;$(DlumaEditorWikiOutputDir).&quot;" />
+    <RemoveDir Directories="$(DlumaEditorGitOutputDir)" />
+    <Exec Command="dotnet restore &quot;$(ProjectDir)workbench\Dluma.EditorGit\Dluma.EditorGit.csproj&quot; --locked-mode --nologo" />
+    <Exec Command="dotnet publish &quot;$(ProjectDir)workbench\Dluma.EditorGit\Dluma.EditorGit.csproj&quot; -c $(Configuration) --no-restore --nologo -o &quot;$(DlumaEditorGitOutputDir).&quot;" />
     <Exec Command="call &quot;$(ProjectDir)tools\build_nightly_launcher.bat&quot; $(Configuration) &quot;$(OutDir)nightly-helper&quot;" />
     <Copy SourceFiles="$(OutDir)nightly-helper\dluma_nightly_updater.exe" DestinationFiles="$(DlumaPackageDir)dluma_nightly_updater.exe" />
     <Copy SourceFiles="$(TargetPath)"
@@ -1269,8 +1279,8 @@
           SourceFiles="$(OutDir)dluma_lua54.dll;$(OutDir)LICENSE_LUA_5.4.8.txt;$(OutDir)dluma_discord_presence.dll"
           DestinationFolder="$(DlumaPackageDir)" />
     <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\build_content_pack.ps1&quot; -OutputPath &quot;$(DlumaContentPackPath)&quot;" />
-    <Exec Command="python &quot;$(ProjectDir)tools\build_managed_runtime.py&quot; --output-dir &quot;$(DlumaPackageDir).&quot; --managed-output &quot;$(DlumaManagedOutputDir).&quot; --quest-graph-output &quot;$(DlumaQuestGraphOutputDir).&quot; --editor-wiki-output &quot;$(DlumaEditorWikiOutputDir).&quot; --require-editor-wiki --editor-theme-output &quot;$(DlumaEditorThemeOutputDir).&quot; --catalog-hash &quot;$(ProjectDir)api\generated\dluma_api_catalog.sha256&quot; --loader-symbol-manifest &quot;$(DlumaLoaderAddressManifestPath)&quot;" />
-    <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot; --require-editor-wiki" />
+    <Exec Command="python &quot;$(ProjectDir)tools\build_managed_runtime.py&quot; --output-dir &quot;$(DlumaPackageDir).&quot; --managed-output &quot;$(DlumaManagedOutputDir).&quot; --quest-graph-output &quot;$(DlumaQuestGraphOutputDir).&quot; --editor-wiki-output &quot;$(DlumaEditorWikiOutputDir).&quot; --editor-git-output &quot;$(DlumaEditorGitOutputDir).&quot; --require-editor-wiki --require-editor-git --editor-theme-output &quot;$(DlumaEditorThemeOutputDir).&quot; --catalog-hash &quot;$(ProjectDir)api\generated\dluma_api_catalog.sha256&quot; --loader-symbol-manifest &quot;$(DlumaLoaderAddressManifestPath)&quot;" />
+    <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot; --require-editor-wiki --require-editor-git" />
     <Exec Condition="'$(Configuration)' == 'Release'" Command="python &quot;$(ProjectDir)tools\prepare_release.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --output-dir &quot;$(ProjectDir)release&quot; --refresh-workshop" />
     <Message Importance="high"
              Text="Built clean $(Configuration) package at $(DlumaPackageDir). Any enabled local deployment runs only after package and PE verification." />
@@ -1299,7 +1309,7 @@
            Text="Local deployment requires Configuration=Debug or Release and Platform=x64." />
     <Error Condition="'$(DlumaSkipPackage)' == 'true'"
            Text="Local deployment cannot run when DlumaSkipPackage=true." />
-    <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot; --require-editor-wiki" />
+    <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot; --require-editor-wiki --require-editor-git" />
     <Exec Command="python &quot;$(ProjectDir)tools\verify_pe.py&quot; &quot;$(DlumaPackageDir)$(TargetFileName)&quot;" />
     <Exec Command="python &quot;$(ProjectDir)tools\deploy_local_package.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --subscribed-dir &quot;$(DlumaSubscribedWorkshopModsDir).&quot; --devtools-dir &quot;$(DlumaDevToolsWorkshopModsDir).&quot; --built-mod &quot;$(TargetPath)&quot; --built-pak &quot;$(DlumaContentPackPath)&quot; --mod-name &quot;$(TargetFileName)&quot;"
           StandardOutputImportance="High" />

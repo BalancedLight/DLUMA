@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <RuntimeFrameworkVersion>10.0.13</RuntimeFrameworkVersion>
+    <RollForward>Disable</RollForward>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Dluma.EditorGit.Core\Dluma.EditorGit.Core.csproj" />
+    <ProjectReference Include="..\Dluma.QuestGraph.Core\Dluma.QuestGraph.Core.csproj" />
+    <Compile Include="..\Dluma.EditorWiki\LaunchOptions.cs" Link="Hosting\LaunchOptions.cs" />
+    <Compile Include="..\Dluma.EditorWiki\EditorIdentity.cs" Link="Hosting\EditorIdentity.cs" />
+    <Compile Include="..\Dluma.QuestGraph\Services\EditorThemeService.cs" Link="Hosting\EditorThemeService.cs" />
+    <Compile Include="..\Dluma.QuestGraph\Services\QuestBridgeClient.cs" Link="Hosting\QuestBridgeClient.cs" />
+    <Compile Include="..\Dluma.QuestGraph\Services\QuestBridgeClient.Restore.cs" Link="Hosting\QuestBridgeClient.Restore.cs" />
+    <Compile Include="..\Dluma.QuestGraph\Protocol\*.cs" Link="Protocol\%(Filename)%(Extension)" />
+    <Compile Include="..\Dluma.QuestGraph\IoGlobalUsings.cs" Link="IoGlobalUsings.cs" />
+    <Compile Include="..\..\build\generated\editor-theme\EditorThemeRoles.g.cs" Link="Generated\EditorThemeRoles.g.cs" />
+    <Page Include="..\..\build\generated\editor-theme\ThemeDefaults.xaml" Link="Themes\ThemeDefaults.xaml" />
+  </ItemGroup>
+  <Target Name="GenerateEditorTheme" BeforeTargets="PrepareForBuild" Condition="'$(DlumaSkipEditorThemeGeneration)' != 'true'">
+    <Exec Command="python &quot;$(MSBuildProjectDirectory)\..\..\tools\generate_editor_theme.py&quot;" />
+  </Target>
+</Project>

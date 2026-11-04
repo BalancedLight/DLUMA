@@ -3,7 +3,7 @@
 
 #include "../dlw_common.h"
 
-#define DLUMA_RUNTIME_TREE_MAX_FILES 512U
+#define DLUMA_RUNTIME_TREE_MAX_FILES 1024U
 #define DLUMA_RUNTIME_TREE_DIAGNOSTIC_CAPACITY 256U
 
 typedef struct DlumaRuntimeTreeLease {

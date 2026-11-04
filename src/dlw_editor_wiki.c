@@ -61,7 +61,9 @@ static struct {
     WCHAR config[WIKI_PATH_CAPACITY];
 } wiki;
 static UINT stop_message;
+static DWORD owned_creating_thread;
 static const WCHAR content_property[] = L"DLUMA.EditorWiki.Content.1";
+static const WCHAR owned_content_property[] = L"DLUMA.EditorDock.OwnedContent.1";
 static const BYTE factory_bytes[] = {0x48,0x8b,0xc4,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,0x48,0x81,0xec,0x80};
 static const BYTE constructor_bytes[] = {0x48,0x89,0x4c,0x24,0x08,0x57,0x48,0x83,0xec,0x30,0x48,0xc7,0x44,0x24,0x20,0xfe};
 static const BYTE show_bytes[] = {0x48,0x83,0xb9,0xc8,0x00,0x00,0x00,0x00,0x75,0x0b,0x48,0x8b,0x49,0x40};
@@ -101,14 +103,16 @@ static int __fastcall show_window(void *object, int command)
     int suppress = 0, result;
     InterlockedIncrement(&wiki.callbacks);
     __try {
-        if (!wiki.stopping && command != SW_HIDE && wiki.creating_thread != GetCurrentThreadId()) {
+        if (!wiki.stopping && command != SW_HIDE && wiki.creating_thread != GetCurrentThreadId() &&
+            owned_creating_thread != GetCurrentThreadId()) {
             __try {
                 if (object && *(void **)object == native.tips_table) {
                     HWND window = *(HWND *)((BYTE *)object + 64);
                     DWORD pid = 0;
                     if (!*(void **)((BYTE *)object + 200) && window &&
                         GetWindowThreadProcessId(window, &pid) && pid == GetCurrentProcessId())
-                        suppress = GetPropW(window, content_property) != &wiki;
+                    suppress = GetPropW(window, content_property) != &wiki &&
+                        !GetPropW(window, owned_content_property);
                 }
             } __except (EXCEPTION_EXECUTE_HANDLER) { suppress = 0; }
         }
@@ -185,6 +189,32 @@ static int native_ready(void)
     return 1;
 }
 
+int dluma_editor_wiki_admit_owned_content(HWND window, const void *tag)
+{
+    void *object;
+    HANDLE previous;
+    if (!tag || !own_thread(window) || !native_ready()) return 0;
+    object = native.permanent(window);
+    if (!accessible(object, 72U, 0) || *(void **)object != native.tips_table ||
+        *(HWND *)((BYTE *)object + 64U) != window) return 0;
+    previous = GetPropW(window, owned_content_property);
+    if (previous) return previous == tag;
+    return SetPropW(window, owned_content_property, (HANDLE)tag) != 0;
+}
+
+void dluma_editor_wiki_release_owned_content(HWND window, const void *tag)
+{
+    if (tag && own_thread(window) && GetPropW(window, owned_content_property) == tag)
+        (void)RemovePropW(window, owned_content_property);
+}
+
+int dluma_editor_wiki_admit_show_slot(void **slot, const void *original)
+{
+    if (!native_ready() || slot != native.show_slot || original != (void *)native.original_show)
+        return 0;
+    return *slot == original || (native.patched && *slot == (void *)show_window);
+}
+
 static int set_hints_replacement(int enabled)
 {
     DWORD old, ignored, writable;
@@ -223,7 +253,7 @@ static void *main_object(HWND window)
     return object;
 }
 
-static int pane_id_available(void *frame, const void *expected)
+static int pane_class_available(void *frame, unsigned int id, const void *content_class, const void *expected)
 {
     void **panes;
     unsigned int count, capacity, i;
@@ -237,13 +267,73 @@ static int pane_id_available(void *frame, const void *expected)
         for (i = 0; i < count; ++i) {
             BYTE *pane = (BYTE *)panes[i];
             if (!accessible(pane, 1264, 0)) return 0;
-            if (*(unsigned int *)(pane + 528) == WIKI_PANE_ID) {
-                if (*(void **)(pane + 1232) != &native.content_class || (expected && expected != pane)) return 0;
+            if (*(unsigned int *)(pane + 528) == id) {
+                if (*(void **)(pane + 1232) != content_class || (expected && expected != pane)) return 0;
                 found = 1;
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
     return !expected || found;
+}
+
+static int pane_id_available(void *frame, const void *expected)
+{
+    return pane_class_available(frame, WIKI_PANE_ID, &native.content_class, expected);
+}
+
+int dluma_editor_dock_show(DlumaEditorDockRef *dock, HWND main,
+    unsigned int id, const char *title, const void *tag, int visible)
+{
+    void *frame, *content, *pane, **state, *old;
+    HWND window, parent, child;
+    NativeClass *content_class;
+    if (!dock || !tag || !title || id != 0xD1A1U || !native_ready() || wiki.creating_thread || owned_creating_thread)
+        return 0;
+    frame = main_object(main);
+    if (!frame || (dock->tag && (dock->tag != tag || dock->id != id || dock->main != main))) return 0;
+    content_class = (NativeClass *)dock->native_class;
+    if (!dock->tag) {
+        *content_class = native.content_class;
+        dock->id = id; dock->main = main; dock->tag = tag;
+    }
+    if (!pane_class_available(frame, id, content_class, NULL)) return 0;
+    state = (void **)native.module_state();
+    if (!accessible(state, 4U * sizeof(void *), 1)) return 0;
+    old = state[3]; state[3] = native.resources;
+    owned_creating_thread = GetCurrentThreadId();
+    __try {
+        content = native.pane_create(frame, content_class, title, "text_line_16",
+            (int)id, WIKI_DOCK_RIGHT, 0, 0);
+    } __finally { state[3] = old; owned_creating_thread = 0; }
+    if (!accessible(content, 760U, 0)) return 0;
+    __try {
+        if (*(void **)content != native.tips_table) return 0;
+        window = *(HWND *)((BYTE *)content + 64U);
+        if (!own_thread(window) || native.permanent(window) != content ||
+            !(GetWindowLongPtrW(window, GWL_STYLE) & WS_CHILD)) return 0;
+        parent = GetParent(window);
+        if (!own_thread(parent) || GetDlgCtrlID(parent) != (int)id) return 0;
+        pane = native.permanent(parent);
+        if (!accessible(pane, 1264U, 0) || *(void **)pane != native.pane_table ||
+            *(void **)((BYTE *)pane + 1232U) != content_class ||
+            *(void **)((BYTE *)pane + 1248U) != content ||
+            (dock->content && dock->content != window)) return 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+    if (!dluma_editor_wiki_admit_owned_content(window, tag)) return 0;
+    if (!dock->content) {
+        for (child = GetWindow(window, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+            EnableWindow(child, FALSE); ShowWindow(child, SW_HIDE);
+        }
+    }
+    dock->content = window; dock->pane = parent;
+    (void)dluma_editor_ui_request_enroll(window);
+    (void)dluma_editor_ui_request_enroll(parent);
+    state[3] = native.resources;
+    __try {
+        content = native.pane_create(frame, content_class, title, "text_line_16",
+            (int)id, WIKI_DOCK_RIGHT, 0, (BYTE)!!visible);
+    } __finally { state[3] = old; }
+    return content != NULL;
 }
 
 static int tips_window(HWND window)

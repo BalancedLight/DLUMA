@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "dluma.editorgit.core": {
+        "type": "Project"
+      },
+      "dluma.questgraph.core": {
+        "type": "Project"
+      }
+    },
+    "net10.0-windows7.0/win-x64": {}
+  }
+}

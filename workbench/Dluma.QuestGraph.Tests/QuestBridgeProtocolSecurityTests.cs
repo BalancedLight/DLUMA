@@ -47,6 +47,18 @@ public sealed class QuestBridgeProtocolSecurityTests
     }
 
     [Theory]
+    [InlineData("gitContext")]
+    [InlineData("gitCommand")]
+    public void GitNotificationsRequireTheExistingAuthenticatedEnvelope(string type)
+    {
+        QuestBridgeClient.ValidateEnvelopeForSession(
+            Envelope(type, SessionToken, RequestId, new { value = 1 }), SessionToken);
+        Assert.Throws<InvalidDataException>(() =>
+            QuestBridgeClient.ValidateEnvelopeForSession(
+                Envelope(type, "cccccccccccccccccccccccccccccccc", RequestId, new { value = 1 }), SessionToken));
+    }
+
+    [Theory]
     [InlineData(1, "result", RequestId, SessionToken, true)]
     [InlineData(2, "unknown", RequestId, SessionToken, true)]
     [InlineData(2, "Result", RequestId, SessionToken, true)]

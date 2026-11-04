@@ -25,7 +25,7 @@ RUNTIME_VERSION = "10.0.13"
 API_VERSION = "1.0"
 RUNTIME_RELATIVE_ROOT = Path("dluma_runtime")
 MANIFEST_NAME = "runtime-manifest.json"
-MAXIMUM_RUNTIME_FILES = 512
+MAXIMUM_RUNTIME_FILES = 1024
 QUEST_GRAPH_ARTIFACTS = (
     "Dluma.QuestGraph.exe",
     "Dluma.QuestGraph.dll",
@@ -53,6 +53,14 @@ EDITOR_WIKI_ARTIFACTS = (
 EDITOR_THEME_ARTIFACTS = (
     "dluma_editor_theme_system.dll",
     "Dluma.EditorTheme.Framework.dll",
+)
+EDITOR_GIT_ARTIFACTS = (
+    "Dluma.EditorGit.exe",
+    "Dluma.EditorGit.dll",
+    "Dluma.EditorGit.deps.json",
+    "Dluma.EditorGit.runtimeconfig.json",
+    "Dluma.EditorGit.Core.dll",
+    "Dluma.QuestGraph.Core.dll",
 )
 
 
@@ -107,6 +115,7 @@ def collect_sources(
     editor_theme_output: Path,
     loader_symbol_manifest: Path | None = None,
     editor_wiki_output: Path | None = None,
+    editor_git_output: Path | None = None,
 ) -> list[SourceFile]:
     hostfxr = require_regular_file(
         dotnet_root / "host" / "fxr" / runtime_version / "hostfxr.dll",
@@ -241,6 +250,13 @@ def collect_sources(
                     PurePosixPath("editor-wiki") / PurePosixPath(name),
                 )
             )
+    if editor_git_output is not None:
+        editor_git_output = editor_git_output.resolve()
+        for name in EDITOR_GIT_ARTIFACTS:
+            files.append(SourceFile(
+                require_regular_file(editor_git_output / name, f"Editor Git artifact {name}"),
+                PurePosixPath("editor-git") / name,
+            ))
     for name in EDITOR_THEME_ARTIFACTS:
         files.append(
             SourceFile(
@@ -365,6 +381,7 @@ def verify_runtime(
     expected_catalog_hash: str | None = None,
     expected_runtime_version: str | None = None,
     require_editor_wiki: bool = False,
+    require_editor_git: bool = False,
 ) -> dict[str, object]:
     runtime_root = ensure_runtime_child(output_dir)
     manifest_path = runtime_root / MANIFEST_NAME
@@ -511,6 +528,14 @@ def verify_runtime(
         unexpected_wiki = sorted(path for path in expected_paths if path.startswith("editor-wiki/") and path not in wiki_paths)
         if unexpected_wiki:
             raise ValueError(f"runtime manifest has unexpected Editor Wiki files: {unexpected_wiki}")
+    git_paths = {
+        (PurePosixPath("editor-git") / artifact).as_posix().casefold()
+        for artifact in EDITOR_GIT_ARTIFACTS
+    }
+    if require_editor_git or any(path.startswith("editor-git/") for path in expected_paths):
+        missing_required.extend(sorted(git_paths - expected_paths))
+        if any(path.startswith("editor-git/") and path not in git_paths for path in expected_paths):
+            raise ValueError("runtime manifest has unexpected Editor Git files")
     if missing_required:
         raise ValueError(
             f"runtime manifest omits required files: {missing_required}"
@@ -533,6 +558,8 @@ def main() -> int:
     parser.add_argument("--quest-graph-output", type=Path)
     parser.add_argument("--editor-wiki-output", type=Path)
     parser.add_argument("--require-editor-wiki", action="store_true")
+    parser.add_argument("--editor-git-output", type=Path)
+    parser.add_argument("--require-editor-git", action="store_true")
     parser.add_argument("--editor-theme-output", type=Path)
     parser.add_argument("--prepare-runtime", action="store_true")
     parser.add_argument("--dotnet-root", type=Path)
@@ -555,6 +582,8 @@ def main() -> int:
             parser.error("--output-dir, --managed-output, --quest-graph-output and --editor-theme-output are required")
         if args.require_editor_wiki and args.editor_wiki_output is None:
             parser.error("--editor-wiki-output is required with --require-editor-wiki")
+        if args.require_editor_git and args.editor_git_output is None:
+            parser.error("--editor-git-output is required with --require-editor-git")
         sources = collect_sources(
             dotnet_root,
             args.managed_output,
@@ -563,6 +592,7 @@ def main() -> int:
             args.editor_theme_output,
             args.loader_symbol_manifest,
             args.editor_wiki_output,
+            args.editor_git_output,
         )
         manifest = build_manifest(
             sources,
@@ -576,6 +606,7 @@ def main() -> int:
                 expected_catalog_hash=manifest["catalog_sha256"],
                 expected_runtime_version=args.runtime_version,
                 require_editor_wiki=args.require_editor_wiki,
+                require_editor_git=args.require_editor_git,
             )
             action = "Verified"
         else:
@@ -586,6 +617,7 @@ def main() -> int:
                 expected_catalog_hash=manifest["catalog_sha256"],
                 expected_runtime_version=args.runtime_version,
                 require_editor_wiki=args.require_editor_wiki,
+                require_editor_git=args.require_editor_git,
             )
             action = "Built and verified"
         total_size = sum(record["size"] for record in manifest["files"])

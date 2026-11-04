@@ -11,7 +11,9 @@ extern int dluma_editor_is_main_window(HWND window, DWORD expected_process_id);
 
 #define UI_THREAD_CAPACITY 256U
 #define UI_QUEUE_CAPACITY 4096U
-#define UI_OWNER_COUNT 6U
+/* Owner IDs are contiguous and one-based. Keep storage aligned with the
+ * highest declared subscriber instead of a separate hardcoded capacity. */
+#define UI_OWNER_COUNT DLUMA_EDITOR_UI_OWNER_SOURCE_CONTROL
 #define UI_SLOT_COUNT 4U
 #define UI_SUBCLASS_ID ((UINT_PTR)0x444C5549U)
 

@@ -8,6 +8,7 @@
 #include "dlw_path_security.h"
 #include "dlw_editor_ui.h"
 #include "dlw_editor_theme.h"
+#include "dlw_editor_source_control_host.h"
 
 #include <string.h>
 
@@ -598,6 +599,7 @@ static void dluma_editor_presence_position_options_page(void)
         options->hint, 0, 14, 46, width - 28, height > 160 ? 40 : 28,
         DLUMA_EDITOR_SWP_NOZORDER | DLUMA_EDITOR_SWP_NOACTIVATE);
     dluma_editor_theme_options_layout(options->page, height > 160 ? 98 : 82);
+    dluma_editor_source_control_host_options_layout(options->page, height > 160 ? 146 : 130);
 }
 
 static void dluma_editor_presence_show_custom_page(int show)
@@ -735,7 +737,10 @@ static void dluma_editor_presence_options_clear_created(
     DlumaEditorOptionsState* options, int remove_tab)
 {
     if (!options) return;
-    if (options->page) dluma_editor_theme_options_detach(options->page);
+    if (options->page) {
+        dluma_editor_source_control_host_options_detach(options->page);
+        dluma_editor_theme_options_detach(options->page);
+    }
     if (options->page && IsWindow(options->page))
         (void)DestroyWindow(options->page);
     if (remove_tab && options->tab && IsWindow(options->tab) &&
@@ -894,6 +899,7 @@ static int dluma_editor_presence_attach_options(HWND dialog)
         return 0;
     }
     (void)dluma_editor_theme_options_attach(candidate.page, dialog, 0x6D20U);
+    (void)dluma_editor_source_control_host_options_attach(candidate.page, dialog);
     dluma_editor_presence_position_options_page();
     dluma_log_event(
         "editor_presence", "INFO", "options_tab_attached", 0);
