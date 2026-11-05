@@ -2125,11 +2125,17 @@ static int dluma_custom_menu_add_declared_assets(
     }
     for (index = 0; index < candidate->manifest.texture_def_count; ++index) {
         unsigned int prior;
+        unsigned int character;
         const char *path = candidate->manifest.texture_defs[index].source_path;
         char destination_utf8[DLUMA_MAX_WPATH * 2U];
-        if (!dluma_utf8_to_wide(path, relative, DLUMA_ARRAY_COUNT(relative)) ||
-            !dluma_custom_menu_join(source, DLUMA_ARRAY_COUNT(source),
-                                  candidate->canonical_root, relative))
+        if (!dluma_utf8_to_wide(path, relative, DLUMA_ARRAY_COUNT(relative)))
+            return 0;
+        /* Match runtime-scan destinations and Windows extended-length paths. */
+        for (character = 0; relative[character]; ++character)
+            if (relative[character] == L'/')
+                relative[character] = L'\\';
+        if (!dluma_custom_menu_join(source, DLUMA_ARRAY_COUNT(source),
+                                   candidate->canonical_root, relative))
             return 0;
         dluma_wstr_copy(destination, DLUMA_ARRAY_COUNT(destination), relative);
         if (!dluma_wide_to_utf8(destination, destination_utf8,
