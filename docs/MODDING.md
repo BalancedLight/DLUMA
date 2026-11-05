@@ -1,4 +1,13 @@
+<div align="center">
+  <img
+    src="https://github.com/user-attachments/assets/bd4a9c71-4258-4ac1-9e4d-018e259f7106"
+    alt="Creating mods header"
+    width="1200"
+  />
+  
 # Creating a DLUMA mod
+
+</div>
 
 DLUMA API 1.0 is shared by Lua, C#, C, and C++ mods. Choose the language that suits your project, then use the same catalog-defined operations, configuration, ownership, and lifecycle concepts.
 
