@@ -20,7 +20,7 @@ extern void dluma_log_line(const char *, const char *);
 
 static struct {
     volatile LONG started, stopping, callbacks;
-    DWORD thread;
+    volatile LONG thread;
     HWND main;
     HWND options_page, options_dialog, options_button;
     DlumaEditorDockRef dock;
@@ -244,7 +244,8 @@ static int close_session(void)
 static void panel_changed(const DlumaEditorPanelRef *panel, unsigned int event, unsigned int argument, void *context)
 {
     (void)panel; (void)argument; (void)context;
-    if (event == DLUMA_EDITOR_PANEL_CLOSING || event == DLUMA_EDITOR_PANEL_CHILD_EXITED)
+    if (git_ui.thread == (LONG)GetCurrentThreadId() &&
+        (event == DLUMA_EDITOR_PANEL_CLOSING || event == DLUMA_EDITOR_PANEL_CHILD_EXITED))
         (void)close_session();
 }
 
@@ -336,7 +337,17 @@ static int on_window(HWND window, unsigned int stage, UINT message, WPARAM wp, L
                 git_ui.dock.content = git_ui.dock.pane = NULL;
             }
         } else if (window == git_ui.main && stage == DLUMA_EDITOR_UI_DESTROY) {
-            (void)close_session(); git_ui.main = NULL;
+            /* The main window cannot carry retries after this callback. Complete
+             * window-owned cleanup here, then hand session retirement off. */
+            InterlockedExchange(&git_ui.stopping, 1);
+            (void)dluma_editor_git_session_detach();
+            if (git_ui.options_page) dluma_editor_source_control_host_options_detach(git_ui.options_page);
+            if (git_ui.panel.token && IsWindow(git_ui.panel.panel_window) &&
+                !dluma_editor_panel_host_close(&git_ui.panel)) __leave;
+            ZeroMemory(&git_ui.panel, sizeof(git_ui.panel));
+            git_ui.dock.content = git_ui.dock.pane = NULL;
+            git_ui.main = NULL;
+            InterlockedExchange(&git_ui.thread, 0);
         }
     } __finally { InterlockedDecrement(&git_ui.callbacks); }
     return handled;
@@ -401,18 +412,28 @@ void dluma_editor_source_control_host_options_detach(HWND page)
 
 int dluma_editor_source_control_host_stop(void)
 {
+    LONG owner;
     if (!git_ui.started) return 1;
     InterlockedExchange(&git_ui.stopping, 1);
-    if (git_ui.thread && git_ui.thread != GetCurrentThreadId()) {
+    owner = InterlockedCompareExchange(&git_ui.thread, 0, 0);
+    if (owner && owner != (LONG)GetCurrentThreadId()) {
         if (git_ui.main) (void)PostMessageW(git_ui.main, git_stop_message, 0, 0);
         return 0;
     }
+    /* Once the owner has handed off, wait for broker callbacks before touching
+     * the remaining handle-only state from the shutdown thread. */
+    if (!owner && !dluma_editor_ui_unsubscribe(DLUMA_EDITOR_UI_OWNER_SOURCE_CONTROL)) return 0;
     if (!close_session()) return 0;
-    if (git_ui.options_page) dluma_editor_source_control_host_options_detach(git_ui.options_page);
-    if (git_ui.panel.token && IsWindow(git_ui.panel.panel_window) && !dluma_editor_panel_host_close(&git_ui.panel)) return 0;
+    if (owner && git_ui.options_page) dluma_editor_source_control_host_options_detach(git_ui.options_page);
+    if (owner && git_ui.panel.token && IsWindow(git_ui.panel.panel_window) && !dluma_editor_panel_host_close(&git_ui.panel)) return 0;
     ZeroMemory(&git_ui.panel, sizeof(git_ui.panel));
-    if (git_ui.main) (void)KillTimer(git_ui.main, GIT_TIMER);
-    if (!dluma_editor_ui_unsubscribe(DLUMA_EDITOR_UI_OWNER_SOURCE_CONTROL)) return 0;
+    if (owner && git_ui.main) (void)KillTimer(git_ui.main, GIT_TIMER);
+    if (owner) {
+        git_ui.main = NULL;
+        git_ui.dock.content = git_ui.dock.pane = NULL;
+        InterlockedExchange(&git_ui.thread, 0);
+        if (!dluma_editor_ui_unsubscribe(DLUMA_EDITOR_UI_OWNER_SOURCE_CONTROL)) return 0;
+    }
     InterlockedExchange(&git_ui.started, 0); return 1;
 }
 

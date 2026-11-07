@@ -40,7 +40,8 @@ typedef struct DlumaEditorGitJobSnapshotV1 {
     DWORD companion_pid;
     DWORD active_processes;
 } DlumaEditorGitJobSnapshotV1;
-/* All entry points run on the owner thread. Open begins asynchronous admission.
+/* Entry points run on the owner thread except drained and close after detach.
+ * Open begins asynchronous admission.
  * dispatch returns 1 when consumed, setting result to 0 or -1 on failure.
  * notify queues a complete UTF-8 JSON value without blocking on pipe I/O.
  * close returns 1 only after job quiescence and final retirement; call again
@@ -49,6 +50,8 @@ int dluma_editor_git_session_open(const DlumaEditorGitSessionSpecV1 *spec);
 int dluma_editor_git_session_dispatch(HWND owner, UINT message, WPARAM wparam,
     LPARAM lparam, LRESULT *result);
 int dluma_editor_git_session_notify(const char *type, const char *json_payload);
+/* Stop and unbind on the owner thread before handing retirement to another thread. */
+int dluma_editor_git_session_detach(void);
 int dluma_editor_git_session_close(void);
 int dluma_editor_git_session_drained(void);
 int dluma_editor_git_session_job_snapshot(DlumaEditorGitJobSnapshotV1 *out);

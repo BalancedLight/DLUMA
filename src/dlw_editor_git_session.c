@@ -20,7 +20,7 @@ extern void dluma_log_pair(const char *, const char *, const char *);
 #define GIT_COUNT(a) (sizeof(a) / sizeof((a)[0]))
 
 typedef struct GitSession {
-    volatile LONG references;
+    volatile LONG references, detached;
     SRWLOCK lock;
     HWND owner;
     DWORD owner_thread, child_pid;
@@ -671,6 +671,14 @@ int dluma_editor_git_session_dispatch(HWND owner, UINT message, WPARAM wparam, L
         (uint64_t)lparam != s->serial) return 0;
     if (result) *result = 0;
     if (!wparam) { if (result) *result = -1; return 1; }
+    if (WaitForSingleObject(s->stop, 0) != WAIT_TIMEOUT) {
+        AcquireSRWLockExclusive(&s->lock);
+        if (s->pending == 1 && s->pending_serial == (uint64_t)wparam) {
+            s->pending = 0; SetEvent(s->reply);
+        }
+        ReleaseSRWLockExclusive(&s->lock);
+        return 1;
+    }
     AcquireSRWLockExclusive(&s->lock);
     if (s->pending != 1 || s->pending_serial != (uint64_t)wparam) { ReleaseSRWLockExclusive(&s->lock); return 1; }
     s->pending = 3; ReleaseSRWLockExclusive(&s->lock);
@@ -704,12 +712,25 @@ int dluma_editor_git_session_notify(const char *type, const char *json_payload)
     s->notification_type = t; s->notification_payload = p; ReleaseSRWLockExclusive(&s->lock); return 1;
 }
 
+int dluma_editor_git_session_detach(void)
+{
+    GitSession *s = g_session;
+    if (!s) return 1;
+    if (GetCurrentThreadId() != s->owner_thread) return 0;
+    if (InterlockedCompareExchange(&s->detached, 1, 0) == 0) {
+        SetEvent(s->stop); (void)dluma_editor_panel_host_unbind(&s->panel);
+        InterlockedExchange(&s->detached, 2);
+    }
+    return InterlockedCompareExchange(&s->detached, 0, 0) == 2;
+}
+
 int dluma_editor_git_session_close(void)
 {
     GitSession *s = g_session; DWORD count;
     if (!s) return 1;
-    if (GetCurrentThreadId() != s->owner_thread) return 0;
-    SetEvent(s->stop); (void)dluma_editor_panel_host_unbind(&s->panel);
+    if (GetCurrentThreadId() == s->owner_thread) {
+        if (!dluma_editor_git_session_detach()) return 0;
+    } else if (InterlockedCompareExchange(&s->detached, 0, 0) != 2) return 0;
     if (WaitForSingleObject(s->worker, 0) != WAIT_OBJECT_0 || !git_active(s, &count) || count) return 0;
     g_session = NULL; git_release(s); return 1;
 }
