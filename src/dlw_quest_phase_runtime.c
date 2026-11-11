@@ -392,7 +392,9 @@ static int dluma_quest_parse_binding(
             char kind[16];
             if (!dluma_json_string(reader, kind, DLUMA_ARRAY_COUNT(kind)))
                 return 0;
-            if (dluma_quest_text_equal(kind, "lua"))
+            if (dluma_quest_text_equal(kind, "mod"))
+                binding->runtime_kind = DLUMA_QUEST_PHASE_RUNTIME_MOD;
+            else if (dluma_quest_text_equal(kind, "lua"))
                 binding->runtime_kind = DLUMA_QUEST_PHASE_RUNTIME_LUA;
             else if (dluma_quest_text_equal(kind, "native"))
                 binding->runtime_kind = DLUMA_QUEST_PHASE_RUNTIME_NATIVE;

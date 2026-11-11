@@ -205,6 +205,7 @@
       </WrapPanel>
     </Grid>
     <Grid Grid.Row="2">
+    <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
     <DataGrid x:Name="Changes" AutoGenerateColumns="False" IsReadOnly="True"
               SelectionMode="Extended" SelectionUnit="FullRow" CanUserAddRows="False"
               Background="{DynamicResource EditorTheme.Window}" Foreground="{DynamicResource EditorTheme.Text}"
@@ -228,6 +229,13 @@
         <DataGridTextColumn Header="Message" Binding="{Binding Subject}" Width="*" />
       </DataGrid.Columns>
     </DataGrid>
+    <WrapPanel Grid.Row="1" Margin="0,4,0,0">
+      <Button Content="Staged diff" Click="OnStagedDiff" />
+      <Button Content="Working diff" Click="OnWorkingDiff" />
+      <Button Content="Close diff" Click="OnCloseDiff" />
+    </WrapPanel>
+    <TextBox x:Name="DiffText" Grid.Row="2" Visibility="Collapsed" IsReadOnly="True" AcceptsReturn="True"
+             TextWrapping="NoWrap" FontFamily="Consolas" Height="160" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
     </Grid>
     <Grid Grid.Row="3" Margin="0,8,0,0">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>

@@ -1,0 +1,6 @@
+{
+  "schema": "dluma.mod.v1", "api_version": "1.0", "id": "example.hud.assets.csharp",
+  "name": "HUD Asset Requests (C#)", "version": "1.0.0", "description": "Requests and observes HUD asset changes.",
+  "author": "DLUMA", "language": "csharp", "scope": "project", "entry": "HudAssets.dll",
+  "entry_type": "HudAssets.Mod", "load_priority": 0, "hosts": ["player"], "access": ["ui.overlay", "quest.phase.handle"]
+}

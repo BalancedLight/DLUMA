@@ -21,6 +21,8 @@ typedef struct DlumaLuaProjectExitDrain {
  * drains and retained media/provider references require separate proofs.
  * Never runs user unload handlers at a provider-retirement boundary. */
 unsigned int dluma_lua_runtime_current_map_generation(void);
+/* Copies only the active project's root on its authoritative frame. */
+int dluma_lua_runtime_copy_project_root(unsigned int map_generation,WCHAR* out,unsigned int capacity);
 int dluma_lua_runtime_revoke_local_scopes_for_exit(
     unsigned int expected_generation, DlumaLuaProjectExitDrain *out);
 int dluma_lua_runtime_revoke_local_scopes_for_exit_ex(

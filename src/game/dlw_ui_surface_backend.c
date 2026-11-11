@@ -1,6 +1,7 @@
 #include "../dlw_common.h"
 #include "../dlw_path_security.h"
 #include "dlw_hud_surface_backend.h"
+#include "dlw_hud_visibility_service.h"
 
 /* The screen and graphics bindings remain disabled until both Player routes
  * have been exercised with the live HUD and their cleanup verified. */
@@ -42,7 +43,6 @@ typedef struct SurfaceState {
     HMODULE engine, game; void *level, *root, *stock_root; int screen_id;
     uint32_t generation; unsigned char shown, orphan_scene;
     SurfaceSlot slots[SURFACE_LIMIT];
-    void *stock_elements[8]; unsigned char stock_owned[8];
     RegisterScreen reg; ScreenFn load, find_screen; FindElement find_element; GetOwner get_owner;
     GetScreenId get_id; GetScript get_script; ScreenShow show; ScreenHide hide; ScreenUnregister unregister;
     TextureCreate create_texture; TextureUpdate update_texture; TextureRelease release_texture;
@@ -54,8 +54,6 @@ static SurfaceState g_surface;
 static const char *const g_images[4] = {"I_DLUMASurface0", "I_DLUMASurface1", "I_DLUMASurface2", "I_DLUMASurface3"};
 static const char *const g_names[4] = {"dluma_surface_0", "dluma_surface_1", "dluma_surface_2", "dluma_surface_3"};
 static const char *const g_aliases[4] = {"dluma_surface_ui_0", "dluma_surface_ui_1", "dluma_surface_ui_2", "dluma_surface_ui_3"};
-static const char *const g_stock[8] = {"HudHealthIndicator", "HudStamina", "HudRadar", "HudPrimaryWeaponIndicator", "HudSecondaryWeaponIndicator", "HudWeaponSelection", "HudCrosshair", "HudReloadNotify"};
-static const uint32_t g_stock_bits[8] = {1,2,4,8,8,8,16,32};
 static SurfaceString view(const char *s) { SurfaceString result; result.data=s; result.size=(unsigned)strlen(s); result.capacity=result.size; return result; }
 static SurfaceSlot *slot(uint64_t owner, uint32_t generation) {
     unsigned i; for (i=0;i<SURFACE_LIMIT;i++) if (g_surface.slots[i].owner==owner && g_surface.slots[i].generation==generation) return &g_surface.slots[i]; return 0;
@@ -126,26 +124,7 @@ static int refresh(void) {
     return 1;
 }
 static void stock(uint32_t mask) {
-    SurfaceString name=view("HUD.xui"); int id=g_surface.lookup(g_surface.level,&name); void *root=id<0?0:g_surface.find_screen(g_surface.level,id); unsigned i;
-    if (root) {
-        void *owner=g_surface.get_owner(root); const SurfaceString *script=owner ? g_surface.get_script(owner) : 0;
-        char text[512]; const char *base; unsigned j;
-        if (!owner || g_surface.get_id(owner)!=id || !script || !script->data || !script->size || script->size>=sizeof(text)) root=0;
-        else {
-            memcpy(text,script->data,script->size); text[script->size]=0; base=text;
-            for(j=0;text[j];j++) if(text[j]=='/' || text[j]=='\\') base=text+j+1;
-            if(dluma_stricmp(base,"HUD") && dluma_stricmp(base,"HUD.xui")) root=0;
-        }
-    }
-    if (root!=g_surface.stock_root) { memset(g_surface.stock_elements,0,sizeof(g_surface.stock_elements)); memset(g_surface.stock_owned,0,sizeof(g_surface.stock_owned)); g_surface.stock_root=root; }
-    if (!root) return;
-    for(i=0;i<8;i++) {
-        SurfaceString key=view(g_stock[i]); void *item=g_surface.find_element(root,&key,1);
-        if(item!=g_surface.stock_elements[i]) { g_surface.stock_elements[i]=item; g_surface.stock_owned[i]=0; }
-        if(!item) continue;
-        if(mask & g_stock_bits[i]) { if(g_surface.is_visible(item)) { g_surface.set_visible(item,0); g_surface.stock_owned[i]=1; } }
-        else if(g_surface.stock_owned[i]) { if(!g_surface.is_visible(item)) g_surface.set_visible(item,1); g_surface.stock_owned[i]=0; }
-    }
+    dluma_hud_visibility_surface_mask(mask);
 }
 static uint32_t combined_mask(void) { uint32_t mask=0; unsigned i; if(!g_surface.shown) return 0; for(i=0;i<4;i++) if(g_surface.slots[i].owner && g_surface.slots[i].visible && g_surface.slots[i].bound) mask|=g_surface.slots[i].mask; return mask; }
 static void screen_visibility(void) {

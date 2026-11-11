@@ -1,4 +1,5 @@
 #include "RendererStreamingOwner.h"
+#include "NativeEntryUnwind.h"
 #include <cstring>
 extern "C" __declspec(dllimport) void WINAPI Sleep(DWORD);
 extern "C" __declspec(dllimport) unsigned long long WINAPI GetTickCount64();
@@ -174,54 +175,9 @@ bool VerifyInstalled(State* s)noexcept{
 bool Seal(State* s)noexcept{if(!VerifyInstalled(s)||s->active.load()||s->pending.load())return false;s->sealed=true;return true;}
 bool CopyEntryUnwind(State* s,Route route,unsigned char* output,std::size_t capacity,std::size_t* bytes)noexcept{
  if(bytes)*bytes=0;if(!s||!s->validated||Index(route)>=kRoutes||!output||!bytes)return false;
- std::uint32_t nt=0,directory=0,size=0;std::uint16_t magic=0;
- if(!Field(s,s->base,0x3C,&nt)||nt>0x100000||!Field(s,s->base,nt+24,&magic)||magic!=0x20B||
-  !Field(s,s->base,nt+24+112+24,&directory)||!Field(s,s->base,nt+24+112+28,&size)||
-  !directory||!size||size%12||size/12>65536||directory>0x48B000||size>0x48B000-directory)return false;
- struct Runtime{std::uint32_t begin,end,unwind;};Runtime entry={};const auto target=hooks[Index(route)].rva;
- std::uint32_t first=0,last=size/12;
- while(first<last){const auto middle=first+(last-first)/2;Runtime candidate={};
-  if(!Read(s,s->base+directory+12ULL*middle,&candidate,sizeof(candidate)))return false;
-  if(candidate.begin<target)first=middle+1;else last=middle;}
- // Tick's copied prologue crosses three contiguous native pdata ranges. Each
- // secondary range describes additional saves and chains to its predecessor.
- // Normalize those native actions to offsets from the original entry; do not
- // copy a chain containing RVAs relative to the renderer into the relay image.
- struct Action{unsigned char offset,slots,data[6];};Action actions[28]={};std::size_t action_count=0,code_count=0;
- Runtime previous={};const auto stolen=hooks[Index(route)].stolen;bool complete=false;
- for(unsigned segment=0;segment<4;++segment,++first){
-  if(first==size/12||!Read(s,s->base+directory+12ULL*first,&entry,sizeof(entry))||
-     entry.begin!=(segment?previous.end:target)||entry.end<=entry.begin||entry.end>0x48B000||entry.unwind>0x48B000-4)return false;
-  unsigned char header[4]={},codes[56]={};
-  if(!Read(s,s->base+entry.unwind,header,4)||header[0]!=(segment?0x21:1)||header[3]||header[2]>28)return false;
-  const std::size_t native_bytes=((static_cast<std::size_t>(header[2])+1)&~std::size_t{1})*2;
-  if(entry.unwind>0x48B000-4-native_bytes||
-     (native_bytes&&!Read(s,s->base+entry.unwind+4,codes,native_bytes)))return false;
-  if(segment){Runtime parent={};if(!Field(s,s->base,entry.unwind+4+native_bytes,&parent)||
-     parent.begin!=previous.begin||parent.end!=previous.end||parent.unwind!=previous.unwind)return false;}
-  unsigned previous_offset=256;
-  for(std::size_t code=0;code<header[2];){
-   const unsigned offset=codes[2*code],op=codes[2*code+1]&15,info=codes[2*code+1]>>4;
-   if(offset>header[1]||offset>previous_offset)return false;previous_offset=offset;
-   const unsigned slots=op==0||op==2?1:op==4?2:op==1&&info<=1?2+info:0;
-   if(!slots||code+slots>header[2])return false;
-   const auto absolute=entry.begin-target+offset;
-   if(absolute<=stolen){
-    if(action_count==28||code_count+slots>28)return false;
-    Action action={};action.offset=static_cast<unsigned char>(absolute);action.slots=static_cast<unsigned char>(slots);
-    std::memcpy(action.data,codes+2*code,2*slots);action.data[0]=action.offset;
-    std::size_t position=action_count;while(position&&actions[position-1].offset<action.offset){actions[position]=actions[position-1];--position;}
-    actions[position]=action;++action_count;code_count+=slots;
-   }
-   code+=slots;
-  }
-  if(entry.end>=target+stolen){complete=true;break;}previous=entry;
- }
- const std::size_t length=4+((code_count+1)&~std::size_t{1})*2;
- if(!complete||length>capacity)return false;
- std::memset(output,0,length);output[0]=1;output[1]=stolen;output[2]=static_cast<unsigned char>(code_count);
- std::size_t cursor=4;for(std::size_t i=0;i<action_count;++i){std::memcpy(output+cursor,actions[i].data,2*actions[i].slots);cursor+=2*actions[i].slots;}
- *bytes=length;return true;
+ const detour::EntryUnwindImage image={s->base,0x48B000,65536,s->read,s->user,false};
+ return detour::CopyEntryUnwind(image,static_cast<std::uint32_t>(hooks[Index(route)].rva),
+  hooks[Index(route)].stolen,output,capacity,bytes);
 }
 bool Enter(State* s,std::uint32_t timeout)noexcept{
  return CloseEntries(s,timeout)&&EnterNative(s);

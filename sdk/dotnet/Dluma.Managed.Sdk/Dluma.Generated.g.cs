@@ -40,6 +40,18 @@ public enum DlumaCapabilityId : uint
     UiOverlay = 42,
     /// <summary>Owner-bound RGBA HUD surfaces are available for the current game build.</summary>
     UiSurface = 43,
+    /// <summary>Authored HUD targets can be shown, hidden, and restored.</summary>
+    HudVisibility = 44,
+    /// <summary>Supported authored XUI elements can be moved to a relative position.</summary>
+    HudPosition = 45,
+    /// <summary>Supported authored XUI elements accept immediate opacity and view color changes.</summary>
+    HudVisual = 46,
+    /// <summary>A supported XUI text element can receive a localization key.</summary>
+    HudTextKey = 47,
+    /// <summary>A supported XUI timeline can start a named animation.</summary>
+    HudAnimation = 48,
+    /// <summary>A project-owned HUD document can be replaced and restored.</summary>
+    HudDocument = 49,
     /// <summary>Named radio-dialog playback is available.</summary>
     AudioRadioDialog = 50,
     /// <summary>Registered 2D and positional cue playback is available.</summary>
@@ -58,6 +70,12 @@ public enum DlumaCapabilityId : uint
     QuestsPhaseHandlers = 61,
     /// <summary>Exact-name authored ActionChain execution is available.</summary>
     ActionsChain = 70,
+    /// <summary>Named mod handlers can be registered and invoked.</summary>
+    ActionsModHandlers = 71,
+    /// <summary>The local player can request a stock infection flashback.</summary>
+    ActionsInfectionFlashback = 72,
+    /// <summary>The authored flashback texture aliases can be replaced and restored.</summary>
+    HudFlashbackTextures = 73,
     /// <summary>Typed manifest-declared mod configuration is available.</summary>
     ConfigurationMod = 80,
     /// <summary>Owner-isolated persistent scalar storage is available.</summary>
@@ -449,6 +467,87 @@ public readonly record struct DlumaHudSurfaceSuppressRequest(
     uint Mask
 );
 
+/// <summary>Registers one named handler owned by the calling mod.</summary>
+public readonly record struct DlumaModHandlerRegistrationRequest(
+    string Handler,
+    ulong CallbackId
+);
+
+/// <summary>Invokes an active mod handler with a JSON object.</summary>
+public readonly record struct DlumaModHandlerInvokeRequest(
+    string Mod,
+    string Handler,
+    string ArgumentsJson
+);
+
+/// <summary>Selects an authored HUD target.</summary>
+public readonly record struct DlumaHudVisibilityRequest(
+    string Screen,
+    string Target
+);
+
+/// <summary>Selects an authored XUI element and a relative position.</summary>
+public readonly record struct DlumaHudPositionRequest(
+    string Screen,
+    string Target,
+    DlumaVec3 Position
+);
+
+/// <summary>Selects an authored XUI element and opacity.</summary>
+public readonly record struct DlumaHudOpacityRequest(
+    string Screen,
+    string Target,
+    float Opacity
+);
+
+/// <summary>Selects an authored XUI view and RGBA color.</summary>
+public readonly record struct DlumaHudColorRequest(
+    string Screen,
+    string Target,
+    float Red,
+    float Green,
+    float Blue,
+    float Alpha
+);
+
+/// <summary>Selects an authored XUI element and a bounded name.</summary>
+public readonly record struct DlumaHudNamedRequest(
+    string Screen,
+    string Target,
+    string Name
+);
+
+/// <summary>Selects two project-owned HUD documents.</summary>
+public readonly record struct DlumaHudDocumentSwapRequest(
+    string OriginalDocument,
+    string ReplacementDocument
+);
+
+/// <summary>Returns copied state and reason for one owner-bound document request.</summary>
+public readonly record struct DlumaHudDocumentStatusResult(
+    DlumaCallResult Call,
+    ulong Token,
+    uint State,
+    uint Reason
+);
+
+/// <summary>Returns copied state and readiness for one owner-bound flashback texture request.</summary>
+public readonly record struct DlumaHudFlashbackTextureStatusResult(
+    DlumaCallResult Call,
+    ulong Token,
+    uint State,
+    uint Reason,
+    uint ReadyCount,
+    uint AssetCount
+);
+
+/// <summary>Requests eleven ordered flashback texture alias replacements.</summary>
+public readonly record struct DlumaHudFlashbackTextureRequest(
+    IReadOnlyList<string> Originals,
+    IReadOnlyList<string> Replacements,
+    uint Count
+);
+
 /// <summary>Managed facade for dluma.core.v1.</summary>
 public interface ICoreApi
 {
@@ -597,6 +696,8 @@ public interface IActionsApi
 {
     /// <summary>Runs one exact active-map ActionChain after its native authored condition succeeds.</summary>
     DlumaBoolResult ChainRun(DlumaNamedRequest request);
+    /// <summary>Requests one stock infection flashback for the current local player. Success acknowledges the request, not a rendered image. A failure after the native call may be uncertain; do not automatically retry or immediately request another effect.</summary>
+    DlumaBoolResult InfectionFlashback(DlumaNoRequest request);
 }
 
 /// <summary>Managed facade for dluma.configuration.v1.</summary>
@@ -630,6 +731,18 @@ public interface ICompanionContentApi
     DlumaCompanionEntryReadResult EntryRead(DlumaCompanionEntryReadRequest request);
 }
 
+/// <summary>Managed facade for dluma.quest_phases.v1.</summary>
+public interface IQuestPhasesApi
+{
+    /// <summary>Registers the primary callback for one handler declared by the calling mod manifest.</summary>
+    DlumaTokenResult ProviderRegister(DlumaQuestPhaseRegistrationRequest request);
+    /// <summary>Registers an observer callback for one provider and handler contract ID.</summary>
+    DlumaTokenResult ObserverRegister(DlumaQuestPhaseRegistrationRequest request);
+    /// <summary>Idempotently unregisters one quest phase token owned by the calling mod.</summary>
+    DlumaBoolResult Unregister(DlumaTokenRequest request);
+    event EventHandler<DlumaQuestPhaseEventArgs>? PhaseEntered;
+}
+
 /// <summary>Managed facade for dluma.ui.surface.v1.</summary>
 public interface IUiSurfaceApi
 {
@@ -645,6 +758,53 @@ public interface IUiSurfaceApi
     DlumaBoolResult Suppress(DlumaHudSurfaceSuppressRequest request);
     /// <summary>Releases an owned HUD surface and restores suppressed controls.</summary>
     DlumaBoolResult Release(DlumaTokenRequest request);
+}
+
+/// <summary>Managed facade for dluma.hud.v1.</summary>
+public interface IHudApi
+{
+    /// <summary>Keeps the selected HUD element visible until this owner resets it. Hide requests from any owner take precedence. Targets accept health, stamina, radar, weapons, crosshair, reload, screen, an exact authored ID, or a slash-separated path from the screen root. An empty screen selects HUD.xui. IDs and path segments are case-sensitive; ambiguous targets are rejected. Overrides expire on map changes and owner unload.</summary>
+    DlumaBoolResult Show(DlumaHudVisibilityRequest request);
+    /// <summary>Keeps the selected HUD element hidden until this owner resets it. Targets accept health, stamina, radar, weapons, crosshair, reload, screen, an exact authored ID, or a slash-separated path from the screen root. An empty screen selects HUD.xui. IDs and path segments are case-sensitive; ambiguous targets are rejected. Overrides expire on map changes and owner unload.</summary>
+    DlumaBoolResult Hide(DlumaHudVisibilityRequest request);
+    /// <summary>Removes this owner's visibility override and restores the latest visibility requested by the game. Targets accept health, stamina, radar, weapons, crosshair, reload, screen, an exact authored ID, or a slash-separated path from the screen root. An empty screen selects HUD.xui. IDs and path segments are case-sensitive; ambiguous targets are rejected. Overrides expire on map changes and owner unload.</summary>
+    DlumaBoolResult Reset(DlumaHudVisibilityRequest request);
+    /// <summary>Submits a relative-position change for one uniquely selected authored XUI element. An empty screen selects HUD.xui. Success means the native call returned; game constraints can affect the value, and later game or animation updates can change it. An internal error means the UI may have changed; do not automatically retry.</summary>
+    DlumaBoolResult SetPosition(DlumaHudPositionRequest request);
+    /// <summary>Immediately sets opacity on one uniquely selected authored XUI element. Later game or animation updates can change the value. An internal error means the UI may have changed; do not automatically retry.</summary>
+    DlumaBoolResult SetOpacity(DlumaHudOpacityRequest request);
+    /// <summary>Immediately sets RGBA color on one uniquely selected authored IUIElementView. Other element types are rejected. Later game or animation updates can change the value. An internal error means the UI may have changed; do not automatically retry.</summary>
+    DlumaBoolResult SetColor(DlumaHudColorRequest request);
+    /// <summary>Submits an ASCII localization key to one IUIText element using its existing localization callback. Success confirms submission, not that the key was found or displayed. An internal error means the UI may have changed; do not automatically retry.</summary>
+    DlumaBoolResult SetTextKey(DlumaHudNamedRequest request);
+    /// <summary>Starts an authored named animation on one IUIElementTimeLine. The identifier must be printable ASCII and match the authored name. Success confirms engine acceptance, not visible playback. An internal error means the UI may have changed; do not automatically retry.</summary>
+    DlumaBoolResult StartAnimation(DlumaHudNamedRequest request);
+    /// <summary>Requests an exclusive HUD document swap. Both files are project-relative data paths. Acceptance returns an owner-bound token; query its status to learn whether the swap was applied.</summary>
+    DlumaTokenResult SwapDocument(DlumaHudDocumentSwapRequest request);
+    /// <summary>Requests restoration of an owner-bound HUD document swap. Acknowledgment is not restoration; query the request status.</summary>
+    DlumaBoolResult RestoreDocument(DlumaTokenRequest request);
+    /// <summary>Returns an owner-bound document request. States: 1 preparing, 2 ready, 3 applying, 4 applied, 5 restoring, 6 restored, 7 failed, 8 recovery required, 9 release pending. Reasons: 0 none, 1 invalid, 2 busy, 3 unavailable, 4 source failed, 5 preflight failed, 6 scope lost, 7 load failed, 8 rollback failed, 9 release failed, 10 cancelled.</summary>
+    DlumaHudDocumentStatusResult DocumentStatus(DlumaTokenRequest request);
+    /// <summary>Cancels a queued HUD document request or requests restoration if application has begun. Query status for the outcome.</summary>
+    DlumaBoolResult CancelDocument(DlumaTokenRequest request);
+    /// <summary>Requests replacement of eleven ordered flashback texture aliases. Acceptance returns an owner-bound token; query status for readiness and restoration.</summary>
+    DlumaTokenResult SwapFlashbackTextures(DlumaHudFlashbackTextureRequest request);
+    /// <summary>Returns an owner-bound flashback texture request. States: 1 preparing, 2 ready, 3 active, 4 restoring, 5 stopped, 6 failed. Reasons: 0 none, 1 invalid, 2 not ready, 3 busy, 4 foreign, 5 stale, 6 retry. Ready means resources were prepared; it does not confirm changed pixels.</summary>
+    DlumaHudFlashbackTextureStatusResult FlashbackTextureStatus(DlumaTokenRequest request);
+    /// <summary>Requests restoration of an owner-bound flashback texture request. Acknowledgment is not restoration; query status for the outcome.</summary>
+    DlumaBoolResult RestoreFlashbackTextures(DlumaTokenRequest request);
+}
+
+/// <summary>Managed facade for dluma.mod_handlers.v1.</summary>
+public interface IModHandlersApi
+{
+    /// <summary>Registers one owner-bound named mod handler.</summary>
+    DlumaTokenResult Register(DlumaModHandlerRegistrationRequest request);
+    /// <summary>Invokes one named handler with JSON arguments and source context.</summary>
+    DlumaBoolResult Invoke(DlumaModHandlerInvokeRequest request);
+    /// <summary>Unregisters one handler owned by the calling mod.</summary>
+    DlumaBoolResult Unregister(DlumaTokenRequest request);
+    event EventHandler<DlumaModHandlerEventArgs>? Invoked;
 }
 
 /// <summary>Idiomatic owner-attributed logging over dluma.core.v1.</summary>
@@ -688,8 +848,14 @@ public interface IModContext
     IStorageApi Storage { get; }
     /// <summary>Gets the dluma.companion_content.v1 facade.</summary>
     ICompanionContentApi CompanionContent { get; }
+    /// <summary>Gets the dluma.quest_phases.v1 facade.</summary>
+    IQuestPhasesApi QuestPhases { get; }
     /// <summary>Gets the dluma.ui.surface.v1 facade.</summary>
     IUiSurfaceApi UiSurface { get; }
+    /// <summary>Gets the dluma.hud.v1 facade.</summary>
+    IHudApi Hud { get; }
+    /// <summary>Gets the dluma.mod_handlers.v1 facade.</summary>
+    IModHandlersApi ModHandlers { get; }
 }
 
 /// <summary>A generated catalog operation descriptor.</summary>
@@ -710,7 +876,7 @@ public static class DlumaApiCatalog
     /// <summary>The public DLUMA API version.</summary>
     public const string Version = "1.0";
     /// <summary>The SHA-256 of the canonical API catalog.</summary>
-    public const string Sha256 = "44F3EE6956A4112DEF065128AAA7F7E4B03AA666B3903CF2557EBC9AD7626376";
+    public const string Sha256 = "153F44193466F9658B78A8AAC9A70D96FEDBEF5622CC0A4F4B5747DA49050B01";
     /// <summary>Every public operation in stable numeric order.</summary>
     public static IReadOnlyList<DlumaOperationDescriptor> Operations { get; } =
     [
@@ -1215,6 +1381,16 @@ public static class DlumaApiCatalog
             "game",
             @"Runs one exact active-map ActionChain after its native authored condition succeeds."),
         new(
+            8002u,
+            "actions.infection_flashback",
+            "actions",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.ActionsInfectionFlashback,
+            ["world.write"],
+            ["project", "map"],
+            "game",
+            @"Requests one stock infection flashback for the current local player. Success acknowledges the request, not a rendered image. A failure after the native call may be uncertain; do not automatically retry or immediately request another effect."),
+        new(
             9001u,
             "configuration.get",
             "configuration",
@@ -1374,5 +1550,185 @@ public static class DlumaApiCatalog
             ["global", "project", "map"],
             "game",
             @"Releases an owned HUD surface and restores suppressed controls."),
+        new(
+            14001u,
+            "hud.show",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudVisibility,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Keeps the selected HUD element visible until this owner resets it. Hide requests from any owner take precedence. Targets accept health, stamina, radar, weapons, crosshair, reload, screen, an exact authored ID, or a slash-separated path from the screen root. An empty screen selects HUD.xui. IDs and path segments are case-sensitive; ambiguous targets are rejected. Overrides expire on map changes and owner unload."),
+        new(
+            14002u,
+            "hud.hide",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudVisibility,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Keeps the selected HUD element hidden until this owner resets it. Targets accept health, stamina, radar, weapons, crosshair, reload, screen, an exact authored ID, or a slash-separated path from the screen root. An empty screen selects HUD.xui. IDs and path segments are case-sensitive; ambiguous targets are rejected. Overrides expire on map changes and owner unload."),
+        new(
+            14003u,
+            "hud.reset",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudVisibility,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Removes this owner's visibility override and restores the latest visibility requested by the game. Targets accept health, stamina, radar, weapons, crosshair, reload, screen, an exact authored ID, or a slash-separated path from the screen root. An empty screen selects HUD.xui. IDs and path segments are case-sensitive; ambiguous targets are rejected. Overrides expire on map changes and owner unload."),
+        new(
+            14004u,
+            "hud.set_position",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudPosition,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Submits a relative-position change for one uniquely selected authored XUI element. An empty screen selects HUD.xui. Success means the native call returned; game constraints can affect the value, and later game or animation updates can change it. An internal error means the UI may have changed; do not automatically retry."),
+        new(
+            14005u,
+            "hud.set_opacity",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudVisual,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Immediately sets opacity on one uniquely selected authored XUI element. Later game or animation updates can change the value. An internal error means the UI may have changed; do not automatically retry."),
+        new(
+            14006u,
+            "hud.set_color",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudVisual,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Immediately sets RGBA color on one uniquely selected authored IUIElementView. Other element types are rejected. Later game or animation updates can change the value. An internal error means the UI may have changed; do not automatically retry."),
+        new(
+            14007u,
+            "hud.set_text_key",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudTextKey,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Submits an ASCII localization key to one IUIText element using its existing localization callback. Success confirms submission, not that the key was found or displayed. An internal error means the UI may have changed; do not automatically retry."),
+        new(
+            14008u,
+            "hud.start_animation",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudAnimation,
+            ["ui.overlay"],
+            ["global", "project", "map"],
+            "game",
+            @"Starts an authored named animation on one IUIElementTimeLine. The identifier must be printable ASCII and match the authored name. Success confirms engine acceptance, not visible playback. An internal error means the UI may have changed; do not automatically retry."),
+        new(
+            14009u,
+            "hud.swap_document",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudDocument,
+            ["ui.overlay"],
+            ["project", "map"],
+            "game",
+            @"Requests an exclusive HUD document swap. Both files are project-relative data paths. Acceptance returns an owner-bound token; query its status to learn whether the swap was applied."),
+        new(
+            14010u,
+            "hud.restore_document",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudDocument,
+            ["ui.overlay"],
+            ["project", "map"],
+            "game",
+            @"Requests restoration of an owner-bound HUD document swap. Acknowledgment is not restoration; query the request status."),
+        new(
+            14011u,
+            "hud.document_status",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudDocument,
+            ["ui.overlay"],
+            ["project", "map"],
+            "game",
+            @"Returns an owner-bound document request. States: 1 preparing, 2 ready, 3 applying, 4 applied, 5 restoring, 6 restored, 7 failed, 8 recovery required, 9 release pending. Reasons: 0 none, 1 invalid, 2 busy, 3 unavailable, 4 source failed, 5 preflight failed, 6 scope lost, 7 load failed, 8 rollback failed, 9 release failed, 10 cancelled."),
+        new(
+            14012u,
+            "hud.cancel_document",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudDocument,
+            ["ui.overlay"],
+            ["project", "map"],
+            "game",
+            @"Cancels a queued HUD document request or requests restoration if application has begun. Query status for the outcome."),
+        new(
+            14013u,
+            "hud.swap_flashback_textures",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudFlashbackTextures,
+            ["ui.overlay"],
+            ["project", "map"],
+            "game",
+            @"Requests replacement of eleven ordered flashback texture aliases. Acceptance returns an owner-bound token; query status for readiness and restoration."),
+        new(
+            14014u,
+            "hud.flashback_texture_status",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudFlashbackTextures,
+            ["ui.overlay"],
+            ["project", "map"],
+            "game",
+            @"Returns an owner-bound flashback texture request. States: 1 preparing, 2 ready, 3 active, 4 restoring, 5 stopped, 6 failed. Reasons: 0 none, 1 invalid, 2 not ready, 3 busy, 4 foreign, 5 stale, 6 retry. Ready means resources were prepared; it does not confirm changed pixels."),
+        new(
+            14015u,
+            "hud.restore_flashback_textures",
+            "hud",
+            DlumaOperationStatus.Gated,
+            DlumaCapabilityId.HudFlashbackTextures,
+            ["ui.overlay"],
+            ["project", "map"],
+            "game",
+            @"Requests restoration of an owner-bound flashback texture request. Acknowledgment is not restoration; query status for the outcome."),
+        new(
+            15001u,
+            "mod_handlers.register",
+            "mod_handlers",
+            DlumaOperationStatus.Implemented,
+            DlumaCapabilityId.ActionsModHandlers,
+            ["quest.phase.handle"],
+            ["global", "project", "map"],
+            "game",
+            @"Registers one owner-bound named mod handler."),
+        new(
+            15002u,
+            "mod_handlers.invoke",
+            "mod_handlers",
+            DlumaOperationStatus.Implemented,
+            DlumaCapabilityId.ActionsModHandlers,
+            ["world.write"],
+            ["global", "project", "map"],
+            "game",
+            @"Invokes one named handler with JSON arguments and source context."),
+        new(
+            15003u,
+            "mod_handlers.unregister",
+            "mod_handlers",
+            DlumaOperationStatus.Implemented,
+            DlumaCapabilityId.ActionsModHandlers,
+            [],
+            ["global", "project", "map"],
+            "game",
+            @"Unregisters one handler owned by the calling mod."),
     ];
 }

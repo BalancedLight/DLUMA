@@ -28,13 +28,14 @@ bool ProductionXuiHooksCurrent()noexcept
 {
     const HookStatusRecord* statuses[]={g_xui_manager_constructor_status,g_xui_manager_destructor_status,
         g_xui_xml_load_status,g_xui_binary_pack_load_status,g_xui_binary_file_load_status,
-        g_xui_factory_statuses[0],g_xui_factory_statuses[1],g_xui_factory_statuses[2],g_xui_factory_statuses[3]};
-    for(const auto* status:statuses){
+        g_xui_factory_statuses[0],g_xui_factory_statuses[1],g_xui_factory_statuses[2],g_xui_factory_statuses[3],g_xui_birth_status};
+    const auto count=sizeof(statuses)/sizeof(statuses[0])-(g_xui_birth_requested?0U:1U);
+    for(std::size_t status_index=0;status_index<count;++status_index){const auto* status=statuses[status_index];
         if(!status||!status->validated||!status->installed)return false;
         const HookRoute* found=nullptr;
         for(std::size_t i=0;i<g_hook_route_count;++i)if(g_hook_routes[i].owner==status){if(found)return false;found=&g_hook_routes[i];}
         unsigned char bytes[kMaximumStolenBytes]={};
-        if(!found||!found->enabled||!found->installed||!found->relay||!found->byte_count||
+        if(!found||!found->enabled||!found->installed||found->protection.pending||!found->relay||!found->byte_count||
             found->byte_count>sizeof(bytes)||!ReadBytes(found->address,bytes,found->byte_count)||
             std::memcmp(bytes,found->routing_bytes,found->byte_count))return false;
     }
@@ -78,7 +79,7 @@ public:
                 g_xui_content_owner.lost.store(true);
             else g_xui_input_frames[--g_xui_input_frame_count]=nullptr;
             const bool complete=xui_content::End(&g_xui_content_owner,&frame.load,no_input_is_native_noop,&affected);
-            const auto origin=!complete||frame.incomplete_input||!frame.load.input_count?xui_instance::Origin::UiLoadUnknown:
+            const auto origin=!complete||frame.incomplete_input||!frame.load.input_count||frame.instance_input.realm==xui_content::Realm::Unknown?xui_instance::Origin::UiLoadUnknown:
                 frame.project_input?xui_instance::Origin::UiLoadProject:
                 affected?xui_instance::Origin::UiLoadUnknown:xui_instance::Origin::UiLoadGlobal;
             (void)xui_instance::FinishLoad(&g_xui_instances,frame.load.serial,origin);
@@ -143,6 +144,7 @@ void NoteProductionXuiOpen(void* native_file,const char* native_path,void* expli
     const auto saved_error=GetLastError();
     xui_content::Input input={};auto* frame=g_xui_input_frames[g_xui_input_frame_count-1];
     bool exact=filebridge::FileIdentity(&g_native_file_bridge,reinterpret_cast<std::uintptr_t>(native_file),&input.file);
+    unsigned proof_stage=exact?1U:0U;
     if(exact){input.selected_source=input.file.source;
         if(explicit_source){files::SourceKey selected={};
             exact=filebridge::SourceIdentity(&g_native_file_bridge,reinterpret_cast<std::uintptr_t>(explicit_source),&selected)&&
@@ -150,25 +152,32 @@ void NoteProductionXuiOpen(void* native_file,const char* native_path,void* expli
                     input.selected_source.generation==selected.generation));
             if(exact)input.selected_source=selected;
         }
+        if(exact)proof_stage=2;
         if(exact&&!input.selected_source.address&&resource_provider::Matches(ProductionXuiProviderAccess(),frame->selection,
             frame->selection.load_serial,native_path))input.selected_source=frame->selection.source;
         retained::Realm realm=retained::Realm::Unknown;
-        exact=exact&&ClassifyProductionResourceSource(nullptr,input.selected_source,&realm,&input.source_epoch);
+        exact=exact&&((g_xui_observation_only&&!input.selected_source.address)||ClassifyProductionResourceSource(nullptr,input.selected_source,&realm,&input.source_epoch));
+        if(exact)proof_stage=3;
         input.realm=realm==retained::Realm::Global?xui_content::Realm::Global:
             realm==retained::Realm::Project?xui_content::Realm::Project:xui_content::Realm::Unknown;
         exact=exact&&trace::CopyReadableCString(input.path,sizeof(input.path),native_path,sizeof(input.path))==
             trace::AssetTraceStringCopyResult::Copied;
+        if(exact)proof_stage=4;
         if(exact)exact=DigestProductionXuiInput(input.file,frame->load.serial,&input);
+        if(exact)proof_stage=5;
         if(exact){files::FileRecord after={};files::SourceKey selected={};
             exact=filebridge::FileIdentity(&g_native_file_bridge,input.file.file,&after)&&
                 after.file==input.file.file&&after.generation==input.file.generation&&after.root==input.file.root&&
                 after.kind==input.file.kind&&after.life==files::Life::Live&&
                 after.source.address==input.file.source.address&&after.source.generation==input.file.source.generation&&
-                filebridge::SourceIdentity(&g_native_file_bridge,input.selected_source.address,&selected)&&
-                selected.generation==input.selected_source.generation;
+                ((g_xui_observation_only&&!input.selected_source.address)||
+                 (filebridge::SourceIdentity(&g_native_file_bridge,input.selected_source.address,&selected)&&
+                  selected.generation==input.selected_source.generation));
+            if(exact)proof_stage=6;
         }
     }
     input.complete=exact;
+    DocumentObserveInput(input,proof_stage,native_file,native_path);
     // An inner resource/XML load is also a consumed input of its enclosing UI
     // load. Copies remain values; the native file may close immediately after.
     for(std::uint32_t i=0;i<g_xui_input_frame_count;++i){auto* observing=g_xui_input_frames[i];bool seen=false;

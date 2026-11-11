@@ -11,13 +11,17 @@ public sealed record GitContextMessage(
     [property: JsonRequired] bool Enabled,
     [property: JsonRequired] bool MutationsAvailable,
     [property: JsonRequired] bool WorktreeAvailable,
-    string Message) : EditorGitPayload;
+    string Message, bool LocalWritesOnly = false, bool BranchCreateAvailable = false,
+    bool? DiagnosticFixtureOnly = null) : EditorGitPayload;
 
 public sealed record GitStateRequest(string ProjectRoot, ulong ProjectGeneration,
     string? GitExecutable = null) : EditorGitPayload;
 
 public sealed record GitProjectAcquireRequest(string ProjectRoot, ulong ProjectGeneration,
-    string Operation, string? Destination = null) : EditorGitPayload;
+    string Operation, string? Destination = null, string? ArmId = null) : EditorGitPayload;
+
+public sealed record GitProjectCancelRequest(string ProjectRoot, ulong ProjectGeneration,
+    string ArmId) : EditorGitPayload;
 
 public sealed record GitWorktreeAcquireRequest(string ProjectRoot, ulong ProjectGeneration,
     string Operation, string ProjectLeaseId) : EditorGitPayload;
@@ -32,7 +36,10 @@ public sealed record GitChildStartedResult([property: JsonRequired] bool Registe
 public sealed record GitLeaseReleaseRequest(string LeaseId) : EditorGitPayload;
 
 public sealed record GitLeaseResult([property: JsonRequired] bool Granted,
-    string? LeaseId, string Code, string Message) : EditorGitPayload;
+    string? LeaseId, string Code, string Message, string? ArmId = null) : EditorGitPayload;
+
+public sealed record GitArmCancelResult([property: JsonRequired] bool Cancelled,
+    [property: JsonRequired] bool RequiresRecovery, string Code, string Message) : EditorGitPayload;
 
 public sealed record GitLeaseReleaseResult([property: JsonRequired] bool Released,
     [property: JsonRequired] bool RequiresRecovery, string Code, string Message) : EditorGitPayload;
@@ -67,7 +74,10 @@ public static class EditorGitProtocol
                 Project(value.ProjectRoot, value.ProjectGeneration);
                 Text(value.Message, 1024, true);
                 if ((value.MutationsAvailable && !value.Enabled) ||
-                    (value.WorktreeAvailable && !value.MutationsAvailable))
+                    (value.WorktreeAvailable && !value.MutationsAvailable) ||
+                    (value.LocalWritesOnly && (!value.MutationsAvailable || value.WorktreeAvailable)) ||
+                    (value.BranchCreateAvailable && (!value.MutationsAvailable || !value.LocalWritesOnly || value.DiagnosticFixtureOnly != false)) ||
+                    (value.DiagnosticFixtureOnly == true && (!value.LocalWritesOnly || value.BranchCreateAvailable)))
                     throw new InvalidDataException("Invalid Git admission state.");
                 break;
             case GitStateRequest value:
@@ -79,6 +89,11 @@ public static class EditorGitProtocol
                 if (!IsOperation(value.Operation)) throw new InvalidDataException("Unknown Git operation.");
                 if (value.Operation == "clone") AbsolutePath(value.Destination);
                 else if (value.Destination is not null) throw new InvalidDataException("Unexpected Git destination.");
+                if (value.ArmId is not null) { Lease(value.ArmId); if (value.Operation == "clone") throw new InvalidDataException("Clone cannot reuse an arm."); }
+                break;
+            case GitProjectCancelRequest value:
+                Project(value.ProjectRoot, value.ProjectGeneration);
+                Lease(value.ArmId);
                 break;
             case GitWorktreeAcquireRequest value:
                 Project(value.ProjectRoot, value.ProjectGeneration);
@@ -102,8 +117,19 @@ public static class EditorGitProtocol
                 break;
             case GitLeaseResult value:
                 Code(value.Code); Text(value.Message, 1024, true);
-                if (value.Granted) { Lease(value.LeaseId); if (value.Code != "ok") throw new InvalidDataException("Invalid lease result."); }
-                else if (value.LeaseId is not null) throw new InvalidDataException("Unexpected lease identity.");
+                if (value.Granted) {
+                    Lease(value.LeaseId);
+                    if (value.Code != "ok" || value.ArmId is not null) throw new InvalidDataException("Invalid lease result.");
+                } else {
+                    if (value.LeaseId is not null) throw new InvalidDataException("Unexpected lease identity.");
+                    if (value.Code == "pending") Lease(value.ArmId);
+                    else if (value.ArmId is not null) throw new InvalidDataException("Unexpected arm identity.");
+                }
+                break;
+            case GitArmCancelResult value:
+                Code(value.Code); Text(value.Message, 1024, true);
+                if (value.Cancelled && (value.RequiresRecovery || value.Code != "ok"))
+                    throw new InvalidDataException("Invalid arm cancellation.");
                 break;
             case GitLeaseReleaseResult value:
                 Code(value.Code); Text(value.Message, 1024, true);

@@ -13,6 +13,7 @@ cl.exe /nologo /TP /MT /O2 /Oi- /W4 /WX /EHs-c- /GR- /std:c++17 ^
   /Fd"build\player-state-inventory-bootstrap-proof-fake\player_state_inventory_bootstrap_proof_fake_harness.pdb" ^
   /Fe"build\player-state-inventory-bootstrap-proof-fake\player_state_inventory_bootstrap_proof_fake_harness.exe" ^
   tests\player_state_inventory_bootstrap_proof_fake_harness.cpp ^
+  src\core\dlw_engine_script_bootstrap.c ^
   src\fixes\custom_map_asset_isolation\PlayerStateInventoryBootstrapProof.cpp ^
   /link /stack:8388608 kernel32.lib user32.lib || exit /b 1
 

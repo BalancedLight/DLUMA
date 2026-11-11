@@ -1,0 +1,25 @@
+sub main()
+{
+    Phase("Setup")
+    {
+        UseChatter("Load", "data/scripts/boss/dluma_boss_probe_chatters.scr", "DlumaBossProbe");
+        CallMod("probe.hud.asset-a", "shared", "{}");
+        CallMod("probe.hud.asset-b", "shared", "{}");
+        InfectionFlashback();
+        PhaseTransition() { Conditions() { TimePassed(5.0); } Target("Periodic"); }
+    }
+    Phase("Periodic")
+    {
+        DLUMAPeriodicChoiceStart("FlashTemplate", "ChatterTemplate", "FinalAmbient");
+        PhaseTransition() { Conditions() { TimePassed(70.0); } Target("Stop"); }
+    }
+    Phase("Stop")
+    {
+        DLUMAPeriodicChoiceStop();
+        UseChatter("Stop");
+        PhaseTransition() { Conditions() { TimePassed(5.0); } Target("End"); }
+    }
+    Phase("End") { DLUMAPeriodicChoiceStop(); Finish(); }
+    Phase("FlashTemplate") { InfectionFlashback(); }
+    Phase("ChatterTemplate") { UseChatter("Play", "FinalAmbient"); }
+}

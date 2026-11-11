@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Dluma.EditorGit.Core/Dluma.EditorGit.Core.csproj" />
+    <Compile Include="../Dluma.EditorGit/NativeGitSession.cs" Link="NativeGitSession.cs" />
+    <Compile Include="../Dluma.EditorGit/IEditorGitProjectGate.cs" Link="IEditorGitProjectGate.cs" />
+    <Compile Include="../Dluma.EditorGit/GitContextRefresh.cs" Link="GitContextRefresh.cs" />
+    <Compile Include="../Dluma.QuestGraph/Protocol/EditorGitProtocol.cs" Link="EditorGitProtocol.cs" />
+  </ItemGroup>
+</Project>

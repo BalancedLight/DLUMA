@@ -44,6 +44,9 @@ int dluma_editor_panel_host_bind(const DlumaEditorPanelRef *panel,
     HWND child, DWORD expected_process_id, HANDLE process);
 /* Returns the active binding generation, or zero if unbound or invalid. */
 uint64_t dluma_editor_panel_host_binding_generation(const DlumaEditorPanelRef *panel);
+/* Revalidate the currently bound child against the borrowed live process. */
+int dluma_editor_panel_host_bound_child(const DlumaEditorPanelRef *panel, DWORD expected_process_id,
+    HANDLE process, HWND *child, uint64_t *generation, uint64_t *creation_time);
 int dluma_editor_panel_host_unbind(const DlumaEditorPanelRef *panel);
 int dluma_editor_panel_host_close(const DlumaEditorPanelRef *panel);
 /* After all hosts have closed, wait for asynchronous wait cleanup to drain. */

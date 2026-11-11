@@ -1,0 +1,14 @@
+sub main()
+{
+    Phase("Run")
+    {
+        CallMod("probe.hud.asset-a", "document-missing", "{}");
+        PhaseTransition() { Conditions() { TimePassed(10.0); } Target("Reset"); }
+    }
+    Phase("Reset")
+    {
+        CallMod("probe.hud.asset-a", "reset", "{}");
+        PhaseTransition() { Conditions() { TimePassed(20.0); } Target("End"); }
+    }
+    Phase("End") { Finish(); }
+}

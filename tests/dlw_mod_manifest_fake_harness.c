@@ -16,6 +16,14 @@
     "84202AF55B7177081551F21DC0C1F17899000B6FD8D6A63B94BC38A6839701F0"
 #define COMPATIBLE_BASE_CATALOG_SHA256 \
     "D24FB8E99DCC15D803DC6C3C275F80C71218AA254E8ECF6431633A2E90EEC65A"
+#define PRIOR_HUD_CATALOG_SHA256 \
+    "04BA3325652618FE82D00847FB1DBA907B3FD27E558587DAD35CE1600F04A244"
+#define PRIOR_LIMIT_CATALOG_SHA256 \
+    "66DDFBD03AC3CE388AB89CF534257C36F396803FE12DA978133A5C6FC65BA0A6"
+#define PRIOR_UNCERTAINTY_CATALOG_SHA256 \
+    "C60DC5D283389EBBDC2AFC9376F4AD02C876E1C3087B0469426E7AD71C966840"
+#define PRIOR_ASSET_CATALOG_SHA256 \
+    "E9E5D75D05BA7402F629A9841EA0BD2BB06BBB6A369898AF726DEE1E51CB24D3"
 #define OTHER_CATALOG_SHA256 \
     "E3AAF26AA9901C38F8FED3290623FBBDEEBA71753D341D5471392FD67C174A7F"
 
@@ -139,8 +147,8 @@ static int test_quest_phase_manifest(void)
         "\"scope\":\"global\",\"entry\":\"main.dll\","
         "\"entry_type\":\"Test.Entry\",\"load_priority\":0,"
         "\"access\":[\"quest.phase.handle\"],"
-        "\"quest_phase_handlers\":[{\"id\":\"test.bad\","
-          "\"description\":\"unavailable\"}]"
+        "\"quest_phase_handlers\":[{\"id\":\"test.handler\","
+          "\"description\":\"Managed phase handler\"}]"
         "}";
     static const char editor_only[] =
         "{"
@@ -164,8 +172,9 @@ static int test_quest_phase_manifest(void)
     CHECK(strcmp(manifest.quest_phase_handlers[0].id, "test.fade") == 0);
     CHECK(strcmp(manifest.quest_phase_handlers[0].command_alias,
                  "fade-test") == 0);
-    CHECK(!parse_manifest(csharp, (unsigned int)strlen(csharp),
+    CHECK(parse_manifest(csharp, (unsigned int)strlen(csharp),
                           &manifest, &diagnostic));
+    CHECK(manifest.quest_phase_handler_count == 1U);
     CHECK(!parse_manifest(editor_only, (unsigned int)strlen(editor_only),
                           &manifest, &diagnostic));
     return 1;
@@ -382,6 +391,43 @@ static int test_catalog_compatibility_boundary(void)
     lock.artifact_capacity = 4U;
     CHECK(dluma_mod_lock_parse(scope_lock, (unsigned int)strlen(scope_lock),
                                &lock, &diagnostic) == DLUMA_STATUS_OK);
+    CHECK(lock.uses_previous_catalog == 1U);
+    CHECK(dluma_mod_lock_catalog_compatible(&lock, &manifest));
+
+    memcpy(catalog, PRIOR_HUD_CATALOG_SHA256, 64U);
+    memset(&lock, 0, sizeof(lock));
+    lock.struct_size = sizeof(lock);
+    lock.artifacts = artifacts;
+    lock.artifact_capacity = 4U;
+    CHECK(dluma_mod_lock_parse(scope_lock, (unsigned int)strlen(scope_lock),
+                               &lock, &diagnostic) == DLUMA_STATUS_OK);
+    CHECK(lock.uses_previous_catalog == 1U);
+    CHECK(dluma_mod_lock_catalog_compatible(&lock, &manifest));
+
+    memcpy(catalog, PRIOR_LIMIT_CATALOG_SHA256, 64U);
+    memset(&lock, 0, sizeof(lock));
+    lock.struct_size = sizeof(lock);
+    lock.artifacts = artifacts;
+    lock.artifact_capacity = 4U;
+    CHECK(dluma_mod_lock_parse(scope_lock, (unsigned int)strlen(scope_lock),
+                               &lock, &diagnostic) == DLUMA_STATUS_OK);
+    CHECK(lock.uses_previous_catalog == 1U);
+    CHECK(dluma_mod_lock_catalog_compatible(&lock, &manifest));
+
+    memcpy(catalog, PRIOR_UNCERTAINTY_CATALOG_SHA256, 64U);
+    memset(&lock, 0, sizeof(lock));
+    lock.struct_size = sizeof(lock);
+    lock.artifacts = artifacts;
+    lock.artifact_capacity = 4U;
+    CHECK(dluma_mod_lock_parse(scope_lock, (unsigned int)strlen(scope_lock),
+                               &lock, &diagnostic) == DLUMA_STATUS_OK);
+    CHECK(lock.uses_previous_catalog == 1U);
+    CHECK(dluma_mod_lock_catalog_compatible(&lock, &manifest));
+
+    memcpy(catalog, PRIOR_ASSET_CATALOG_SHA256, 64U);
+    memset(&lock, 0, sizeof(lock));
+    lock.struct_size = sizeof(lock); lock.artifacts = artifacts; lock.artifact_capacity = 4U;
+    CHECK(dluma_mod_lock_parse(scope_lock, (unsigned int)strlen(scope_lock), &lock, &diagnostic) == DLUMA_STATUS_OK);
     CHECK(lock.uses_previous_catalog == 1U);
     CHECK(dluma_mod_lock_catalog_compatible(&lock, &manifest));
 

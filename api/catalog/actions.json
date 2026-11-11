@@ -44,6 +44,40 @@
         "action_chain_contract",
         "action_chain_scope_gate"
       ]
+    },
+    {
+      "id": "actions.infection_flashback",
+      "ordinal": 2,
+      "status": "gated",
+      "capability": "actions.infection_flashback",
+      "access": [
+        "world.write"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaNoRequest",
+      "result": "DlumaBoolResult",
+      "limits": {},
+      "errors": [
+        "access_denied",
+        "scope_denied",
+        "unsupported_capability",
+        "wrong_thread"
+      ],
+      "documentation": "Requests one stock infection flashback for the current local player. Success acknowledges the request, not a rendered image. A failure after the native call may be uncertain; do not automatically retry or immediately request another effect.",
+      "adapters": {
+        "core": "dluma_game_actions_infection_flashback",
+        "lua": "dluma.actions.infection_flashback",
+        "csharp": "IModContext.Actions.InfectionFlashback",
+        "c": "DlumaActionsV1.infection_flashback",
+        "cpp": "context.actions().infection_flashback"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
     }
   ]
 }

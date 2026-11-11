@@ -2,6 +2,7 @@
 #include "dlw_editor_source_control.h"
 #include "dlw_editor_theme_profile.h"
 #include "dlw_log.h"
+#include "dlw_editor_git_policy.inc"
 
 #if defined(_MSC_VER)
 void* _ReturnAddress(void);
@@ -11,8 +12,8 @@ void* _ReturnAddress(void);
 #define SOURCE_CONTROL_CALLER() __builtin_return_address(0)
 #endif
 
-#define SC_EDITOR_GLOBAL 0x01B70238U
-#define SC_EDITOR_TABLE 0x01504F98U
+#define SC_EDITOR_GLOBAL GIT_POLICY_EDITOR_GLOBAL
+#define SC_EDITOR_TABLE GIT_POLICY_EDITOR_TABLE
 #define SC_GETTER_SLOT 0x01505840U
 #define SC_GETTER_TARGET 0x00098570U
 #define SC_EDITOR_INIT_SLOT 0x01505228U
@@ -22,8 +23,8 @@ void* _ReturnAddress(void);
 #define SC_INIT_TARGET 0x000E0940U
 #define SC_DELETE_TARGET 0x000E0840U
 #define SC_FACTORY_RETURN 0x00075F06U
-#define SC_PROVIDER_OFFSET 0x24B0U
-#define SC_LEGACY_OFFSET 0x1057U
+#define SC_PROVIDER_OFFSET GIT_POLICY_PROVIDER_OFFSET
+#define SC_LEGACY_OFFSET GIT_POLICY_LEGACY_OFFSET
 #define SC_PROVIDER_BYTES 384U
 
 typedef void* (__fastcall *ScDeleteFn)(void*, unsigned char);
@@ -437,4 +438,147 @@ int dluma_editor_source_control_callbacks_drained(void)
 unsigned int dluma_editor_source_control_blocked_count(void)
 {
     return (unsigned int)dluma_atomic_compare_exchange(&sc.blocked, 0, 0);
+}
+
+/* Dormant Options command-map guard. This internal transaction accepts only
+ * explicitly supplied cells and is not connected to Editor startup. The
+ * caller's freshness assertion is a prerequisite, not evidence that a native
+ * handler pointer was never fetched before publication. */
+typedef void (__fastcall *ScOptionsHandler)(void *);
+typedef struct ScOptionsMapEntry {
+    unsigned int message, code, first_id, last_id;
+    uint64_t signature;
+    PVOID volatile target;
+} ScOptionsMapEntry;
+static struct {
+    volatile LONG state, active;
+    DWORD owner_thread;
+    uint64_t epoch, next_epoch;
+    unsigned int armed, stopped;
+    ScOptionsMapEntry *main_entry, *anims_entry;
+    ScOwnedSlot main_slot, anims_slot;
+} sg;
+
+static int sc_options_entry_valid(const ScOptionsMapEntry *entry,
+    unsigned int id, void *expected)
+{
+    if (sizeof(*entry) != 32U || !sc_aligned(entry) ||
+        !sc_access(entry, sizeof(*entry), 0)) return 0;
+    __try {
+        return entry->message == WM_COMMAND && entry->code == 0U &&
+            entry->first_id == id && entry->last_id == id && entry->signature == 0x39U &&
+            entry->target == expected;
+    } __except (1) { return 0; }
+}
+
+static void sc_options_invoke(ScOptionsHandler original, void *object)
+{
+    int forward;
+    sc_lock();
+    forward = !sg.armed || sg.stopped;
+    if (forward) dluma_atomic_increment(&sg.active);
+    sc_unlock();
+    if (!forward) return;
+    __try { original(object); }
+    __finally { dluma_atomic_decrement(&sg.active); }
+}
+
+static void __fastcall sc_options_main(void *object)
+{ sc_options_invoke((ScOptionsHandler)sg.main_slot.original, object); }
+static void __fastcall sc_options_anims(void *object)
+{ sc_options_invoke((ScOptionsHandler)sg.anims_slot.original, object); }
+
+static int sc_options_owned(void)
+{
+    return sg.main_entry && sg.anims_entry &&
+        sc_options_entry_valid(sg.main_entry, 0x8061U, (void *)sc_options_main) &&
+        sc_options_entry_valid(sg.anims_entry, 3100U, (void *)sc_options_anims);
+}
+
+static int sc_options_install_cells(ScOptionsMapEntry *main_entry, ScOptionsMapEntry *anims_entry,
+    void *main_original, void *anims_original, int startup_fresh)
+{
+    HMODULE pinned = 0;
+    int main_restored, anims_restored;
+    if (!startup_fresh || !main_original || !anims_original || main_entry == anims_entry ||
+        !sc_options_entry_valid(main_entry, 0x8061U, main_original) ||
+        !sc_options_entry_valid(anims_entry, 3100U, anims_original) ||
+        dluma_atomic_compare_exchange(&sg.state, 1, 0) != 0) return 0;
+    sg.owner_thread = GetCurrentThreadId();
+    sg.main_entry = main_entry; sg.anims_entry = anims_entry;
+    sg.main_slot.address = (PVOID volatile *)&main_entry->target;
+    sg.main_slot.original = main_original; sg.main_slot.replacement = (void *)sc_options_main;
+    sg.anims_slot.address = (PVOID volatile *)&anims_entry->target;
+    sg.anims_slot.original = anims_original; sg.anims_slot.replacement = (void *)sc_options_anims;
+    if (!GetModuleHandleExW(0x00000005U, (LPCWSTR)(const void *)sc_options_main, &pinned)) {
+        dluma_atomic_exchange(&sg.state, 0); return 0;
+    }
+    if (sc_exchange(&sg.main_slot, main_original, sg.main_slot.replacement) &&
+        sc_exchange(&sg.anims_slot, anims_original, sg.anims_slot.replacement) && sc_options_owned()) {
+        dluma_atomic_exchange(&sg.state, 2); return 1;
+    }
+    /* Once publication was attempted, a fetched wrapper can survive rollback.
+     * Keep state/code pinned and never reuse it in this process. */
+    anims_restored = sc_restore(&sg.anims_slot);
+    main_restored = sc_restore(&sg.main_slot);
+    (void)anims_restored; (void)main_restored;
+    dluma_atomic_exchange(&sg.state, -1);
+    return 0;
+}
+
+static uint64_t sc_options_arm(void)
+{
+    uint64_t epoch = 0;
+    if (GetCurrentThreadId() != sg.owner_thread) return 0;
+    sc_lock();
+    if (sg.state == 2 && !sg.stopped && !sg.armed && sg.next_epoch != UINT64_MAX && sc_options_owned()) {
+        epoch = ++sg.next_epoch; sg.epoch = epoch; sg.armed = 1U;
+    }
+    sc_unlock();
+    return epoch;
+}
+
+static int sc_options_arm_ready(uint64_t epoch)
+{
+    int ready;
+    if (GetCurrentThreadId() != sg.owner_thread) return 0;
+    sc_lock();
+    ready = epoch && sg.state == 2 && !sg.stopped && sg.armed && sg.epoch == epoch &&
+        dluma_atomic_compare_exchange(&sg.active, 0, 0) == 0 && sc_options_owned();
+    sc_unlock();
+    return ready;
+}
+
+static int sc_options_disarm(uint64_t epoch)
+{
+    int result = 0;
+    if (GetCurrentThreadId() != sg.owner_thread) return 0;
+    sc_lock();
+    if (epoch && sg.state == 2 && !sg.stopped && sg.armed && sg.epoch == epoch &&
+        dluma_atomic_compare_exchange(&sg.active, 0, 0) == 0 && sc_options_owned()) {
+        sg.armed = 0; sg.epoch = 0; result = 1;
+    }
+    sc_unlock();
+    return result;
+}
+
+static int sc_options_stop(void)
+{
+    int main_restored, anims_restored;
+    if (GetCurrentThreadId() != sg.owner_thread) return 0;
+    sc_lock();
+    if (sg.armed || dluma_atomic_compare_exchange(&sg.active, 0, 0) != 0) { sc_unlock(); return 0; }
+    sg.stopped = 1;
+    sc_unlock();
+    anims_restored = sc_restore(&sg.anims_slot);
+    main_restored = sc_restore(&sg.main_slot);
+    dluma_atomic_exchange(&sg.state, -1);
+    return main_restored && anims_restored;
+}
+
+/* Read-only synthetic/profile helper; a production owner must separately
+ * qualify startup, object lifetime, writer coverage and cached pointers. */
+static int sc_options_read_off(void **editor_global, void *expected_table, DWORD owner_thread)
+{
+    return git_policy_read_off(editor_global, expected_table, owner_thread, NULL, NULL);
 }

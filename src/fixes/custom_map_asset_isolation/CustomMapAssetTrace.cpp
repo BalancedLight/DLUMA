@@ -1046,6 +1046,11 @@ void Initialize(const AssetTracePlatform* platform) noexcept
     Reset();
 }
 
+bool Initialized() noexcept
+{
+    return g_platform.read_qpc && g_platform.read_thread_id && g_platform.is_readable;
+}
+
 void Reset() noexcept
 {
     std::memset(&g_queue, 0, sizeof(g_queue));

@@ -15,6 +15,7 @@ typedef struct ResultBuffers {
     char code[64];
     char message[256];
 } ResultBuffers;
+static DlumaStatus forced_status;
 
 static uint32_t fake_thread_id(void* user)
 {
@@ -43,6 +44,7 @@ static DlumaStatus fake_invoke(
     (void)request_size;
     (void)result_size;
     ++backend->invoke_count;
+    if (forced_status != DLUMA_STATUS_OK) return forced_status;
     switch (operation_id) {
     case 1001U:
         ++backend->log_count;
@@ -334,6 +336,35 @@ int main(void)
         "native_owner_initializes");
 
     test_global_player_tuning_policy(&native_runtime, &fake);
+
+    {
+        const uint32_t operations[] = {14004U,14005U,14006U,14007U,14008U};
+        const uint32_t caps[] = {DLUMA_CAPABILITY_HUD_POSITION,DLUMA_CAPABILITY_HUD_VISUAL,
+            DLUMA_CAPABILITY_HUD_VISUAL,DLUMA_CAPABILITY_HUD_TEXT_KEY,DLUMA_CAPABILITY_HUD_ANIMATION};
+        const size_t sizes[] = {sizeof(DlumaHudPositionRequest),sizeof(DlumaHudOpacityRequest),
+            sizeof(DlumaHudColorRequest),sizeof(DlumaHudNamedRequest),sizeof(DlumaHudNamedRequest)};
+        union { DlumaHudPositionRequest position; DlumaHudOpacityRequest opacity;
+            DlumaHudColorRequest color; DlumaHudNamedRequest named; } request;
+        DlumaBoolResult result; unsigned i;
+        native_owner.access_ids[native_owner.access_count++]=DLUMA_ACCESS_UI_OVERLAY;
+        for(i=0;i<5;i++) {
+            DlumaStringView ready={"ready",5U};
+            check(dluma_capability_registry_set(&native_caps,caps[i],1,1,ready)==DLUMA_STATUS_OK,"xui_error_capability_ready");
+            memset(&request,0,sizeof(request)); request.position.struct_size=(uint32_t)sizes[i]; request.position.struct_version=1U;
+            init_error(&error); INIT_RESULT(result,error); forced_status=DLUMA_STATUS_INTERNAL_ERROR;
+            check(dluma_api_runtime_invoke(&native_runtime,operations[i],&request,(uint32_t)sizes[i],&result,sizeof(result))==DLUMA_STATUS_INTERNAL_ERROR &&
+                !error.error.retryable && !strcmp(error.code,"xui_result_uncertain") && strstr(error.message,"do not automatically retry")!=0,
+                "xui_internal_error_reports_uncertain_nonretryable");
+        }
+        memset(&request,0,sizeof(request)); request.position.struct_size=sizeof(DlumaHudPositionRequest); request.position.struct_version=1U;
+        forced_status=DLUMA_STATUS_UNAVAILABLE; init_error(&error); INIT_RESULT(result,error);
+        check(dluma_api_runtime_invoke(&native_runtime,14004U,&request,sizeof(DlumaHudPositionRequest),&result,sizeof(result))==DLUMA_STATUS_UNAVAILABLE &&
+            error.error.retryable && !strcmp(error.code,"unsupported_capability"),"xui_pre_entry_unavailable_remains_retryable");
+        forced_status=DLUMA_STATUS_INTERNAL_ERROR; init_error(&error);
+        check(call_world_find(&native_runtime,"Sensor",6U,&native_object,&error)==DLUMA_STATUS_INTERNAL_ERROR &&
+            !error.error.retryable && !strcmp(error.code,"internal_error"),"non_xui_internal_error_unchanged");
+        forced_status=DLUMA_STATUS_OK; --native_owner.access_count;
+    }
 
     init_error(&error);
     lua_status = call_world_find(

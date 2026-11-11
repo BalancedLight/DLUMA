@@ -3,8 +3,11 @@
 #include "dlw_internal_hook_attestation.h"
 #include "dlw_path_security.h"
 #include "bindings/dlw_player_actor_binding.h"
+#include "core/dlw_infection_request.h"
 #include "game/dlw_media_service.h"
 #include "dlw_lua_project_exit.h"
+#include "dlw_dual_host_runtime.h"
+#include "dlw_isolation_startup.h"
 
 #define DLUMA_DL_ENGINE_TIMESTAMP 0x623395D0UL
 #define DLUMA_DL_ENGINE_IMAGE_SIZE 0x00E8D000UL
@@ -4123,6 +4126,204 @@ int dluma_player_actor_binding_read_vitals(DlumaPlayerVitalsSnapshot* snapshot)
     return valid;
 }
 
+/* CBC7 Player evidence: original leaf/factory d5894c4a..., controller
+ * constructor/RTTI ownership1bc01c6a.... This invokes stock behavior once. */
+#define DLUMA_DL_INFECTION_EXECUTE_RVA 0x00A9ABD0UL
+#define DLUMA_DL_INFECTION_CONTROLLER_VTABLE_RVA 0x018098A8UL
+#define DLUMA_DL_INFECTION_LOOK_VTABLE_RVA 0x018099C8UL
+#define DLUMA_DL_INFECTION_CONTROLLER_TYPE_RVA 0x01CDEA80UL
+/* A loader-frame token and repeated owner reads do not pin native actors.
+ * Keep mutation closed until the native caller/teardown serialization boundary
+ * is qualified; SDK callback drain alone does not delay original destruction. */
+#define DLUMA_DL_INFECTION_LIFETIME_VERIFIED 0
+
+/* Shared exact-image authority for early metadata-only probing and later media
+ * binding. No native game function or live actor lookup is invoked here. */
+static int dluma_player_actor_exact_modules(HMODULE original, HMODULE player,
+    HMODULE engine, HMODULE game, HMODULE filesystem, HMODULE fmod,
+    DWORD* engine_size, DWORD* game_size, DWORD* fmod_size)
+{
+    DWORD timestamp = 0, size = 0;
+    *engine_size = *game_size = *fmod_size = 0;
+    if (!original || original != game ||
+        !dluma_player_media_module_sha256(player, 8ULL * 1024ULL * 1024ULL, g_dluma_player_media_player_sha256) ||
+        !dluma_player_media_module_sha256(engine, 32ULL * 1024ULL * 1024ULL, g_dluma_player_media_engine_sha256) ||
+        !dluma_player_media_module_sha256(game, 64ULL * 1024ULL * 1024ULL, g_dluma_player_media_gamedll_sha256) ||
+        !dluma_player_media_module_sha256(filesystem, 16ULL * 1024ULL * 1024ULL, g_dluma_player_media_filesystem_sha256) ||
+        !dluma_player_media_module_sha256(fmod, 16ULL * 1024ULL * 1024ULL, g_dluma_player_media_fmod_sha256) ||
+        !dluma_player_media_pe_identity(engine, &timestamp, &size) ||
+        timestamp != DLUMA_DL_ENGINE_TIMESTAMP || size != DLUMA_DL_ENGINE_IMAGE_SIZE) return 0;
+    *engine_size = size;
+    if (!dluma_player_media_pe_identity(game, &timestamp, &size) ||
+        timestamp != DLUMA_DL_GAMEDLL_TIMESTAMP || size != DLUMA_DL_GAMEDLL_IMAGE_SIZE) return 0;
+    *game_size = size;
+    if (!dluma_player_media_pe_identity(fmod, &timestamp, &size)) return 0;
+    *fmod_size = size; return 1;
+}
+
+int dluma_player_actor_binding_probe_cold_profile(uintptr_t original_module,
+    DlumaPlayerActorColdProfile* out)
+{
+    DWORD engine_size = 0, game_size = 0, fmod_size = 0;
+    HMODULE game = GetModuleHandleW(L"gamedll_x64_rwdi.dll");
+    const DlumaDualHostRuntimeSnapshot* host = dluma_dual_host_runtime_snapshot();
+    if (!out) return 0;
+    memset(out, 0, sizeof(*out));
+    if (!host || !host->initialized || !host->classification.exact_profile ||
+        host->classification.forwarding_only ||
+        (host->classification.kind != DLUMA_HOST_PLAYER_STANDALONE &&
+         host->classification.kind != DLUMA_HOST_PLAYER_EDITOR_PLAYTEST) ||
+        !dluma_player_actor_exact_modules((HMODULE)original_module, GetModuleHandleW(0),
+            GetModuleHandleW(L"engine_x64_rwdi.dll"), game,
+            GetModuleHandleW(L"filesystem_x64_rwdi.dll"), GetModuleHandleW(L"fmodex64.dll"),
+            &engine_size, &game_size, &fmod_size)) return 0;
+    out->gamedll_base = (uintptr_t)game; out->gamedll_size = game_size;
+    out->engine_base = (uintptr_t)GetModuleHandleW(L"engine_x64_rwdi.dll");
+    out->engine_size = engine_size; return 1;
+}
+
+static int dluma_player_actor_read_cold_engine(void* user,uintptr_t address,void* output,size_t bytes)
+{
+    const DlumaPlayerActorColdProfile* profile=user; uintptr_t offset;
+    if(!profile||!output||!bytes||address<profile->engine_base)return 0;
+    offset=address-profile->engine_base;
+    if(offset>profile->engine_size||bytes>profile->engine_size-offset||
+        !dluma_is_readable((const void*)address,bytes))return 0;
+    memcpy(output,(const void*)address,bytes);return 1;
+}
+
+int dluma_player_actor_binding_probe_cold_startup(uintptr_t original_module,
+    int before_original_initializer,DlumaEngineScriptBootstrapResult* result)
+{
+    DlumaPlayerActorColdProfile profile={0};DlumaIsolationScriptEntryObservation observed={0};
+    DlumaEngineScriptBootstrapInput input={0};
+    if(!result)return 0;
+    memset(result,0,sizeof(*result));
+    if(!before_original_initializer){result->failure=DLUMA_EBS_NOT_BEFORE_INITIALIZER;return 0;}
+    if(!dluma_player_actor_binding_probe_cold_profile(original_module,&profile)){
+        result->failure=DLUMA_EBS_UNSUPPORTED_IMAGE;return 0;
+    }
+    if(!dluma_isolation_snapshot_script_entry(&observed)){
+        result->failure=DLUMA_EBS_CALLER_MISMATCH;return 0;
+    }
+    input.engine_base=profile.engine_base;input.proxy_initializer=(uintptr_t)observed.callback_address;
+    input.actual_return_address=(uintptr_t)observed.return_address;
+    input.entry_thread=observed.thread_id;input.current_thread=GetCurrentThreadId();
+    input.exact_engine_profile=1;input.before_original_initializer=before_original_initializer;
+    input.read_memory=&dluma_player_actor_read_cold_engine;input.user=&profile;
+    return dluma_engine_script_bootstrap_entered(&input,result);
+}
+
+int dluma_player_actor_binding_infection_flashback_ready(void)
+{
+    static const BYTE execute[] = {
+        0x48,0x8B,0x05,0xB1,0xD3,0x26,0x01,0x48,0x8B,0x80,0x08,0x05,0,0,
+        0x48,0x85,0xC0,0x74,0x2B,0x48,0x8B,0x80,0xB8,0,0,0,0x48,0x85,
+        0xC0,0x74,0x1F,0x48,0x83,0x78,0x50,0,0x74,0x18,0x48,0x8B,0x50,
+        0x58,0x48,0x85,0xD2,0x74,0x0F,0x48,0x8B,0x82,0xD8,0x0C,0,0,
+        0x48,0x85,0xC0,0x74,0x03,0xFF,0x40,0x2C,0xC6,0x41,0x08,0x01,0xC3
+    };
+    DlumaPlayerMediaPlayerProfile* profile = &g_dluma_player_media_player;
+    const DlumaDualHostRuntimeSnapshot* host = dluma_dual_host_runtime_snapshot();
+    /* The fail-closed build gate can fold the guarded expression to zero. */
+    (void)profile;
+    (void)host;
+    return DLUMA_DL_INFECTION_LIFETIME_VERIFIED && host && host->initialized && host->classification.exact_profile &&
+        !host->classification.forwarding_only &&
+        (host->classification.kind == DLUMA_HOST_PLAYER_STANDALONE ||
+         host->classification.kind == DLUMA_HOST_PLAYER_EDITOR_PLAYTEST) &&
+        profile->exact_profile && profile->startup_session_ready &&
+        dluma_player_media_prefix_matches(profile->gamedll, profile->gamedll_size,
+            DLUMA_DL_INFECTION_EXECUTE_RVA, execute, sizeof(execute));
+}
+
+static int dluma_player_actor_infection_counter_writable(const void* counter)
+{
+    MEMORY_BASIC_INFORMATION info;
+    SIZE_T offset;
+    if (!counter || VirtualQuery(counter, &info, sizeof(info)) != sizeof(info) ||
+        info.State != MEM_COMMIT || (info.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
+        (info.Protect & 0xFFU) != PAGE_READWRITE) return 0;
+    offset = (SIZE_T)((const BYTE*)counter - (const BYTE*)info.BaseAddress);
+    return offset < info.RegionSize && sizeof(uint32_t) <= info.RegionSize - offset;
+}
+
+static int dluma_player_actor_capture_infection_frame(void* user, DlumaInfectionFrame* out)
+{
+    DlumaPlayerMediaPlayerProfile* profile = user;
+    DlumaInfectionFrame frame = {0};
+    void *level = 0, *player = 0, *receiver;
+    BYTE *game, *session, *logical, *controller;
+    ULONG_PTR level_vtable = 0;
+    char map[512];
+    int valid = 0;
+    if (!out) return 0;
+    memset(out, 0, sizeof(*out));
+    if (profile != &g_dluma_player_media_player ||
+        !dluma_engine_game_frame_dispatch_active_on_current_thread(&g_dluma.engine) ||
+        !dluma_player_actor_binding_infection_flashback_ready()) return 0;
+    receiver = dluma_engine_game_frame_route_subobject(&g_dluma.engine);
+    frame.frame_token = dluma_engine_game_frame_route_token(&g_dluma.engine);
+    if (!receiver || !frame.frame_token) return 0;
+    __try {
+        if (!dluma_engine_query_session_level_identity(&g_dluma.engine, map, sizeof(map),
+                &level, &level_vtable) ||
+            !dluma_player_media_adapter_query_local_player_for_frame(receiver, level, &player))
+            __leave;
+        /* Reuse existing global GameDI/session and local PlayerDI authorities;
+         * only corroborate the additional chain read by the exact stock leaf. */
+        game = *(BYTE**)((BYTE*)profile->gamedll + DLUMA_DL_GAMEDI_GLOBAL_RVA);
+        if (!game || !dluma_is_readable(game + DLUMA_DL_GAMEDI_SESSION_OFFSET, sizeof(void*)))
+            __leave;
+        session = *(BYTE**)(game + DLUMA_DL_GAMEDI_SESSION_OFFSET);
+        if (!session || !dluma_is_readable(session + 184U, sizeof(void*))) __leave;
+        logical = *(BYTE**)(session + 184U);
+        if (!logical || !dluma_is_readable(logical + 80U, 2U * sizeof(void*)) ||
+            !*(void**)(logical + 80U) || *(void**)(logical + 88U) != player ||
+            !dluma_is_readable((BYTE*)player + 3288U, sizeof(void*))) __leave;
+        controller = *(BYTE**)((BYTE*)player + 3288U);
+        if (!controller || !dluma_is_readable(controller, 48U) ||
+            *(void**)controller != (BYTE*)profile->gamedll + DLUMA_DL_INFECTION_CONTROLLER_VTABLE_RVA ||
+            *(void**)(controller + 24U) != (BYTE*)profile->gamedll + DLUMA_DL_INFECTION_LOOK_VTABLE_RVA ||
+            *(uint32_t*)(controller + 20U) != 35U ||
+            !dluma_player_media_validate_live_rtti_object(profile->gamedll, profile->gamedll_size,
+                controller, DLUMA_DL_INFECTION_CONTROLLER_TYPE_RVA, ".?AVInfectionController@@") ||
+            !dluma_player_actor_infection_counter_writable(controller + 44U)) __leave;
+        frame.game = (uintptr_t)game; frame.session = (uintptr_t)session;
+        frame.logical = (uintptr_t)logical; frame.membership = (uintptr_t)*(void**)(logical + 80U);
+        frame.player = (uintptr_t)player; frame.controller = (uintptr_t)controller;
+        frame.level = (uintptr_t)level; frame.level_vtable = level_vtable;
+        frame.frame_receiver = (uintptr_t)receiver;
+        frame.counter = *(volatile uint32_t*)(controller + 44U);
+        valid = 1;
+    } __except (1) { valid = 0; }
+    if (valid) *out = frame;
+    return valid;
+}
+
+static int dluma_player_actor_invoke_infection_original(void* user, void* instruction, size_t size)
+{
+    typedef uintptr_t (__fastcall *DlumaInfectionExecuteFn)(void*);
+    DlumaPlayerMediaPlayerProfile* profile = user;
+    int called = 0;
+    if (profile != &g_dluma_player_media_player || !instruction || size != 24U ||
+        !dluma_engine_game_frame_dispatch_active_on_current_thread(&g_dluma.engine) ||
+        !dluma_player_actor_binding_infection_flashback_ready()) return 0;
+    __try {
+        (void)((DlumaInfectionExecuteFn)((BYTE*)profile->gamedll +
+            DLUMA_DL_INFECTION_EXECUTE_RVA))(instruction);
+        called = 1;
+    } __except (1) { called = 0; }
+    return called;
+}
+
+DlumaPlayerInfectionRequestResult dluma_player_actor_binding_request_infection_flashback(void)
+{
+    DlumaInfectionRequestDriver driver = {&g_dluma_player_media_player,
+        dluma_player_actor_capture_infection_frame, dluma_player_actor_invoke_infection_original};
+    return dluma_infection_request_perform(&driver);
+}
+
 static int dluma_player_media_validate_car_buggy(
     DlumaPlayerMediaPlayerProfile* profile, void* buggy)
 {
@@ -4759,8 +4960,6 @@ void dluma_player_media_adapter_bind(
 {
     DlumaPlayerMediaPlayerProfile* profile =
         &g_dluma_player_media_player;
-    DWORD timestamp = 0;
-    DWORD image_size = 0;
     unsigned char was_logged = profile->logged;
     unsigned int i;
     if (profile->published_frontend_owner_level ||
@@ -4797,40 +4996,10 @@ void dluma_player_media_adapter_bind(
         GetModuleHandleW(L"filesystem_x64_rwdi.dll");
     profile->fmod = GetModuleHandleW(L"fmodex64.dll");
     profile->game_script_manager = game_script_manager;
-    profile->exact_profile =
-        original_gamedll && original_gamedll == profile->gamedll &&
-        dluma_player_media_module_sha256(
-            profile->player, 8ULL * 1024ULL * 1024ULL,
-            g_dluma_player_media_player_sha256) &&
-        dluma_player_media_module_sha256(
-            profile->engine, 32ULL * 1024ULL * 1024ULL,
-            g_dluma_player_media_engine_sha256) &&
-        dluma_player_media_module_sha256(
-            profile->gamedll, 64ULL * 1024ULL * 1024ULL,
-            g_dluma_player_media_gamedll_sha256) &&
-        dluma_player_media_module_sha256(
-            profile->filesystem, 16ULL * 1024ULL * 1024ULL,
-            g_dluma_player_media_filesystem_sha256) &&
-        dluma_player_media_module_sha256(
-            profile->fmod, 16ULL * 1024ULL * 1024ULL,
-            g_dluma_player_media_fmod_sha256) &&
-        dluma_player_media_pe_identity(
-            profile->engine, &timestamp, &image_size) &&
-        timestamp == DLUMA_DL_ENGINE_TIMESTAMP &&
-        image_size == DLUMA_DL_ENGINE_IMAGE_SIZE;
-    profile->engine_size = image_size;
-    if (profile->exact_profile) {
-        profile->exact_profile = dluma_player_media_pe_identity(
-            profile->gamedll, &timestamp, &image_size) &&
-            timestamp == DLUMA_DL_GAMEDLL_TIMESTAMP &&
-            image_size == DLUMA_DL_GAMEDLL_IMAGE_SIZE;
-        profile->gamedll_size = image_size;
-    }
-    if (profile->exact_profile) {
-        profile->exact_profile = (unsigned char)dluma_player_media_pe_identity(
-            profile->fmod, &timestamp, &image_size);
-        profile->fmod_size = image_size;
-    }
+    profile->exact_profile = (unsigned char)dluma_player_actor_exact_modules(
+        original_gamedll, profile->player, profile->engine, profile->gamedll,
+        profile->filesystem, profile->fmod, &profile->engine_size,
+        &profile->gamedll_size, &profile->fmod_size);
     if (profile->exact_profile) {
         profile->local_buggy_ready =
             (unsigned char)dluma_player_media_bind_local_buggy(profile);

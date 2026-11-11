@@ -516,6 +516,34 @@ uint64_t dluma_editor_panel_host_binding_generation(const DlumaEditorPanelRef *r
     panel_release(p);
     return result;
 }
+int dluma_editor_panel_host_bound_child(const DlumaEditorPanelRef *ref, DWORD expected_process_id,
+    HANDLE process, HWND *child, uint64_t *generation, uint64_t *creation_time)
+{
+    PanelState *p = find_panel(ref);
+    FILETIME a, b, exited, kernel, user;
+    ULARGE_INTEGER created;
+    DWORD pid = 0;
+    int valid = 0;
+    if (child) *child = NULL;
+    if (generation) *generation = 0;
+    if (creation_time) *creation_time = 0;
+    if (!p) return 0;
+    if (child && generation && creation_time && p->wait && p->child && p->child_pid == expected_process_id &&
+        p->binding_generation && p->wait->generation == p->binding_generation && process &&
+        GetProcessId(process) == expected_process_id && GetProcessId(p->wait->process) == expected_process_id &&
+        WaitForSingleObject(process, 0) == WAIT_TIMEOUT && WaitForSingleObject(p->wait->process, 0) == WAIT_TIMEOUT &&
+        GetProcessTimes(process, &a, &exited, &kernel, &user) &&
+        GetProcessTimes(p->wait->process, &b, &exited, &kernel, &user) &&
+        a.dwLowDateTime == b.dwLowDateTime && a.dwHighDateTime == b.dwHighDateTime &&
+        IsWindow(p->child) && (GetWindowLongPtrW(p->child, GWL_STYLE) & WS_CHILD) &&
+        GetParent(p->child) == p->ref.content_window && GetWindowThreadProcessId(p->child, &pid) &&
+        pid == expected_process_id) {
+        created.LowPart = a.dwLowDateTime; created.HighPart = a.dwHighDateTime;
+        *child = p->child; *generation = p->binding_generation; *creation_time = created.QuadPart; valid = 1;
+    }
+    panel_release(p);
+    return valid;
+}
 int dluma_editor_panel_host_callbacks_drained(void)
 {
     return InterlockedCompareExchange(&pending_waits, 0, 0) == 0;

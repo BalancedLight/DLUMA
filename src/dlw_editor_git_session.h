@@ -52,6 +52,9 @@ int dluma_editor_git_session_dispatch(HWND owner, UINT message, WPARAM wparam,
 int dluma_editor_git_session_notify(const char *type, const char *json_payload);
 /* Stop and unbind on the owner thread before handing retirement to another thread. */
 int dluma_editor_git_session_detach(void);
+/* Nonblocking owner-thread emergency cancellation; affects only the owned job.
+ * A successful call does not imply job quiescence or repository consistency. */
+int dluma_editor_git_session_abort(void);
 int dluma_editor_git_session_close(void);
 int dluma_editor_git_session_drained(void);
 int dluma_editor_git_session_job_snapshot(DlumaEditorGitJobSnapshotV1 *out);

@@ -1,0 +1,29 @@
+sub main()
+{
+    Phase("Run")
+    {
+        CallMod("probe.hud.asset-a", "document", "{}");
+        PhaseTransition() { Conditions() { TimePassed(1.0); } Target("Busy"); }
+    }
+    Phase("Busy")
+    {
+        CallMod("probe.hud.asset-a", "document", "{}");
+        PhaseTransition() { Conditions() { TimePassed(1.0); } Target("Interrupt"); }
+    }
+    Phase("Interrupt")
+    {
+        CallMod("probe.hud.asset-a", "reset", "{}");
+        PhaseTransition() { Conditions() { TimePassed(20.0); } Target("Repeat"); }
+    }
+    Phase("Repeat")
+    {
+        CallMod("probe.hud.asset-a", "document", "{}");
+        PhaseTransition() { Conditions() { TimePassed(1.0); } Target("FinalReset"); }
+    }
+    Phase("FinalReset")
+    {
+        CallMod("probe.hud.asset-a", "reset", "{}");
+        PhaseTransition() { Conditions() { TimePassed(20.0); } Target("End"); }
+    }
+    Phase("End") { Finish(); }
+}

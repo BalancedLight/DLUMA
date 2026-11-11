@@ -189,6 +189,119 @@ internal unsafe struct NativeBootstrapApiV1
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeExtendedEventV1
+{
+    internal NativeEventV1 Base;
+    internal NativeQuestPhaseEventV1* QuestPhase;
+    internal NativeModHandlerEventV1* ModHandler;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeModHandlerEventV1
+{
+    internal uint StructSize, StructVersion, SourceKind, MapGeneration;
+    internal ulong CallbackId, Token;
+    internal NativeStringView SourceMod, QuestId, PhaseId, Provider, Handler, ArgumentsJson;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeQuestPhaseEventV1
+{
+    internal uint StructSize, StructVersion, Kind, MapGeneration;
+    internal ulong CallbackId, Token, Sequence;
+    internal uint RuntimeKind, Completion, LocalPeer, Reserved;
+    internal double WaitSeconds;
+    internal NativeStringView QuestId, PhaseId, ContractId, Provider, Handler, BindingHash, ArgumentsJson;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHandlerRegistrationRequest
+{
+    internal uint StructSize, StructVersion;
+    internal NativeStringView Handler;
+    internal ulong CallbackId;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHandlerInvokeRequest
+{
+    internal uint StructSize, StructVersion;
+    internal NativeStringView Mod, Handler, ArgumentsJson;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHudVisibilityRequest
+{
+    internal uint StructSize, StructVersion;
+    internal NativeStringView Screen, Target;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHudPositionRequest
+{
+    internal uint StructSize, StructVersion;
+    internal NativeStringView Screen, Target;
+    internal NativeVec3 Position;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHudOpacityRequest
+{
+    internal uint StructSize, StructVersion;
+    internal NativeStringView Screen, Target;
+    internal float Opacity;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHudColorRequest
+{
+    internal uint StructSize, StructVersion;
+    internal NativeStringView Screen, Target;
+    internal float Red, Green, Blue, Alpha;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHudNamedRequest
+{
+    internal uint StructSize, StructVersion;
+    internal NativeStringView Screen, Target, Name;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHudDocumentSwapRequest
+{
+    internal uint StructSize, StructVersion;
+    internal NativeStringView OriginalDocument, ReplacementDocument;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHudAssetStatusResult
+{
+    internal uint StructSize, StructVersion;
+    internal NativeCall Call;
+    internal ulong Token;
+    internal uint State, Reason;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHudTextureStatusResult
+{
+    internal uint StructSize, StructVersion;
+    internal NativeCall Call;
+    internal ulong Token;
+    internal uint State, Reason, ReadyCount, AssetCount;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHudTextureRequest
+{
+    internal uint StructSize, StructVersion;
+    internal NativeStringView* Originals;
+    internal NativeStringView* Replacements;
+    internal uint Count;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal struct NativeObjectHandle
 {
     internal ulong OwnerId;

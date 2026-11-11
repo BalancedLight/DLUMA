@@ -1,0 +1,600 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "hud",
+  "service": {
+    "id": "dluma.hud.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "hud.show",
+      "ordinal": 1,
+      "status": "gated",
+      "capability": "hud.visibility",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudVisibilityRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "target_bytes": 383,
+        "screen_bytes": 127,
+        "active_rules": 88,
+        "tree_elements": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Keeps the selected HUD element visible until this owner resets it. Hide requests from any owner take precedence. Targets accept health, stamina, radar, weapons, crosshair, reload, screen, an exact authored ID, or a slash-separated path from the screen root. An empty screen selects HUD.xui. IDs and path segments are case-sensitive; ambiguous targets are rejected. Overrides expire on map changes and owner unload.",
+      "adapters": {
+        "core": "dluma_game_hud_show",
+        "lua": "dluma.hud.show",
+        "csharp": "IModContext.Hud.Show",
+        "c": "DlumaHudV1.show",
+        "cpp": "context.hud().show"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.hide",
+      "ordinal": 2,
+      "status": "gated",
+      "capability": "hud.visibility",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudVisibilityRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "target_bytes": 383,
+        "screen_bytes": 127,
+        "active_rules": 88,
+        "tree_elements": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Keeps the selected HUD element hidden until this owner resets it. Targets accept health, stamina, radar, weapons, crosshair, reload, screen, an exact authored ID, or a slash-separated path from the screen root. An empty screen selects HUD.xui. IDs and path segments are case-sensitive; ambiguous targets are rejected. Overrides expire on map changes and owner unload.",
+      "adapters": {
+        "core": "dluma_game_hud_hide",
+        "lua": "dluma.hud.hide",
+        "csharp": "IModContext.Hud.Hide",
+        "c": "DlumaHudV1.hide",
+        "cpp": "context.hud().hide"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.reset",
+      "ordinal": 3,
+      "status": "gated",
+      "capability": "hud.visibility",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudVisibilityRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "target_bytes": 383,
+        "screen_bytes": 127,
+        "active_rules": 88,
+        "tree_elements": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Removes this owner's visibility override and restores the latest visibility requested by the game. Targets accept health, stamina, radar, weapons, crosshair, reload, screen, an exact authored ID, or a slash-separated path from the screen root. An empty screen selects HUD.xui. IDs and path segments are case-sensitive; ambiguous targets are rejected. Overrides expire on map changes and owner unload.",
+      "adapters": {
+        "core": "dluma_game_hud_reset",
+        "lua": "dluma.hud.reset",
+        "csharp": "IModContext.Hud.Reset",
+        "c": "DlumaHudV1.reset",
+        "cpp": "context.hud().reset"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.set_position",
+      "ordinal": 4,
+      "status": "gated",
+      "capability": "hud.position",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudPositionRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "target_bytes": 383,
+        "screen_bytes": 127,
+        "tree_elements": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Submits a relative-position change for one uniquely selected authored XUI element. An empty screen selects HUD.xui. Success means the native call returned; game constraints can affect the value, and later game or animation updates can change it. An internal error means the UI may have changed; do not automatically retry.",
+      "adapters": {
+        "core": "dluma_game_hud_set_position",
+        "lua": "dluma.hud.set_position",
+        "csharp": "IModContext.Hud.SetPosition",
+        "c": "DlumaHudV1.set_position",
+        "cpp": "context.hud().set_position"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.set_opacity",
+      "ordinal": 5,
+      "status": "gated",
+      "capability": "hud.visual",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudOpacityRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "target_bytes": 383,
+        "screen_bytes": 127,
+        "tree_elements": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Immediately sets opacity on one uniquely selected authored XUI element. Later game or animation updates can change the value. An internal error means the UI may have changed; do not automatically retry.",
+      "adapters": {
+        "core": "dluma_game_hud_set_opacity",
+        "lua": "dluma.hud.set_opacity",
+        "csharp": "IModContext.Hud.SetOpacity",
+        "c": "DlumaHudV1.set_opacity",
+        "cpp": "context.hud().set_opacity"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.set_color",
+      "ordinal": 6,
+      "status": "gated",
+      "capability": "hud.visual",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudColorRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "target_bytes": 383,
+        "screen_bytes": 127,
+        "tree_elements": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Immediately sets RGBA color on one uniquely selected authored IUIElementView. Other element types are rejected. Later game or animation updates can change the value. An internal error means the UI may have changed; do not automatically retry.",
+      "adapters": {
+        "core": "dluma_game_hud_set_color",
+        "lua": "dluma.hud.set_color",
+        "csharp": "IModContext.Hud.SetColor",
+        "c": "DlumaHudV1.set_color",
+        "cpp": "context.hud().set_color"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.set_text_key",
+      "ordinal": 7,
+      "status": "gated",
+      "capability": "hud.text_key",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudNamedRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "target_bytes": 383,
+        "screen_bytes": 127,
+        "name_bytes": 127,
+        "tree_elements": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Submits an ASCII localization key to one IUIText element using its existing localization callback. Success confirms submission, not that the key was found or displayed. An internal error means the UI may have changed; do not automatically retry.",
+      "adapters": {
+        "core": "dluma_game_hud_set_text_key",
+        "lua": "dluma.hud.set_text_key",
+        "csharp": "IModContext.Hud.SetTextKey",
+        "c": "DlumaHudV1.set_text_key",
+        "cpp": "context.hud().set_text_key"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.start_animation",
+      "ordinal": 8,
+      "status": "gated",
+      "capability": "hud.animation",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudNamedRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "target_bytes": 383,
+        "screen_bytes": 127,
+        "name_bytes": 127,
+        "tree_elements": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Starts an authored named animation on one IUIElementTimeLine. The identifier must be printable ASCII and match the authored name. Success confirms engine acceptance, not visible playback. An internal error means the UI may have changed; do not automatically retry.",
+      "adapters": {
+        "core": "dluma_game_hud_start_animation",
+        "lua": "dluma.hud.start_animation",
+        "csharp": "IModContext.Hud.StartAnimation",
+        "c": "DlumaHudV1.start_animation",
+        "cpp": "context.hud().start_animation"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.swap_document",
+      "ordinal": 9,
+      "status": "gated",
+      "capability": "hud.document",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudDocumentSwapRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "path_bytes": 2047
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Requests an exclusive HUD document swap. Both files are project-relative data paths. Acceptance returns an owner-bound token; query its status to learn whether the swap was applied.",
+      "adapters": {
+        "core": "dluma_game_hud_swap_document",
+        "lua": "dluma.hud.swap_document",
+        "csharp": "IModContext.Hud.SwapDocument",
+        "c": "DlumaHudV1.swap_document",
+        "cpp": "context.hud().swap_document"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.restore_document",
+      "ordinal": 10,
+      "status": "gated",
+      "capability": "hud.document",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaBoolResult",
+      "limits": {},
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Requests restoration of an owner-bound HUD document swap. Acknowledgment is not restoration; query the request status.",
+      "adapters": {
+        "core": "dluma_game_hud_restore_document",
+        "lua": "dluma.hud.restore_document",
+        "csharp": "IModContext.Hud.RestoreDocument",
+        "c": "DlumaHudV1.restore_document",
+        "cpp": "context.hud().restore_document"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.document_status",
+      "ordinal": 11,
+      "status": "gated",
+      "capability": "hud.document",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaHudDocumentStatusResult",
+      "limits": {},
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Returns an owner-bound document request. States: 1 preparing, 2 ready, 3 applying, 4 applied, 5 restoring, 6 restored, 7 failed, 8 recovery required, 9 release pending. Reasons: 0 none, 1 invalid, 2 busy, 3 unavailable, 4 source failed, 5 preflight failed, 6 scope lost, 7 load failed, 8 rollback failed, 9 release failed, 10 cancelled.",
+      "adapters": {
+        "core": "dluma_game_hud_document_status",
+        "lua": "dluma.hud.document_status",
+        "csharp": "IModContext.Hud.DocumentStatus",
+        "c": "DlumaHudV1.document_status",
+        "cpp": "context.hud().document_status"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.cancel_document",
+      "ordinal": 12,
+      "status": "gated",
+      "capability": "hud.document",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaBoolResult",
+      "limits": {},
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Cancels a queued HUD document request or requests restoration if application has begun. Query status for the outcome.",
+      "adapters": {
+        "core": "dluma_game_hud_cancel_document",
+        "lua": "dluma.hud.cancel_document",
+        "csharp": "IModContext.Hud.CancelDocument",
+        "c": "DlumaHudV1.cancel_document",
+        "cpp": "context.hud().cancel_document"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.swap_flashback_textures",
+      "ordinal": 13,
+      "status": "gated",
+      "capability": "hud.flashback_textures",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaHudFlashbackTextureRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "pairs": 11,
+        "alias_bytes": 127
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Requests replacement of eleven ordered flashback texture aliases. Acceptance returns an owner-bound token; query status for readiness and restoration.",
+      "adapters": {
+        "core": "dluma_game_hud_swap_flashback_textures",
+        "lua": "dluma.hud.swap_flashback_textures",
+        "csharp": "IModContext.Hud.SwapFlashbackTextures",
+        "c": "DlumaHudV1.swap_flashback_textures",
+        "cpp": "context.hud().swap_flashback_textures"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.flashback_texture_status",
+      "ordinal": 14,
+      "status": "gated",
+      "capability": "hud.flashback_textures",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaHudFlashbackTextureStatusResult",
+      "limits": {},
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Returns an owner-bound flashback texture request. States: 1 preparing, 2 ready, 3 active, 4 restoring, 5 stopped, 6 failed. Reasons: 0 none, 1 invalid, 2 not ready, 3 busy, 4 foreign, 5 stale, 6 retry. Ready means resources were prepared; it does not confirm changed pixels.",
+      "adapters": {
+        "core": "dluma_game_hud_flashback_texture_status",
+        "lua": "dluma.hud.flashback_texture_status",
+        "csharp": "IModContext.Hud.FlashbackTextureStatus",
+        "c": "DlumaHudV1.flashback_texture_status",
+        "cpp": "context.hud().flashback_texture_status"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "hud.restore_flashback_textures",
+      "ordinal": 15,
+      "status": "gated",
+      "capability": "hud.flashback_textures",
+      "access": [
+        "ui.overlay"
+      ],
+      "scopes": [
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaBoolResult",
+      "limits": {},
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "unsupported_capability",
+        "wrong_thread",
+        "not_found",
+        "limit_exceeded"
+      ],
+      "documentation": "Requests restoration of an owner-bound flashback texture request. Acknowledgment is not restoration; query status for the outcome.",
+      "adapters": {
+        "core": "dluma_game_hud_restore_flashback_textures",
+        "lua": "dluma.hud.restore_flashback_textures",
+        "csharp": "IModContext.Hud.RestoreFlashbackTextures",
+        "c": "DlumaHudV1.restore_flashback_textures",
+        "cpp": "context.hud().restore_flashback_textures"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    }
+  ]
+}

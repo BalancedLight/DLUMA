@@ -1,0 +1,2 @@
+,call-mod <<hide_radar>> -mod=<<example.hud.lua>> -handler=<<hide-radar>> -arguments=<<{"reason":"encounter"}>> -wait=0
+,call-mod <<restore_radar>> -mod=<<example.hud.lua>> -handler=<<restore-radar>> -arguments=<<{}>> -wait=0

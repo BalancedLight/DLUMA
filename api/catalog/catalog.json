@@ -20,7 +20,9 @@
     "storage",
     "companion_content",
     "quest_phases",
-    "ui_surface"
+    "ui_surface",
+    "hud",
+    "mod_handlers"
   ],
   "status_values": [
     "implemented",

@@ -1694,9 +1694,13 @@ static int dluma_helper_set_field_view(
     return 1;
 }
 
+static int dluma_helper_set_optional_view(lua_State* state, const char* field,
+    DlumaLua54ByteView value, size_t maximum);
+
 static int dluma_helper_push_quest_phase(
     lua_State* state,
-    const DlumaLua54QuestPhaseEvent* phase)
+    const DlumaLua54QuestPhaseEvent* phase,
+    int shared_context)
 {
     int table_index;
     if (!phase || phase->struct_size < sizeof(*phase) || phase->reserved ||
@@ -1704,22 +1708,23 @@ static int dluma_helper_push_quest_phase(
         (phase->runtime_kind != 1u && phase->runtime_kind != 2u) ||
         (phase->completion != 1u && phase->completion != 2u) ||
         !isfinite(phase->wait_seconds) || phase->wait_seconds < 0.0 ||
-        phase->wait_seconds > 86400.0 || !phase->local_peer)
+        phase->wait_seconds > 86400.0 || !phase->local_peer ||
+        (shared_context && phase->binding_hash.size))
         return 0;
     lua_newtable(state);
     table_index = lua_absindex(state, -1);
-    if (!dluma_helper_set_field_view(
-            state, "quest_id", phase->quest_id, 127u) ||
-        !dluma_helper_set_field_view(
-            state, "phase_id", phase->phase_id, 127u) ||
+    if (!(shared_context ? dluma_helper_set_optional_view(state, "quest_id", phase->quest_id, 127U)
+                        : dluma_helper_set_field_view(state, "quest_id", phase->quest_id, 127U)) ||
+        !(shared_context ? dluma_helper_set_optional_view(state, "phase_id", phase->phase_id, 127U)
+                        : dluma_helper_set_field_view(state, "phase_id", phase->phase_id, 127U)) ||
         !dluma_helper_set_field_view(
             state, "contract_id", phase->contract_id, 256u) ||
         !dluma_helper_set_field_view(
             state, "provider", phase->provider, 127u) ||
         !dluma_helper_set_field_view(
             state, "handler", phase->handler, 127u) ||
-        !dluma_helper_set_field_view(
-            state, "binding_hash", phase->binding_hash, 64u)) {
+        !(shared_context ? dluma_helper_set_optional_view(state, "binding_hash", phase->binding_hash, 64U)
+                        : dluma_helper_set_field_view(state, "binding_hash", phase->binding_hash, 64U))) {
         lua_pop(state, 1);
         return 0;
     }
@@ -1738,6 +1743,44 @@ static int dluma_helper_push_quest_phase(
         return 0;
     }
     lua_setfield(state, table_index, "arguments");
+    dluma_helper_make_readonly(state);
+    return 1;
+}
+
+static int dluma_helper_set_optional_view(lua_State* state, const char* field,
+    DlumaLua54ByteView value, size_t maximum)
+{
+    if (value.size) return dluma_helper_set_field_view(state, field, value, maximum);
+    lua_pushliteral(state, "");
+    lua_setfield(state, -2, field);
+    return 1;
+}
+
+static int dluma_helper_push_mod_handler(lua_State* state, const DlumaLua54Event* event)
+{
+    const DlumaLua54QuestPhaseEvent* payload;
+    if (!event || event->kind != DLUMA_LUA54_EVENT_MOD_HANDLER ||
+        !event->map_generation || event->handler_source_kind < 1U ||
+        event->handler_source_kind > 3U) return 0;
+    payload = &event->quest_phase;
+    if (payload->struct_size < sizeof(*payload) || payload->reserved ||
+        payload->map_generation != event->map_generation) return 0;
+    lua_newtable(state);
+    if (!dluma_helper_set_field_view(state, "provider", payload->provider, 127U) ||
+        !dluma_helper_set_field_view(state, "handler", payload->handler, 127U) ||
+        !dluma_helper_set_optional_view(state, "quest_id", payload->quest_id, 511U) ||
+        !dluma_helper_set_optional_view(state, "phase_id", payload->phase_id, 127U) ||
+        !dluma_helper_set_optional_view(state, "source_mod", event->handler_source_mod, 127U)) {
+        lua_pop(state, 1);
+        return 0;
+    }
+    lua_pushinteger(state, event->handler_source_kind); lua_setfield(state, -2, "source_kind");
+    lua_pushinteger(state, event->map_generation); lua_setfield(state, -2, "map_generation");
+    if (!dluma_helper_push_json_arguments(state, payload->arguments_json)) {
+        lua_pop(state, 1);
+        return 0;
+    }
+    lua_setfield(state, -2, "arguments");
     dluma_helper_make_readonly(state);
     return 1;
 }
@@ -2206,7 +2249,8 @@ static int dluma_helper_call_quest_phase_ref(
     DlumaHelperScript* script,
     int ref,
     const char* callback_name,
-    const DlumaLua54QuestPhaseEvent* phase)
+    const DlumaLua54QuestPhaseEvent* phase,
+    const DlumaLua54Event* event)
 {
     lua_State* state;
     int stack_top;
@@ -2224,7 +2268,14 @@ static int dluma_helper_call_quest_phase_ref(
         return 0;
     }
     dluma_helper_push_context(state, script);
-    if (!dluma_helper_push_quest_phase(state, phase)) {
+    if (event && event->kind == DLUMA_LUA54_EVENT_MOD_HANDLER) {
+        if (!dluma_helper_push_mod_handler(state, event)) {
+            lua_settop(state, stack_top);
+            dluma_helper_record_error(script, callback_name, "mod handler payload is invalid");
+            return 0;
+        }
+    } else if (!dluma_helper_push_quest_phase(state, phase,
+            event && event->state == DLUMA_LUA54_QUEST_PHASE_SHARED_CONTEXT)) {
         lua_settop(state, stack_top);
         dluma_helper_record_error(
             script, callback_name,
@@ -2801,12 +2852,14 @@ static int dluma_helper_register_callback(lua_State* state)
                 kind == DLUMA_LUA54_EVENT_SENSOR_LEAVE ||
                 kind == DLUMA_LUA54_EVENT_INTERACT_BEGIN ||
                 kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
-                kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER;
+                kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER ||
+                kind == DLUMA_LUA54_EVENT_MOD_HANDLER;
     int native_backed = kind == DLUMA_LUA54_EVENT_SENSOR_ENTER ||
                         kind == DLUMA_LUA54_EVENT_SENSOR_LEAVE ||
                         kind == DLUMA_LUA54_EVENT_INTERACT_BEGIN ||
                         kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
-                        kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER;
+                        kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER ||
+                        kind == DLUMA_LUA54_EVENT_MOD_HANDLER;
     const char* key = "";
     int callback_index = keyed ? 3 : 2;
     uint32_t i;
@@ -2817,6 +2870,7 @@ static int dluma_helper_register_callback(lua_State* state)
             ? "events.interact" :
         kind == DLUMA_LUA54_EVENT_ENEMY_KILLED
             ? "events.enemy_killed" :
+        kind == DLUMA_LUA54_EVENT_MOD_HANDLER ? "actions.mod_handlers" :
         (kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
          kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER)
             ? "quests.phase_handlers" : "lua.runtime";
@@ -3027,6 +3081,9 @@ static int dluma_helper_mod(lua_State* state)
         state, -1, "handle_quest_phase", script,
         DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER,
         DLUMA_LUA54_CAP_QUEST_PHASE_HANDLERS,
+        DLUMA_LUA54_PERMISSION_QUEST_PHASE_HANDLE);
+    dluma_helper_set_mod_method(state, -1, "handle", script,
+        DLUMA_LUA54_EVENT_MOD_HANDLER, 0,
         DLUMA_LUA54_PERMISSION_QUEST_PHASE_HANDLE);
     dluma_helper_set_mod_method(
         state, -1, "observe_quest_phase", script,
@@ -4431,6 +4488,207 @@ static int dluma_helper_audio_play_radio_dialog(lua_State* state)
     return 1;
 }
 
+static int dluma_helper_mod_handler_invoke(lua_State* state)
+{
+    DlumaHelperScript* script = dluma_helper_from_upvalue(state, 1);
+    DlumaModHandlerInvokeRequest request;
+    DlumaBoolResult result;
+    DlumaLua54Error error;
+    size_t length;
+    const char* value;
+    if (!dluma_helper_check_gate(state, script, 0, DLUMA_LUA54_PERMISSION_WORLD_WRITE,
+            "actions.mod_handlers", "world.write")) return 2;
+    if (!script || !script->host.api_invoke)
+        return dluma_helper_public_api_unavailable(state, "actions.mod_handlers", "world.write");
+    memset(&request, 0, sizeof(request)); request.struct_size = sizeof(request); request.struct_version = 1U;
+    value = luaL_checklstring(state, 1, &length);
+    dluma_helper_init_audio_string(&request.mod, value, length);
+    value = luaL_checklstring(state, 2, &length);
+    dluma_helper_init_audio_string(&request.handler, value, length);
+    value = luaL_optlstring(state, 3, "{}", &length);
+    dluma_helper_init_audio_string(&request.arguments_json, value, length);
+    memset(&result, 0, sizeof(result)); result.struct_size = sizeof(result); result.struct_version = 1U;
+    memset(&error, 0, sizeof(error)); error.struct_size = sizeof(error);
+    if (!script->host.api_invoke(script->host_user, 15002U, &request, sizeof(request),
+            &result, sizeof(result), &error))
+        return dluma_helper_push_host_error(state, &error, "handler_failed", "The mod handler failed.",
+            "actions.mod_handlers", "world.write", NULL);
+    lua_pushboolean(state, result.value != 0U); return 1;
+}
+
+static int dluma_helper_hud_target_visibility(lua_State* state, uint32_t operation)
+{
+    DlumaHelperScript* script = dluma_helper_from_upvalue(state, 1);
+    DlumaHudVisibilityRequest request;
+    DlumaBoolResult result;
+    DlumaLua54Error error;
+    size_t length;
+    const char* value;
+    if (!dluma_helper_check_gate(state, script, 0, DLUMA_LUA54_PERMISSION_UI_OVERLAY,
+            "hud.visibility", "ui.overlay")) return 2;
+    if (!script || !script->host.api_invoke)
+        return dluma_helper_public_api_unavailable(state, "hud.visibility", "ui.overlay");
+    memset(&request, 0, sizeof(request)); request.struct_size = sizeof(request); request.struct_version = 1U;
+    value = luaL_checklstring(state, 1, &length);
+    dluma_helper_init_audio_string(&request.target, value, length);
+    value = luaL_optlstring(state, 2, "HUD.xui", &length);
+    dluma_helper_init_audio_string(&request.screen, value, length);
+    memset(&result, 0, sizeof(result)); result.struct_size = sizeof(result); result.struct_version = 1U;
+    memset(&error, 0, sizeof(error)); error.struct_size = sizeof(error);
+    if (!script->host.api_invoke(script->host_user, operation, &request, sizeof(request),
+            &result, sizeof(result), &error))
+        return dluma_helper_push_host_error(state, &error, "hud_visibility_failed", "The HUD target could not be changed.",
+            "hud.visibility", "ui.overlay", NULL);
+    lua_pushboolean(state, result.value != 0U); return 1;
+}
+static int dluma_helper_hud_show_target(lua_State* state) { return dluma_helper_hud_target_visibility(state, 14001U); }
+static int dluma_helper_hud_hide_target(lua_State* state) { return dluma_helper_hud_target_visibility(state, 14002U); }
+static int dluma_helper_hud_reset_target(lua_State* state) { return dluma_helper_hud_target_visibility(state, 14003U); }
+static int dluma_helper_action_infection_flashback(lua_State* state)
+{
+    DlumaHelperScript* script=dluma_helper_from_upvalue(state,1);
+    DlumaNoRequest request; DlumaBoolResult result; DlumaLua54Error error;
+    if(!dluma_helper_check_gate(state,script,0,DLUMA_LUA54_PERMISSION_WORLD_WRITE,
+            "actions.infection_flashback","world.write")) return 2;
+    if(!script || !script->host.api_invoke)
+        return dluma_helper_public_api_unavailable(state,"actions.infection_flashback","world.write");
+    memset(&request,0,sizeof(request)); request.struct_size=sizeof(request); request.struct_version=1U;
+    memset(&result,0,sizeof(result)); result.struct_size=sizeof(result); result.struct_version=1U;
+    memset(&error,0,sizeof(error)); error.struct_size=sizeof(error);
+    if(!script->host.api_invoke(script->host_user,8002U,&request,sizeof(request),&result,sizeof(result),&error))
+        return dluma_helper_push_host_error(state,&error,"infection_flashback_failed","The flashback request failed.","actions.infection_flashback","world.write",NULL);
+    lua_pushboolean(state,result.value!=0U); return 1;
+}
+static int dluma_helper_hud_set_position(lua_State* state)
+{
+    DlumaHelperScript* script=dluma_helper_from_upvalue(state,1);
+    DlumaHudPositionRequest request; DlumaBoolResult result; DlumaLua54Error error;
+    size_t length; const char* value;
+    if(!dluma_helper_check_gate(state,script,0,DLUMA_LUA54_PERMISSION_UI_OVERLAY,
+            "hud.position","ui.overlay")) return 2;
+    if(!script || !script->host.api_invoke)
+        return dluma_helper_public_api_unavailable(state,"hud.position","ui.overlay");
+    memset(&request,0,sizeof(request)); request.struct_size=sizeof(request); request.struct_version=1U;
+    value=luaL_checklstring(state,1,&length); dluma_helper_init_audio_string(&request.target,value,length);
+    request.position.x=(float)luaL_checknumber(state,2);
+    request.position.y=(float)luaL_checknumber(state,3);
+    request.position.z=(float)luaL_checknumber(state,4);
+    value=luaL_optlstring(state,5,"HUD.xui",&length); dluma_helper_init_audio_string(&request.screen,value,length);
+    memset(&result,0,sizeof(result)); result.struct_size=sizeof(result); result.struct_version=1U;
+    memset(&error,0,sizeof(error)); error.struct_size=sizeof(error);
+    if(!script->host.api_invoke(script->host_user,14004U,&request,sizeof(request),&result,sizeof(result),&error))
+        return dluma_helper_push_host_error(state,&error,"hud_position_failed","The XUI element could not be moved.","hud.position","ui.overlay",NULL);
+    lua_pushboolean(state,result.value!=0U); return 1;
+}
+static int dluma_helper_hud_set_visual(lua_State* state, int color)
+{
+    DlumaHelperScript* script=dluma_helper_from_upvalue(state,1);
+    union { DlumaHudOpacityRequest opacity; DlumaHudColorRequest color; } request;
+    DlumaBoolResult result; DlumaLua54Error error; size_t length; const char* value;
+    unsigned int size=color ? sizeof(request.color) : sizeof(request.opacity);
+    if(!dluma_helper_check_gate(state,script,0,DLUMA_LUA54_PERMISSION_UI_OVERLAY,
+            "hud.visual","ui.overlay")) return 2;
+    if(!script || !script->host.api_invoke)
+        return dluma_helper_public_api_unavailable(state,"hud.visual","ui.overlay");
+    memset(&request,0,sizeof(request)); request.opacity.struct_size=size; request.opacity.struct_version=1U;
+    value=luaL_checklstring(state,1,&length); dluma_helper_init_audio_string(&request.opacity.target,value,length);
+    if(color) {
+        request.color.red=(float)luaL_checknumber(state,2); request.color.green=(float)luaL_checknumber(state,3);
+        request.color.blue=(float)luaL_checknumber(state,4); request.color.alpha=(float)luaL_checknumber(state,5);
+    } else request.opacity.opacity=(float)luaL_checknumber(state,2);
+    value=luaL_optlstring(state,color ? 6 : 3,"HUD.xui",&length);
+    dluma_helper_init_audio_string(&request.opacity.screen,value,length);
+    memset(&result,0,sizeof(result)); result.struct_size=sizeof(result); result.struct_version=1U;
+    memset(&error,0,sizeof(error)); error.struct_size=sizeof(error);
+    if(!script->host.api_invoke(script->host_user,color ? 14006U : 14005U,&request,size,&result,sizeof(result),&error))
+        return dluma_helper_push_host_error(state,&error,"hud_visual_failed","The XUI element could not be changed.","hud.visual","ui.overlay",NULL);
+    lua_pushboolean(state,result.value!=0U); return 1;
+}
+static int dluma_helper_hud_set_opacity(lua_State* state) { return dluma_helper_hud_set_visual(state,0); }
+static int dluma_helper_hud_set_color(lua_State* state) { return dluma_helper_hud_set_visual(state,1); }
+static int dluma_helper_hud_named(lua_State* state, int animation)
+{
+    DlumaHelperScript* script=dluma_helper_from_upvalue(state,1);
+    DlumaHudNamedRequest request; DlumaBoolResult result; DlumaLua54Error error;
+    size_t length; const char* value; const char* capability=animation ? "hud.animation" : "hud.text_key";
+    if(!dluma_helper_check_gate(state,script,0,DLUMA_LUA54_PERMISSION_UI_OVERLAY,capability,"ui.overlay")) return 2;
+    if(!script || !script->host.api_invoke) return dluma_helper_public_api_unavailable(state,capability,"ui.overlay");
+    memset(&request,0,sizeof(request)); request.struct_size=sizeof(request); request.struct_version=1U;
+    value=luaL_checklstring(state,1,&length); dluma_helper_init_audio_string(&request.target,value,length);
+    value=luaL_checklstring(state,2,&length); dluma_helper_init_audio_string(&request.name,value,length);
+    value=luaL_optlstring(state,3,"HUD.xui",&length); dluma_helper_init_audio_string(&request.screen,value,length);
+    memset(&result,0,sizeof(result)); result.struct_size=sizeof(result); result.struct_version=1U;
+    memset(&error,0,sizeof(error)); error.struct_size=sizeof(error);
+    if(!script->host.api_invoke(script->host_user,animation ? 14008U : 14007U,&request,sizeof(request),&result,sizeof(result),&error))
+        return dluma_helper_push_host_error(state,&error,"hud_named_action_failed","The XUI action could not be completed.",capability,"ui.overlay",NULL);
+    lua_pushboolean(state,result.value!=0U); return 1;
+}
+static int dluma_helper_hud_set_text_key(lua_State* state) { return dluma_helper_hud_named(state,0); }
+static int dluma_helper_hud_start_animation(lua_State* state) { return dluma_helper_hud_named(state,1); }
+
+static int dluma_helper_hud_asset_begin(lua_State* state,int texture)
+{
+    DlumaHelperScript* script=dluma_helper_from_upvalue(state,1);
+    DlumaHudDocumentSwapRequest doc; DlumaHudFlashbackTextureRequest tex;
+    DlumaStringView originals[11],replacements[11]; DlumaTokenResult result; DlumaLua54Error error;
+    const char* capability=texture ? "hud.flashback_textures" : "hud.document";
+    size_t length; const char* value; unsigned i;
+    if(!dluma_helper_check_gate(state,script,0,DLUMA_LUA54_PERMISSION_UI_OVERLAY,capability,"ui.overlay")) return 2;
+    if(!script || !script->host.api_invoke) return dluma_helper_public_api_unavailable(state,capability,"ui.overlay");
+    memset(&doc,0,sizeof(doc)); memset(&tex,0,sizeof(tex));
+    if(texture) {
+        luaL_checktype(state,1,LUA_TTABLE);
+        if(lua_rawlen(state,1)!=11U) return luaL_error(state,"expected eleven flashback alias pairs");
+        for(i=0;i<11U;++i) {
+            lua_rawgeti(state,1,(lua_Integer)i+1); luaL_checktype(state,-1,LUA_TTABLE);
+            lua_getfield(state,-1,"original"); value=luaL_checklstring(state,-1,&length); dluma_helper_init_audio_string(&originals[i],value,length);
+            lua_getfield(state,-2,"replacement"); value=luaL_checklstring(state,-1,&length); dluma_helper_init_audio_string(&replacements[i],value,length);
+        }
+        tex.struct_size=sizeof(tex); tex.struct_version=1U; tex.originals=originals; tex.replacements=replacements; tex.count=11U;
+    } else {
+        doc.struct_size=sizeof(doc); doc.struct_version=1U;
+        value=luaL_checklstring(state,1,&length); dluma_helper_init_audio_string(&doc.original_document,value,length);
+        value=luaL_checklstring(state,2,&length); dluma_helper_init_audio_string(&doc.replacement_document,value,length);
+    }
+    memset(&result,0,sizeof(result)); result.struct_size=sizeof(result); result.struct_version=1U;
+    memset(&error,0,sizeof(error)); error.struct_size=sizeof(error);
+    if(!script->host.api_invoke(script->host_user,texture ? 14013U : 14009U,texture ? (void*)&tex : (void*)&doc,
+            texture ? sizeof(tex) : sizeof(doc),&result,sizeof(result),&error))
+        return dluma_helper_push_host_error(state,&error,"hud_asset_request_failed","The HUD asset request failed.",capability,"ui.overlay",NULL);
+    lua_pushinteger(state,(lua_Integer)result.token); return 1;
+}
+static int dluma_helper_hud_swap_document(lua_State* s) { return dluma_helper_hud_asset_begin(s,0); }
+static int dluma_helper_hud_swap_flashback_textures(lua_State* s) { return dluma_helper_hud_asset_begin(s,1); }
+static int dluma_helper_hud_asset_token(lua_State* state,unsigned operation)
+{
+    DlumaHelperScript* script=dluma_helper_from_upvalue(state,1); DlumaTokenRequest request;
+    union { DlumaBoolResult boolean; DlumaHudDocumentStatusResult doc; DlumaHudFlashbackTextureStatusResult tex; } result;
+    DlumaLua54Error error; lua_Integer token; const int texture=operation>=14014U;
+    const char* capability=texture ? "hud.flashback_textures" : "hud.document";
+    unsigned size=operation==14011U ? sizeof(result.doc) : operation==14014U ? sizeof(result.tex) : sizeof(result.boolean);
+    if(!dluma_helper_check_gate(state,script,0,DLUMA_LUA54_PERMISSION_UI_OVERLAY,capability,"ui.overlay")) return 2;
+    if(!script || !script->host.api_invoke) return dluma_helper_public_api_unavailable(state,capability,"ui.overlay");
+    token=luaL_checkinteger(state,1); if(token<=0) return luaL_error(state,"token must be positive");
+    memset(&request,0,sizeof(request)); request.struct_size=sizeof(request); request.struct_version=1U; request.token=(uint64_t)token;
+    memset(&result,0,sizeof(result)); result.boolean.struct_size=size; result.boolean.struct_version=1U;
+    memset(&error,0,sizeof(error)); error.struct_size=sizeof(error);
+    if(!script->host.api_invoke(script->host_user,operation,&request,sizeof(request),&result,size,&error))
+        return dluma_helper_push_host_error(state,&error,"hud_asset_request_failed","The HUD asset request failed.",capability,"ui.overlay",NULL);
+    if(operation!=14011U && operation!=14014U) { lua_pushboolean(state,result.boolean.value!=0U); return 1; }
+    lua_createtable(state,0,5);
+    lua_pushinteger(state,(lua_Integer)result.doc.token); lua_setfield(state,-2,"token");
+    lua_pushinteger(state,(lua_Integer)result.doc.state); lua_setfield(state,-2,"state");
+    lua_pushinteger(state,(lua_Integer)result.doc.reason); lua_setfield(state,-2,"reason");
+    if(operation==14014U) { lua_pushinteger(state,(lua_Integer)result.tex.ready_count); lua_setfield(state,-2,"ready_count");
+        lua_pushinteger(state,(lua_Integer)result.tex.asset_count); lua_setfield(state,-2,"asset_count"); }
+    return 1;
+}
+static int dluma_helper_hud_restore_document(lua_State* s) { return dluma_helper_hud_asset_token(s,14010U); }
+static int dluma_helper_hud_document_status(lua_State* s) { return dluma_helper_hud_asset_token(s,14011U); }
+static int dluma_helper_hud_cancel_document(lua_State* s) { return dluma_helper_hud_asset_token(s,14012U); }
+static int dluma_helper_hud_flashback_texture_status(lua_State* s) { return dluma_helper_hud_asset_token(s,14014U); }
+static int dluma_helper_hud_restore_flashback_textures(lua_State* s) { return dluma_helper_hud_asset_token(s,14015U); }
+
 static int dluma_helper_action_run_chain(lua_State* state)
 {
     DlumaHelperScript* script = dluma_helper_from_upvalue(state, 1);
@@ -5051,7 +5309,28 @@ static int dluma_helper_build_api(DlumaHelperScript* script)
     dluma_helper_set_stub(state, -1, "run_chain", script,
         DLUMA_LUA54_CAP_ACTION_CHAIN, DLUMA_LUA54_PERMISSION_WORLD_WRITE,
         "actions.chain", "world.write", dluma_helper_action_run_chain);
+    dluma_helper_set_function(state, -1, "infection_flashback", script, dluma_helper_action_infection_flashback);
     dluma_helper_set_namespace(state, root, "actions");
+    lua_newtable(state);
+    dluma_helper_set_function(state, -1, "invoke", script, dluma_helper_mod_handler_invoke);
+    dluma_helper_set_namespace(state, root, "mod_handlers");
+    lua_newtable(state);
+    dluma_helper_set_function(state, -1, "show", script, dluma_helper_hud_show_target);
+    dluma_helper_set_function(state, -1, "hide", script, dluma_helper_hud_hide_target);
+    dluma_helper_set_function(state, -1, "reset", script, dluma_helper_hud_reset_target);
+    dluma_helper_set_function(state, -1, "set_position", script, dluma_helper_hud_set_position);
+    dluma_helper_set_function(state, -1, "set_opacity", script, dluma_helper_hud_set_opacity);
+    dluma_helper_set_function(state, -1, "set_color", script, dluma_helper_hud_set_color);
+    dluma_helper_set_function(state, -1, "set_text_key", script, dluma_helper_hud_set_text_key);
+    dluma_helper_set_function(state, -1, "start_animation", script, dluma_helper_hud_start_animation);
+    dluma_helper_set_function(state, -1, "swap_document", script, dluma_helper_hud_swap_document);
+    dluma_helper_set_function(state, -1, "restore_document", script, dluma_helper_hud_restore_document);
+    dluma_helper_set_function(state, -1, "document_status", script, dluma_helper_hud_document_status);
+    dluma_helper_set_function(state, -1, "cancel_document", script, dluma_helper_hud_cancel_document);
+    dluma_helper_set_function(state, -1, "swap_flashback_textures", script, dluma_helper_hud_swap_flashback_textures);
+    dluma_helper_set_function(state, -1, "flashback_texture_status", script, dluma_helper_hud_flashback_texture_status);
+    dluma_helper_set_function(state, -1, "restore_flashback_textures", script, dluma_helper_hud_restore_flashback_textures);
+    dluma_helper_set_namespace(state, root, "hud");
 
     /* Native-only quest control. IDs must refer to a pre-authored quest in
      * the active custom-map project. The production backend binds only the
@@ -5314,13 +5593,14 @@ static int dluma_helper_dispatch_callbacks(DlumaHelperScript* script, const Dlum
             if (event->kind ==
                     DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
                 event->kind ==
-                    DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER) {
+                    DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER ||
+                event->kind == DLUMA_LUA54_EVENT_MOD_HANDLER) {
                 successes += dluma_helper_call_quest_phase_ref(
                     script, callback->ref,
                     callback->key[0]
                         ? callback->key
                         : script->last_event,
-                    &event->quest_phase);
+                    &event->quest_phase, event);
             } else {
                 successes += dluma_helper_call_ref(
                     script, callback->ref,
@@ -5489,7 +5769,15 @@ static int dluma_helper_dispatch_impl(void* handle, const DlumaLua54Event* event
 {
     DlumaHelperScript* script = (DlumaHelperScript*)handle;
     double delta;
-    if (!script || !event || event->struct_size < sizeof(*event) || !script->alive)
+    if (!script || !event ||
+        event->struct_size < offsetof(DlumaLua54Event, handler_source_kind) ||
+        !script->alive)
+        return 0;
+    /* Named handlers added a size-versioned tail. Requiring it for existing
+     * events would silently reject update/timer and lifecycle dispatch from
+     * compatible callers using the original private ABI record. */
+    if (event->kind == DLUMA_LUA54_EVENT_MOD_HANDLER &&
+        event->struct_size < sizeof(*event))
         return 0;
     if (event->kind == DLUMA_LUA54_EVENT_CONFIG_CHANGED &&
         (event->config_changed.struct_size <
@@ -5512,7 +5800,8 @@ static int dluma_helper_dispatch_impl(void* handle, const DlumaLua54Event* event
              event->config_changed.value_type,
              event->config_changed.value)))
         return 0;
-    if ((event->kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
+    if ((event->kind == DLUMA_LUA54_EVENT_MOD_HANDLER ||
+         event->kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
          event->kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER) &&
         (event->quest_phase.struct_size <
              sizeof(event->quest_phase) ||

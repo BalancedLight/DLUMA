@@ -44,6 +44,8 @@ bool Prepare(State*,std::uintptr_t,const char*,windows::ReadFn,void*)noexcept;
 bool Seal(State*,std::uint64_t installed_mask)noexcept;
 void* HookTarget(windows::Route)noexcept;
 bool BindOriginal(State*,windows::Route,void*)noexcept;
+/* Prepared forwarding is required even before observation is sealed. */
+bool PreparedForPublication(const State*)noexcept;
 bool SourcePublication(State*,std::uintptr_t,bool constructed_before_publication)noexcept;
 bool ExistingSource(State*,std::uintptr_t)noexcept;
 bool SourceIdentity(State*,std::uintptr_t,SourceKey*)noexcept;

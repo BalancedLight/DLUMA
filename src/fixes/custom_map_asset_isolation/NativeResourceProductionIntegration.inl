@@ -21,6 +21,9 @@ bool ClassifyProductionResourceSource(void*,files::SourceKey source,retained::Re
     if(!realm||!epoch||!source.address||!source.generation)return false;
     *realm=retained::Realm::Unknown;*epoch=0;files::SourceKey actual={};
     if(!filebridge::SourceIdentity(&g_native_file_bridge,source.address,&actual)||actual.generation!=source.generation)return false;
+    // The independent observer has exact source generations but no isolation
+    // epoch classification. Do not relabel project inputs as global content.
+    if(g_xui_observation_only)return true;
     for(std::size_t i=0;i<g_resource_baseline_source_count;++i)
         if(g_resource_baseline_sources[i].address==source.address&&g_resource_baseline_sources[i].generation==source.generation){
             *realm=retained::Realm::Global;return true;}

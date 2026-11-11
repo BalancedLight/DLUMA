@@ -1,0 +1,19 @@
+sub main()
+{
+    Phase("Document")
+    {
+        CallMod("probe.hud.asset-a", "document-controls", "{}");
+        PhaseTransition() { Conditions() { TimePassed(10.0); } Target("Controls"); }
+    }
+    Phase("Controls")
+    {
+        CallMod("probe.hud.asset-a", "controls", "{}");
+        PhaseTransition() { Conditions() { TimePassed(15.0); } Target("Reset"); }
+    }
+    Phase("Reset")
+    {
+        CallMod("probe.hud.asset-a", "reset", "{}");
+        PhaseTransition() { Conditions() { TimePassed(20.0); } Target("End"); }
+    }
+    Phase("End") { Finish(); }
+}

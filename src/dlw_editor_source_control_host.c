@@ -76,7 +76,9 @@ int dluma_editor_source_control_parse_request(const char *type, const char *payl
     if (!git_string_compare(type, "gitState")) {
         out->kind = DLUMA_GIT_STATE; required = 3U; allowed = 7U;
     } else if (!git_string_compare(type, "gitProjectAcquire")) {
-        out->kind = DLUMA_GIT_PROJECT_ACQUIRE; required = 11U; allowed = 27U;
+        out->kind = DLUMA_GIT_PROJECT_ACQUIRE; required = 11U; allowed = 1051U;
+    } else if (!git_string_compare(type, "gitProjectCancel")) {
+        out->kind = DLUMA_GIT_PROJECT_CANCEL; required = allowed = 1027U;
     } else if (!git_string_compare(type, "gitWorktreeAcquire")) {
         out->kind = DLUMA_GIT_WORKTREE_ACQUIRE; required = allowed = 43U;
     } else if (!git_string_compare(type, "gitChildStarted")) {
@@ -99,6 +101,7 @@ int dluma_editor_source_control_parse_request(const char *type, const char *payl
         else if (!git_string_compare(key, "creationTime")) bit = 128U;
         else if (!git_string_compare(key, "processHandle")) bit = 256U;
         else if (!git_string_compare(key, "mutating")) bit = 512U;
+        else if (!git_string_compare(key, "armId")) bit = 1024U;
         else return 0;
         if (!(allowed & bit) || (fields & bit)) return 0;
         fields |= bit;
@@ -115,6 +118,7 @@ int dluma_editor_source_control_parse_request(const char *type, const char *payl
         case 128U: if (!dluma_json_u64(&reader, &out->creation_time)) return 0; break;
         case 256U: if (!dluma_json_u64(&reader, &out->process_handle)) return 0; break;
         case 512U: if (!dluma_json_boolean(&reader, &out->mutating)) return 0; break;
+        case 1024U: if (!git_nullable_string(&reader, out->arm_id, sizeof(out->arm_id), &out->has_arm)) return 0; break;
         default: return 0;
         }
     }
@@ -125,6 +129,9 @@ int dluma_editor_source_control_parse_request(const char *type, const char *payl
     if (out->kind == DLUMA_GIT_PROJECT_ACQUIRE &&
         (!git_operation(out->operation) ||
          (!git_string_compare(out->operation, "clone") ? !out->has_destination || !git_absolute_path(out->destination) : out->has_destination))) return 0;
+    if (out->has_arm && (!git_lease_id(out->arm_id) ||
+        (out->kind == DLUMA_GIT_PROJECT_ACQUIRE && !git_string_compare(out->operation, "clone")))) return 0;
+    if (out->kind == DLUMA_GIT_PROJECT_CANCEL && !out->has_arm) return 0;
     if (out->kind == DLUMA_GIT_WORKTREE_ACQUIRE &&
         (git_string_compare(out->operation, "pull") && git_string_compare(out->operation, "switchBranch"))) return 0;
     if ((out->kind == DLUMA_GIT_WORKTREE_ACQUIRE || out->kind == DLUMA_GIT_LEASE_RELEASE) && !out->has_lease) return 0;

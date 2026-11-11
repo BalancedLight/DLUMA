@@ -6,8 +6,19 @@
 #include "CancelledPresentationCleanupVerifier.h"
 #include "CustomContentLedger.h"
 #include "NativeFileHookBridge.h"
+#include "NativeFileObservation.h"
+#include "../../game/dlw_xui_document_native.h"
+#include "../../game/dlw_hud_visibility_backend.h"
+#include "../../game/dlw_texture_swap_native.h"
+#include "NativeXuiObservation.h"
+#include "NativeXuiBirthEnvelope.h"
+extern "C" {
+#include "../../dlw_player_media_adapter.h"
+}
 #include "NativeArchiveContent.h"
 #include "NativeDetourBranch.h"
+#include "NativeDetourMemory.h"
+#include "NativeEntryUnwind.h"
 #include "NativeResourceProduction.h"
 #include "DetachedSourceRetirement.h"
 #include "LocalizedTextObservationGate.h"
@@ -65,6 +76,7 @@
 #include "NativeXuiContentOwner.h"
 #include "NativeXuiCompiledSnapshot.h"
 #include "NativeXuiInstanceOwner.h"
+#include "NativeXuiReceiverBridge.h"
 #include "PlayerPrimitiveDefaults.h"
 #include "PlayerProcessOwnerRebuild.h"
 #include "PlayerXmlInputDigest.h"
@@ -515,6 +527,7 @@ enum class HookRouteKind : std::uint8_t {
     Pointer,
     FunctionDetour,
     InteriorEnvelope,
+    CallEnvelope,
 };
 
 struct HookStatusRecord {
@@ -555,6 +568,8 @@ struct HookRoute {
     bool ever_installed;
     std::uint8_t interior_route;
     bool relay_unwind_registered;
+    detour::ProtectionState protection;
+    bool xui_entry_unwind,allow_skipped_xmm;
 };
 
 struct TtlStringView {
@@ -1005,6 +1020,10 @@ XuiFactorySweepFn g_original_xui_factory_collect,g_original_xui_factory_retire_a
 HookStatusRecord* g_xui_factory_statuses[4]={};
 HookRoute* g_xui_factory_routes[4]={};
 bool g_xui_instance_observation_ready=false;
+bool g_xui_birth_requested=false;
+HookStatusRecord* g_xui_birth_status=nullptr;
+std::uintptr_t __fastcall HookXuiCreateEditor(void*,void*);
+bool g_xui_observation_only=false;
 bool g_xui_manager_startup_prepared;
 bool g_xui_manager_observation_ready;
 ParserTextFileFn g_original_parser_text_file;
@@ -8315,85 +8334,32 @@ std::uintptr_t FindIatSlot(HMODULE consumer, const char* imported_module,
     return 0;
 }
 
-bool AtomicPatchPointer(std::uintptr_t address,
-                        const std::uint8_t* expected,
-                        const std::uint8_t* desired) noexcept
+bool ProtectDetourRange(std::uintptr_t address, std::size_t bytes,
+                         std::uint32_t protection, std::uint32_t* previous) noexcept
 {
-    if (!address || !expected || !desired ||
-        (address & (sizeof(void*) - 1)) != 0)
-        return false;
-    LONGLONG expected_value = 0;
-    LONGLONG desired_value = 0;
-    std::memcpy(&expected_value, expected, sizeof(expected_value));
-    std::memcpy(&desired_value, desired, sizeof(desired_value));
-    DWORD old_protection = 0;
-    DWORD ignored = 0;
-    if (!VirtualProtect(reinterpret_cast<void*>(address), sizeof(void*),
-                        PAGE_EXECUTE_READWRITE, &old_protection))
-        return false;
-    const LONGLONG observed = _InterlockedCompareExchange64(
-        reinterpret_cast<volatile LONGLONG*>(address), desired_value,
-        expected_value);
-    const bool exchanged = observed == expected_value;
-    const bool flushed = !exchanged ||
-        FlushInstructionCache(GetCurrentProcess(),
-                              reinterpret_cast<void*>(address),
-                              sizeof(void*)) != FALSE;
-    const bool restored =
-        VirtualProtect(reinterpret_cast<void*>(address), sizeof(void*),
-                       old_protection, &ignored) != FALSE;
-    return exchanged && flushed && restored;
+    DWORD old = 0;
+    const bool ok = VirtualProtect(reinterpret_cast<void*>(address), bytes,
+                                   protection, &old) != FALSE;
+    *previous = old;
+    return ok;
 }
 
-bool AtomicPatchDetour(std::uintptr_t address,
-                       const std::uint8_t* expected,
-                       const std::uint8_t* desired) noexcept
+bool FlushDetourRange(std::uintptr_t address, std::size_t bytes) noexcept
 {
-    if (!address || !expected || !desired ||
-        (address & (kAtomicDetourSize - 1)) != 0)
-        return false;
-    alignas(16) LONGLONG comparand[2] = {};
-    alignas(16) LONGLONG replacement[2] = {};
-    std::memcpy(comparand, expected, kAtomicDetourSize);
-    std::memcpy(replacement, desired, kAtomicDetourSize);
-    DWORD old_protection = 0;
-    DWORD ignored = 0;
-    if (!VirtualProtect(reinterpret_cast<void*>(address), kAtomicDetourSize,
-                        PAGE_EXECUTE_READWRITE, &old_protection))
-        return false;
-    const bool exchanged = _InterlockedCompareExchange128(
-        reinterpret_cast<volatile LONGLONG*>(address), replacement[1],
-        replacement[0], comparand) != 0;
-    const bool flushed = !exchanged ||
-        FlushInstructionCache(GetCurrentProcess(),
-                              reinterpret_cast<void*>(address),
-                              kAtomicDetourSize) != FALSE;
-    const bool restored = VirtualProtect(
-        reinterpret_cast<void*>(address), kAtomicDetourSize,
-        old_protection, &ignored) != FALSE;
-    return exchanged && flushed && restored;
+    return FlushInstructionCache(GetCurrentProcess(),
+        reinterpret_cast<void*>(address), bytes) != FALSE;
 }
+
+#include "NativeHookRouteMutation.inl"
 
 void* AllocateRelayNear(std::uintptr_t target) noexcept
 {
-    constexpr std::uintptr_t kGranularity = 0x10000U;
-    constexpr std::uintptr_t kMaximumDistance = 0x70000000U;
-    const std::uintptr_t anchor = target & ~(kGranularity - 1);
-    for (std::uintptr_t distance = kGranularity;
-         distance < kMaximumDistance; distance += kGranularity) {
-        std::uintptr_t candidates[2] = {};
-        candidates[0] = anchor + distance;
-        candidates[1] = anchor > distance ? anchor - distance : 0;
-        for (unsigned int index = 0; index < 2; ++index) {
-            if (!candidates[index]) continue;
-            void* allocation = VirtualAlloc(
-                reinterpret_cast<void*>(candidates[index]), 0x1000,
-                MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-            if (!allocation) continue;
-            return allocation;
-        }
-    }
-    return nullptr;
+    return dluma::fixes::custom_map_asset_isolation::detour::AllocateRelayNear(
+        target, PAGE_EXECUTE_READWRITE,
+        [](std::uintptr_t at, std::size_t bytes, std::uint32_t protection) noexcept -> void* {
+            return VirtualAlloc(reinterpret_cast<void*>(at), bytes,
+                                MEM_COMMIT | MEM_RESERVE, protection);
+        });
 }
 
 bool PrepareRelay(HookRoute* route) noexcept
@@ -8440,13 +8406,15 @@ bool PrepareRelay(HookRoute* route) noexcept
             trampoline, sizeof(trampoline) - 14, route->address,
             reinterpret_cast<std::uintptr_t>(route->relay), route->stolen_size,
             route->trailing_branch_offset, &cursor)) return false;
-    trampoline[cursor++] = 0xFF;
-    trampoline[cursor++] = 0x25;
-    std::memset(trampoline + cursor, 0, 4);
-    cursor += 4;
     const std::uintptr_t resume = route->address + route->stolen_size;
-    std::memcpy(trampoline + cursor, &resume, sizeof(resume));
-    cursor += sizeof(resume);
+    if(route->xui_entry_unwind){
+        if(!detour::BuildEntryRelayTransfer(trampoline+cursor,sizeof(trampoline)-cursor,resume))return false;
+        cursor+=14;
+    }else{
+        trampoline[cursor++] = 0xFF;trampoline[cursor++] = 0x25;
+        std::memset(trampoline + cursor, 0, 4);cursor += 4;
+        std::memcpy(trampoline + cursor, &resume, sizeof(resume));cursor += sizeof(resume);
+    }
     std::memcpy(route->relay, trampoline, cursor);
     if (!FlushInstructionCache(GetCurrentProcess(), route->relay, cursor))
         return false;
@@ -8493,16 +8461,37 @@ bool PrepareNativeFileInteriorRelay(HookRoute* route) noexcept
         VirtualProtect(bytes, 0x1000, PAGE_EXECUTE_READ, &previous);
 }
 
-bool PrepareNativeFileEntryUnwind(HookRoute* route) noexcept
+bool PrepareXuiBirthCallRelay(HookRoute* route)noexcept
+{
+    if(!route||route->kind!=HookRouteKind::CallEnvelope)return false;
+    route->relay_allocation=AllocateRelayNear(route->address);if(!route->relay_allocation)return false;
+    xui_birth::Envelope prepared={};
+    if(!xui_birth::Build(route->original_bytes,route->address,reinterpret_cast<std::uintptr_t>(route->relay_allocation),
+        reinterpret_cast<std::uintptr_t>(route->hook_target),reinterpret_cast<std::uintptr_t>(&HookXuiCreateEditor),&prepared))return false;
+    std::memcpy(route->relay_allocation,prepared.thunks,sizeof(prepared.thunks));
+    std::memcpy(route->routing_bytes,prepared.patched,16);route->relay=route->relay_allocation;
+    DWORD previous=0;return FlushInstructionCache(GetCurrentProcess(),route->relay_allocation,sizeof(prepared.thunks))&&
+        VirtualProtect(route->relay_allocation,0x1000,PAGE_EXECUTE_READ,&previous);
+}
+
+bool PrepareNativeEntryUnwind(HookRoute* route) noexcept
 {
     unsigned index = 0;
     while (index < static_cast<unsigned>(filewin::Route::Count) &&
            (!g_native_file_statuses[index] || g_native_file_statuses[index] != route->owner)) ++index;
-    if (index == static_cast<unsigned>(filewin::Route::Count)) return true;
+    const bool xui_entry=route&&route->xui_entry_unwind;
+    if (index == static_cast<unsigned>(filewin::Route::Count)&&!xui_entry) return true;
     if (!route->relay_allocation || route->kind != HookRouteKind::FunctionDetour) return false;
-    unsigned char unwind_bytes[32] = {};
+    unsigned char unwind_bytes[64] = {};
     std::size_t unwind_size = 0;
-    if (!filewin::CopyEntryUnwind(&g_native_file_bridge.binding,
+    if(xui_entry){
+        detour::EntryUnwindImage source={g_context.engine_base,g_context.engine_size_of_image,131072,
+            [](void*,std::uintptr_t address,void* output,std::size_t bytes)noexcept{return ReadBytes(address,output,bytes);},nullptr,
+            route->allow_skipped_xmm};
+        if(!g_engine_full_profile_valid||route->address<source.base||route->address-source.base>UINT32_MAX||
+            !detour::CopyEntryRelayUnwind(source,static_cast<std::uint32_t>(route->address-source.base),route->stolen_size,
+                route->stolen_size+14U,unwind_bytes,sizeof(unwind_bytes),&unwind_size))return false;
+    }else if (!filewin::CopyEntryUnwind(&g_native_file_bridge.binding,
             static_cast<filewin::Route>(index), unwind_bytes, sizeof(unwind_bytes), &unwind_size)) return false;
     auto* bytes = static_cast<unsigned char*>(route->relay_allocation);
     DWORD previous = 0;
@@ -8532,65 +8521,6 @@ void FreeRouteRelay(HookRoute* route) noexcept
 
 bool PinLoaderIfNeeded(bool mark_host_retained) noexcept;
 
-bool RouteOriginalRangeMatches(const HookRoute* route) noexcept
-{
-    if (!route || !route->address) return false;
-    const std::size_t size = route->kind == HookRouteKind::FunctionDetour
-        ? route->stolen_size : route->byte_count;
-    return size >= route->byte_count &&
-        size <= kMaximumStolenBytes &&
-        BytesEqual(route->address, route->original_bytes, size);
-}
-
-bool RouteUntouchedTailMatches(const HookRoute* route) noexcept
-{
-    if (!route || route->kind != HookRouteKind::FunctionDetour ||
-        route->stolen_size <= route->byte_count)
-        return true;
-    return route->stolen_size <= kMaximumStolenBytes &&
-        BytesEqual(
-            route->address + route->byte_count,
-            route->original_bytes + route->byte_count,
-            route->stolen_size - route->byte_count);
-}
-
-bool ApplyRoute(HookRoute* route) noexcept
-{
-    if (!route || !route->enabled || route->installed ||
-        !RouteOriginalRangeMatches(route))
-        return false;
-    const bool write_succeeded = route->kind == HookRouteKind::Pointer
-        ? AtomicPatchPointer(route->address, route->original_bytes,
-                             route->routing_bytes)
-        : AtomicPatchDetour(route->address, route->original_bytes,
-                            route->routing_bytes);
-    /* A protection/flush failure can be reported after an atomic exchange.
-     * Record actual ownership so rollback never overlooks live routing. */
-    route->installed = BytesEqual(route->address, route->routing_bytes,
-                                  route->byte_count);
-    if (route->installed) {
-        route->ever_installed = true;
-    }
-    return write_succeeded && route->installed;
-}
-
-bool RestoreRoute(HookRoute* route) noexcept
-{
-    if (!route || !route->installed) return true;
-    if (!BytesEqual(route->address, route->routing_bytes,
-                    route->byte_count) ||
-        !RouteUntouchedTailMatches(route))
-        return false;
-    const bool write_succeeded = route->kind == HookRouteKind::Pointer
-        ? AtomicPatchPointer(route->address, route->routing_bytes,
-                             route->original_bytes)
-        : AtomicPatchDetour(route->address, route->routing_bytes,
-                            route->original_bytes);
-    const bool restored = RouteOriginalRangeMatches(route);
-    if (restored) route->installed = false;
-    return write_succeeded && restored;
-}
-
 void RecomputeInstalledStatuses() noexcept
 {
     for (std::size_t status_index = 0;
@@ -8600,7 +8530,7 @@ void RecomputeInstalledStatuses() noexcept
         for (std::size_t route_index = 0;
              route_index < g_hook_route_count; ++route_index) {
             if (g_hook_routes[route_index].owner == &status &&
-                g_hook_routes[route_index].installed)
+                g_hook_routes[route_index].installed&&!g_hook_routes[route_index].protection.pending)
                 ++installed;
         }
         status.installed = status.route_count != 0 &&
@@ -8611,7 +8541,7 @@ void RecomputeInstalledStatuses() noexcept
 bool AnyInstalledRoutes() noexcept
 {
     for (std::size_t index = 0; index < g_hook_route_count; ++index)
-        if (g_hook_routes[index].installed) return true;
+        if (g_hook_routes[index].installed||g_hook_routes[index].protection.pending) return true;
     return false;
 }
 
@@ -8619,6 +8549,7 @@ void ReleaseUnusedRelays() noexcept
 {
     for (std::size_t i = 0; i < g_hook_route_count; ++i)
         if (!g_hook_routes[i].installed &&
+            !g_hook_routes[i].protection.pending&&
             !g_hook_routes[i].ever_installed)
             FreeRouteRelay(&g_hook_routes[i]);
 }
@@ -8628,7 +8559,7 @@ bool RestoreInstalledRoutes(bool mandatory_only) noexcept
     bool succeeded = true;
     for (std::size_t index = g_hook_route_count; index > 0; --index) {
         HookRoute* route = &g_hook_routes[index - 1];
-        if (!route->installed ||
+        if ((!route->installed&&!route->protection.pending) ||
             (mandatory_only && !route->owner->mandatory))
             continue;
         if (!RestoreRoute(route)) succeeded = false;
@@ -14282,6 +14213,12 @@ bool __fastcall HookFsAddPath(const char* path, std::uint32_t flags) noexcept
 void __fastcall HookFsAddObject(void* source,
                                 std::uint32_t flags) noexcept
 {
+    if(g_xui_observation_only){
+        ActiveHookCall call(g_fs_add_object_status);
+        SourceRegistryObservationCall registry;
+        if(source)(void)filebridge::SourcePublication(&g_native_file_bridge,reinterpret_cast<std::uintptr_t>(source),false);
+        g_original_fs_add_object(source,flags);return;
+    }
     if (g_asset_source_mutation_depth) {
         SourceRegistryObservationCall source_registry_call;
         if (source)
@@ -23535,8 +23472,10 @@ dluma_audio_settings_dsp_mix_hook(void* connection, float mix, std::uint64_t nat
 }
 
 __declspec(thread) std::uint32_t g_xui_content_load_depth = 0;
+void DocumentObserveInput(const xui_content::Input&,unsigned,void*,const char*)noexcept;
 #include "NativeXuiProductionIntegration.inl"
 #include "NativeXuiInstanceIntegration.inl"
+#include "NativeXuiDocumentIntegration.inl"
 
 std::uintptr_t __fastcall HookXuiManagerConstructor(void* manager, void* level) noexcept
 {
@@ -23564,6 +23503,9 @@ std::uintptr_t __fastcall HookXuiManagerConstructor(void* manager, void* level) 
 std::uintptr_t __fastcall HookXuiManagerDestructor(void* manager) noexcept
 {
     ActiveHookCall call(g_xui_manager_destructor_status);
+    xui::ManagerRecord live={};
+    if(g_xui_manager_observation_ready&&xui::LookupManager(&g_xui_manager_ledger,reinterpret_cast<std::uintptr_t>(manager),&live)&&live.life==xui::ManagerLife::Live)
+        dluma_texture_native_manager_destroying(reinterpret_cast<std::uintptr_t>(manager),live.generation);
     xui::ManagerToken token = {};
     const bool tracked = g_xui_manager_observation_ready &&
         xui::BeginManagerDestruction(&g_xui_manager_ledger, reinterpret_cast<std::uintptr_t>(manager), &token);
@@ -23574,6 +23516,8 @@ std::uintptr_t __fastcall HookXuiManagerDestructor(void* manager) noexcept
             {reinterpret_cast<std::uintptr_t>(manager),token.generation});
         (void)xui_instance::ManagerDestroyed(&g_xui_instances,
             {reinterpret_cast<std::uintptr_t>(manager),token.generation});
+        NativeDocumentManagerDestroyed(reinterpret_cast<std::uintptr_t>(manager),token.generation);
+        dluma_texture_native_manager_destroyed(reinterpret_cast<std::uintptr_t>(manager),token.generation);
     }
     return result;
 }
@@ -23585,7 +23529,7 @@ unsigned char __fastcall HookXuiXmlLoad(void* manager, const void* path, void* c
         cold::RetainingObservationOrigin::ExternalProducer);
     if (!retaining.admitted()) return 0;
     XuiContentLoadScope input_scope(manager,xui_content::Route::Xml);
-    const unsigned char result = g_original_xui_xml_load(manager, path, context);
+    const unsigned char result = g_original_xui_xml_load(manager, DocumentXmlInput(manager,path), context);
     input_scope.Finish(result==0);
     return result;
 }
@@ -23796,11 +23740,24 @@ void CaptureAudioStartupNativePin(const audio::AudioNativeOpenAttempt& attempt,
         natural, &ReadAudioBaselineMemory, nullptr);
 }
 
+void* ForwardObservationPublicOpen(void*,void*,const char* path,int mode,std::uint32_t flags)noexcept
+{return g_original_fs_open?g_original_fs_open(path,mode,flags):nullptr;}
+void* ForwardObservationNativeOpen(void*,void* source,const char* path,int mode,std::uint32_t flags)noexcept
+{return g_original_fs_open_native?g_original_fs_open_native(source,path,mode,flags):nullptr;}
+void ObservationOpened(void*,void* file,const char* path,void* source)noexcept
+{NoteProductionXuiOpen(file,path,source);}
+file_observation::Callbacks ObservationFileCallbacks(bool native)noexcept
+{return {&g_native_file_bridge,native?&ForwardObservationNativeOpen:&ForwardObservationPublicOpen,&ObservationOpened,nullptr};}
+bool ObservationFileHooksReady()noexcept
+{return g_native_file_bridge_prepared&&g_original_fs_open&&g_original_fs_open_native&&
+    file_observation::Ready(ObservationFileCallbacks(false))&&file_observation::Ready(ObservationFileCallbacks(true));}
+
 void* __fastcall HookAudioFsOpenNative(
     void* explicit_source, const char* full_path, int mode,
     std::uint32_t flags) noexcept
 {
     ActiveHookCall call(g_fs_open_native_audio_status);
+    if(g_xui_observation_only)return file_observation::Open(ObservationFileCallbacks(true),true,explicit_source,full_path,mode,flags);
     const std::uintptr_t caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
     const std::uint32_t caller_rva = caller >= g_context.engine_base &&
         caller < g_context.engine_base + g_context.engine_size_of_image
@@ -24332,6 +24289,10 @@ void NoteProductionCurveOpen(const char* logical_path, void* file, void* source,
 void* __fastcall HookFsOpen(const char* path, int mode,
                             std::uint32_t flags) noexcept
 {
+    if(g_xui_observation_only){
+        ActiveHookCall call(g_fs_open_engine_status);
+        return file_observation::Open(ObservationFileCallbacks(false),false,nullptr,path,mode,flags);
+    }
     filebridge::FactoryRequest factory_request = {};
     factory_request.route = filewin::Route::PublicOpen;
     factory_request.path = reinterpret_cast<std::uintptr_t>(path);
@@ -25505,6 +25466,8 @@ void BindFunctionDetourOriginal(const HookRoute* route) noexcept
         g_original_audio_owner_destructor = reinterpret_cast<AudioOwnerDestructorFn>(route->relay);
     else if (route->hook_target == reinterpret_cast<void*>(&HookXuiXmlLoad))
         g_original_xui_xml_load = reinterpret_cast<XuiXmlLoadFn>(route->relay);
+    else if (route->hook_target == reinterpret_cast<void*>(&HookXuiCompiledAttempt))
+        g_original_xui_compiled_attempt = reinterpret_cast<XuiCompiledAttemptFn>(route->relay);
     else if (route->hook_target == reinterpret_cast<void*>(&HookXuiBinaryPackLoad))
         g_original_xui_binary_pack_load = reinterpret_cast<XuiBinaryPackLoadFn>(route->relay);
     else if (route->hook_target == reinterpret_cast<void*>(&HookXuiBinaryFileLoad))
@@ -27421,15 +27384,18 @@ bool ValidateAtomicRouteMutationSafety() noexcept
 {
     if (!IsProcessorFeaturePresent(PF_COMPARE_EXCHANGE128)) return false;
     for (std::size_t index = 0; index < g_hook_route_count; ++index) {
-        const HookRoute& route = g_hook_routes[index];
+        HookRoute& route = g_hook_routes[index];
         if (!route.enabled) continue;
+        // Capture ALL route pages before any route can publish. Later routes
+        // sharing a page must not adopt an earlier failed patch's RWX state.
+        if(!CaptureRouteProtection(&route))return false;
         if (route.kind == HookRouteKind::Pointer) {
             if ((route.address & (sizeof(void*) - 1)) != 0 ||
                 route.byte_count != sizeof(void*))
                 return false;
             continue;
         }
-        if ((route.kind != HookRouteKind::FunctionDetour && route.kind != HookRouteKind::InteriorEnvelope) ||
+        if ((route.kind != HookRouteKind::FunctionDetour && route.kind != HookRouteKind::InteriorEnvelope && route.kind != HookRouteKind::CallEnvelope) ||
             (route.address & (kAtomicDetourSize - 1)) != 0 ||
             route.byte_count != kAtomicDetourSize ||
             route.stolen_size < kAtomicDetourSize ||
@@ -27701,6 +27667,7 @@ void BuildAudioUserMixHookPlan() noexcept
 void BuildXuiLoadHookPlan() noexcept
 {
     if (!g_engine_full_profile_valid) return;
+    g_xui_birth_requested=NativeXuiObservationRequested();
     const std::uint8_t lifetime_prefix[] = {
         0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x6c,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x57};
     g_original_xui_manager_constructor = reinterpret_cast<XuiManagerConstructorFn>(g_context.engine_base + 0x6554E0);
@@ -27713,11 +27680,16 @@ void BuildXuiLoadHookPlan() noexcept
         g_context.engine_base + 0x6554E0, 16, 0, 0, reinterpret_cast<void*>(&HookXuiManagerConstructor));
     g_xui_manager_destructor_route = AddFunctionDetour(g_xui_manager_destructor_status,
         g_context.engine_base + 0x6567F0, 16, 0, 0, reinterpret_cast<void*>(&HookXuiManagerDestructor));
+    if(g_xui_manager_constructor_route){g_xui_manager_constructor_route->xui_entry_unwind=true;g_xui_manager_constructor_route->allow_skipped_xmm=true;}
+    if(g_xui_manager_destructor_route)g_xui_manager_destructor_route->xui_entry_unwind=true;
     struct Entry {
         const char* name; std::uintptr_t rva; std::uint8_t prefix[16];
         std::uint8_t stolen; HookStatusRecord** status; void* wrapper;
     };
     const Entry entries[] = {
+        {"Native XUI compiled attempt", 0x65AD50,
+            {0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x57,0x48,0x83,0xec,0x30,0x8b},
+            21, &g_xui_compiled_attempt_status, reinterpret_cast<void*>(&HookXuiCompiledAttempt)},
         {"Native XUI XML load", 0x65A830,
             {0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x74,0x24,0x10,0x48,0x89,0x7c,0x24,0x18,0x4c},
             20, &g_xui_xml_load_status, reinterpret_cast<void*>(&HookXuiXmlLoad)},
@@ -27729,13 +27701,15 @@ void BuildXuiLoadHookPlan() noexcept
             20, &g_xui_binary_file_load_status, reinterpret_cast<void*>(&HookXuiBinaryFileLoad)},
     };
     g_original_xui_xml_load = reinterpret_cast<XuiXmlLoadFn>(g_context.engine_base + 0x65A830);
+    g_original_xui_compiled_attempt = reinterpret_cast<XuiCompiledAttemptFn>(g_context.engine_base + 0x65AD50);
     g_original_xui_binary_pack_load = reinterpret_cast<XuiBinaryPackLoadFn>(g_context.engine_base + 0x65B520);
     g_original_xui_binary_file_load = reinterpret_cast<XuiBinaryFileLoadFn>(g_context.engine_base + 0x6607A0);
     for (const auto& entry : entries) {
         const auto target = g_context.engine_base + entry.rva;
         *entry.status = AddHookStatus(entry.name, "engine_x64_rwdi.dll", target,
             entry.rva, entry.prefix, sizeof(entry.prefix), false);
-        (void)AddFunctionDetour(*entry.status, target, entry.stolen, 0, 0, entry.wrapper);
+        auto* route=AddFunctionDetour(*entry.status, target, entry.stolen, 0, 0, entry.wrapper);
+        if(route){route->xui_entry_unwind=true;route->allow_skipped_xmm=entry.rva==0x65A830;}
     }
     struct FactoryRoute {const char* name;std::uintptr_t rva;std::uint8_t prefix[16],stolen,displacement,end;void* hook;};
     const FactoryRoute factory_routes[]={
@@ -27754,7 +27728,16 @@ void BuildXuiLoadHookPlan() noexcept
     g_original_xui_factory_retire_all=reinterpret_cast<XuiFactorySweepFn>(g_context.engine_base+0x2ACF60);
     for(std::size_t i=0;i<4;++i){const auto& entry=factory_routes[i];const auto target=g_context.engine_base+entry.rva;
         g_xui_factory_statuses[i]=AddHookStatus(entry.name,"engine_x64_rwdi.dll",target,entry.rva,entry.prefix,sizeof(entry.prefix),false);
-        g_xui_factory_routes[i]=AddFunctionDetour(g_xui_factory_statuses[i],target,entry.stolen,entry.displacement,entry.end,entry.hook);}
+        g_xui_factory_routes[i]=AddFunctionDetour(g_xui_factory_statuses[i],target,entry.stolen,entry.displacement,entry.end,entry.hook);
+        if(g_xui_factory_routes[i])g_xui_factory_routes[i]->xui_entry_unwind=true;}
+    if(g_xui_birth_requested&&g_hook_route_count<kMaximumHookRoutes){
+        const auto address=g_context.engine_base+0x2AC8C0;
+        g_xui_birth_status=AddHookStatus("Native UI before-create notification","engine_x64_rwdi.dll",address,0x2AC8C0,xui_birth::kOriginal,16,false);
+        if(g_xui_birth_status&&g_xui_birth_status->validated){auto& route=g_hook_routes[g_hook_route_count++];std::memset(&route,0,sizeof(route));
+            route.owner=g_xui_birth_status;route.kind=HookRouteKind::CallEnvelope;route.address=address;route.original_target=reinterpret_cast<void*>(address);
+            route.hook_target=reinterpret_cast<void*>(&HookXuiCreateRuntime);route.byte_count=route.stolen_size=16;
+            std::memcpy(route.original_bytes,xui_birth::kOriginal,16);route.enabled=true;++g_xui_birth_status->route_count;}
+    }
 }
 
 void PrepareXuiManagerObservation() noexcept
@@ -27778,7 +27761,8 @@ void SealXuiManagerObservation() noexcept
     g_xui_instance_observation_ready=g_xui_manager_observation_ready;
     for(const auto* status:g_xui_factory_statuses)
         if(!status||!status->validated||!status->installed)g_xui_instance_observation_ready=false;
-    if(!g_xui_instance_observation_ready)g_xui_instances.lost.store(true);
+    if(g_xui_birth_requested&&(!g_xui_birth_status||!g_xui_birth_status->validated||!g_xui_birth_status->installed))g_xui_instance_observation_ready=false;
+    if(!g_xui_instance_observation_ready)(void)xui_instance::MarkLost(&g_xui_instances,xui_instance::Loss::Startup);
 }
 
 void BuildTextHookPlan() noexcept
@@ -27870,13 +27854,13 @@ void PrepareNativeFileBridge() noexcept
 {
     g_native_file_bridge_prepared = false;
     std::memset(g_native_file_statuses, 0, sizeof(g_native_file_statuses));
-    if (!g_fix_enabled || !g_filesystem_full_profile_valid) return;
+    if ((!g_fix_enabled && !g_xui_observation_only) || !g_filesystem_full_profile_valid) return;
     // The loaded file's SHA was independently compared to this exact value
     // by Initialize before this in-memory prefix/vtable validation pass.
-    g_native_file_bridge_prepared = filebridge::Prepare(&g_native_file_bridge,
+    g_native_file_bridge_prepared = file_observation::Prepare(&g_native_file_bridge,
         g_context.filesystem_base, kSupportedFilesystemSha256,
         &ReadNativeFileBridgeMemory, nullptr);
-    if (g_native_file_bridge_prepared) {
+    if (g_native_file_bridge_prepared && g_fix_enabled) {
         g_native_file_bridge_prepared = files::ConfigureFactoryReplayValidator(&g_native_file_bridge.ledger,
             &ValidateProductionFactoryReplayAuthorization, nullptr);
         g_native_file_bridge_prepared = g_native_file_bridge_prepared &&
@@ -27884,11 +27868,12 @@ void PrepareNativeFileBridge() noexcept
         g_native_file_bridge.authorize_factory = &AuthorizeProductionReplayFactory;
         g_archive_input_observer_ready = ConfigureProductionArchiveInputs();
     }
+    else if(g_native_file_bridge_prepared)g_archive_input_observer_ready=ConfigureProductionArchiveInputs();
 }
 
 bool BuildNativeFileHookPlan() noexcept
 {
-    if (!g_fix_enabled) return true;
+    if (!g_fix_enabled && !g_xui_observation_only) return true;
     if (!g_native_file_bridge_prepared) return false;
     static const char* const names[] = {
         "file lifetime: public open", "file lifetime: native open",
@@ -27928,6 +27913,10 @@ bool BuildNativeFileHookPlan() noexcept
         auto* status = AddHookStatus(names[index], "filesystem_x64_rwdi.dll", target,
             spec.rva, spec.prefix, spec.prefix_size, true);
         g_native_file_statuses[index] = status;
+        if(g_xui_observation_only){
+            if(spec.route==filewin::Route::PublicOpen)g_fs_open_engine_status=g_fs_open_gamedll_status=g_fs_open_imagelib_status=g_fs_open_internal_status=status;
+            if(spec.route==filewin::Route::NativeOpen)g_fs_open_native_audio_status=status;
+        }
         if (!status || !status->validated) return false;
         if (spec.role == filewin::Role::InteriorCompletion) {
             if (g_hook_route_count >= kMaximumHookRoutes) return false;
@@ -27956,19 +27945,24 @@ bool BuildNativeFileHookPlan() noexcept
 bool SealNativeFileBridge() noexcept
 {
     g_native_factory_resolvers_sealed = true;
-    if (!g_fix_enabled) return true;
+    if (!g_fix_enabled && !g_xui_observation_only) return true;
     if (!g_native_file_bridge_prepared) return false;
     std::uint64_t mask = 0;
     for (unsigned i = 0; i < static_cast<unsigned>(filewin::Route::Count); ++i)
         if (g_native_file_statuses[i] && g_native_file_statuses[i]->installed)
             mask |= std::uint64_t{1} << i;
-    vfs::FilesystemSourceInventory inventory = {};
-    if (!CaptureCurrentFilesystemInventory(&inventory)) {
-        files::RecordCoverageLoss(&g_native_file_bridge.ledger, files::Failure::HookCoverage);
-        return false;
+    if (!g_xui_observation_only) {
+        vfs::FilesystemSourceInventory inventory = {};
+        if (!CaptureCurrentFilesystemInventory(&inventory)) {
+            files::RecordCoverageLoss(&g_native_file_bridge.ledger, files::Failure::HookCoverage);
+            return false;
+        }
+        for (std::uint32_t i = 0; i < inventory.source_count; ++i)
+            if (!filebridge::ExistingSource(&g_native_file_bridge, inventory.sources[i].source)) return false;
     }
-    for (std::uint32_t i = 0; i < inventory.source_count; ++i)
-        if (!filebridge::ExistingSource(&g_native_file_bridge, inventory.sources[i].source)) return false;
+    // Independent observation assigns conservative generations to sources on
+    // first use through the shared bridge. It grants no isolation baseline or
+    // source-removal proof and needs no content-tracking registry inventory.
     return filebridge::Seal(&g_native_file_bridge, mask);
 }
 
@@ -29797,10 +29791,10 @@ bool PrepareAllRelays() noexcept
     for (std::size_t i = 0; i < g_hook_route_count; ++i) {
         HookRoute* route = &g_hook_routes[i];
         if (!route->enabled || (route->kind != HookRouteKind::FunctionDetour &&
-                                route->kind != HookRouteKind::InteriorEnvelope))
+                                route->kind != HookRouteKind::InteriorEnvelope && route->kind != HookRouteKind::CallEnvelope))
             continue;
-        if (!(route->kind == HookRouteKind::InteriorEnvelope ?
-              PrepareNativeFileInteriorRelay(route) : (PrepareRelay(route) && PrepareNativeFileEntryUnwind(route)))) {
+        if (!(route->kind == HookRouteKind::CallEnvelope ? PrepareXuiBirthCallRelay(route) : route->kind == HookRouteKind::InteriorEnvelope ?
+              PrepareNativeFileInteriorRelay(route) : (PrepareRelay(route) && PrepareNativeEntryUnwind(route)))) {
             if (route->owner)
                 dluma_log_pair("WARN", "hook_relay_prepare_failed",
                              route->owner->name);
@@ -38591,6 +38585,54 @@ bool SupportedIdentity(const RuntimeContext& context) noexcept
 
 }  // namespace
 
+FixStatus InitializeXuiObservationOnly(const RuntimeContext& context)noexcept
+{
+    if(!NativeXuiObservationRequested())return MakeStatus(FixState::Disabled);
+    const auto host=dluma_dual_host_runtime_kind();
+    if((host!=DLUMA_HOST_PLAYER_STANDALONE&&host!=DLUMA_HOST_PLAYER_EDITOR_PLAYTEST)||!SupportedIdentity(context))return MakeStatus(FixState::UnsupportedBuild);
+    g_xui_observation_only=true;
+    g_context.gamedll_module=context.gamedll_module;g_context.gamedll_base=context.gamedll_base;
+    g_context.gamedll_timestamp=context.gamedll_timestamp;g_context.gamedll_size_of_image=context.gamedll_size_of_image;
+    g_context.engine_module=context.engine_module;g_context.engine_base=context.engine_base;
+    g_context.engine_timestamp=context.engine_timestamp;g_context.engine_size_of_image=context.engine_size_of_image;
+    g_context.filesystem_module=context.filesystem_module;g_context.filesystem_base=context.filesystem_base;
+    g_context.filesystem_timestamp=context.filesystem_timestamp;g_context.filesystem_size_of_image=context.filesystem_size_of_image;
+    g_engine_full_profile_valid=ValidateLoadedModuleSha256(context.engine_module,kSupportedEngineSha256);
+    g_gamedll_full_profile_valid=ValidateLoadedModuleSha256(context.gamedll_module,kSupportedGamedllSha256);
+    g_filesystem_full_profile_valid=ValidateLoadedModuleSha256(context.filesystem_module,kSupportedFilesystemSha256);
+    if(!g_engine_full_profile_valid||!g_gamedll_full_profile_valid||!g_filesystem_full_profile_valid)return MakeStatus(FixState::UnsupportedBuild);
+    content::Initialize(&g_content_ledger);
+    std::memset(g_hook_statuses,0,sizeof(g_hook_statuses));std::memset(g_hook_routes,0,sizeof(g_hook_routes));g_hook_status_count=g_hook_route_count=0;
+    dluma_atomic_exchange(&g_trace_stopping,0);dluma_atomic_exchange(&g_trace_live,0);dluma_atomic_exchange(&g_content_live,0);
+    PrepareNativeFileBridge();BuildXuiLoadHookPlan();
+    const auto abort_unpublished=[]()noexcept {
+        ReleaseUnusedRelays();
+        (void)file_observation::AbortUnpublished(&g_native_file_bridge);
+        g_native_file_bridge_prepared=false;g_archive_input_observer_ready=false;
+        return MakeStatus(FixState::UnsupportedBuild);
+    };
+    if(!BuildNativeFileHookPlan())return abort_unpublished();
+    // Observe source publication only. No isolation source rewrite, reset,
+    // resource renderer, audio, character or progression route is planned.
+    const std::uint8_t prefix[]={0x48,0x8b,0xc4,0x48,0x81,0xec,0xa8,0,0,0,0x48,0x89,0x58,0x08,0x48,0x89};
+    g_fs_add_object_status=AddHookStatus("XUI source publication","filesystem_x64_rwdi.dll",g_context.filesystem_base+kFsAddObjectRva,kFsAddObjectRva,prefix,sizeof(prefix),true);
+    if(!AddFunctionDetour(g_fs_add_object_status,g_context.filesystem_base+kFsAddObjectRva,18,0,0,reinterpret_cast<void*>(&HookFsAddObject)))return abort_unpublished();
+    for(std::size_t i=0;i<g_hook_status_count;++i)g_hook_statuses[i].mandatory=true;
+    if(!ValidateAtomicRouteMutationSafety()||!PrepareAllRelays())return abort_unpublished();
+    PrepareXuiManagerObservation();
+    if(!g_xui_manager_startup_prepared||!ObservationFileHooksReady()||!PinLoaderIfNeeded(false))return abort_unpublished();
+    if(!InstallMandatoryRoutes()){
+        // Any published callback can still have a fetched entry. Preserve its
+        // initialized trace/forwarding tables even after route rollback.
+        g_initialized=AnyInstalledRoutes();return MakeStatus(g_initialized?FixState::ApplyFailed:FixState::UnsupportedBuild);
+    }
+    SealXuiManagerObservation();const bool files_ready=SealNativeFileBridge();
+    g_initialized=true;
+    if(!files_ready||!g_xui_manager_observation_ready||!g_xui_instance_observation_ready)return MakeStatus(FixState::ApplyFailed);
+    dluma_log_line("INFO","Shared XUI lifetime and input observation is active; Custom Map Content Isolation remains disabled.");
+    return MakeStatus(FixState::Disabled);
+}
+
 FixStatus Initialize(const RuntimeContext& context, bool enabled)
 {
     g_fix_enabled = enabled;
@@ -38623,7 +38665,7 @@ FixStatus Initialize(const RuntimeContext& context, bool enabled)
         dluma_atomic_exchange(&g_content_live, 0);
         dluma_log_line("FIX",
                      "custom_map_asset_isolation: disabled by configuration");
-        return MakeStatus(FixState::Disabled);
+        return InitializeXuiObservationOnly(context);
     }
     const DlumaHostKind host_kind = dluma_dual_host_runtime_kind();
     if (host_kind != DLUMA_HOST_PLAYER_STANDALONE &&
@@ -39542,6 +39584,27 @@ FixStatus CurrentStatus()
 }
 
 }  // namespace dluma::fixes::custom_map_asset_isolation
+
+#include "NativeXuiReceiverBridge.inl"
+
+extern "C" int dluma_xui_native_frame(void** level,uintptr_t* manager)
+{using namespace dluma::fixes::custom_map_asset_isolation;return NativeDocumentFrame(level,manager);}
+extern "C" int dluma_xui_native_borrow_context(void** level,uintptr_t* manager)
+{using namespace dluma::fixes::custom_map_asset_isolation;return NativeXuiBorrowContext(level,manager);}
+extern "C" uint64_t dluma_xui_native_manager_generation(uintptr_t manager)
+{using namespace dluma::fixes::custom_map_asset_isolation;xui::ManagerRecord record={};return g_xui_manager_observation_ready&&xui::LookupManager(&g_xui_manager_ledger,manager,&record)&&record.life==xui::ManagerLife::Live?record.generation:0;}
+extern "C" int dluma_xui_document_native_ready(void)
+{using namespace dluma::fixes::custom_map_asset_isolation;void* level=nullptr;std::uintptr_t manager=0;return NativeDocumentEnabled()&&NativeDocumentFrame(&level,&manager);}
+extern "C" int dluma_xui_document_native_configured(void)
+{using namespace dluma::fixes::custom_map_asset_isolation;return NativeDocumentEnabled()&&g_initialized&&g_xui_manager_observation_ready&&g_xui_instance_observation_ready&&ProductionXuiHooksCurrent()&&g_xui_compiled_attempt_status&&g_xui_compiled_attempt_status->installed;}
+extern "C" int dluma_xui_document_native_bind(const DlumaXuiDocumentIdentity* identity)
+{using namespace dluma::fixes::custom_map_asset_isolation;return NativeDocumentBind(identity);}
+extern "C" int dluma_xui_document_native_current(void*,const DlumaXuiDocumentIdentity* identity)
+{using namespace dluma::fixes::custom_map_asset_isolation;return NativeDocumentCurrent(identity);}
+extern "C" int dluma_xui_document_native_snapshot(void*,DlumaXuiDocumentSnapshot* snapshot)
+{using namespace dluma::fixes::custom_map_asset_isolation;return NativeDocumentSnapshot(snapshot);}
+extern "C" DlumaXuiDocumentRebuildResult dluma_xui_document_native_rebuild(void*,const DlumaXuiDocumentIdentity* identity,const DlumaXuiDocumentSource* source,const DlumaXuiDocumentSnapshot* before)
+{using namespace dluma::fixes::custom_map_asset_isolation;return NativeDocumentRebuild(identity,source,before);}
 
 extern "C" void dluma_isolation_note_script_entry(const void* return_address,
     const void* callback_address, DWORD thread_id)

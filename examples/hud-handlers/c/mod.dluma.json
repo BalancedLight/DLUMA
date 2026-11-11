@@ -1,0 +1,20 @@
+{
+  "schema": "dluma.mod.v1",
+  "api_version": "1.0",
+  "id": "example.hud.c",
+  "name": "HUD Handlers (C)",
+  "version": "1.0.0",
+  "description": "Shows named handlers controlling the radar.",
+  "author": "DLUMA",
+  "language": "native",
+  "scope": "global",
+  "entry": "hud.mod",
+  "load_priority": 0,
+  "hosts": [
+    "player"
+  ],
+  "access": [
+    "ui.overlay",
+    "quest.phase.handle"
+  ]
+}

@@ -808,6 +808,22 @@ bool TestStandaloneStartupRequiresStablePlayerAndLevel() noexcept
 
 }  // namespace
 
+static bool TestExactDiagnosticCallerGate()
+{
+    DlumaGameFrameAuthorityState state = {};
+    state.exact_route_identity_seeded = 1;
+    state.exact_route_caller_module_base = 0x100000;
+    state.exact_route_caller_rva = 0x251434;
+    state.current_dispatch_thread_id = 77;
+    CHECK(dluma_game_frame_authority_matches_active_caller(&state,77,0x100000,0x251434));
+    CHECK(!dluma_game_frame_authority_matches_active_caller(&state,78,0x100000,0x251434));
+    CHECK(!dluma_game_frame_authority_matches_active_caller(&state,77,0x100000,0x251435));
+    CHECK(!dluma_game_frame_authority_matches_active_caller(&state,77,0x200000,0x251434));
+    state.game_frame_authority_conflict=1;
+    CHECK(!dluma_game_frame_authority_matches_active_caller(&state,77,0x100000,0x251434));
+    return true;
+}
+
 int main()
 {
     const bool passed =
@@ -828,7 +844,8 @@ int main()
         TestTimerProbeIsDiagnosticAndSeparate() &&
         TestShutdownAcceptsRouteOrWindowOwnerOnly() &&
         TestStandaloneStartupRequiresStablePlayerAndLevel() &&
-        TestTopologyTraceIsBounded();
+        TestTopologyTraceIsBounded() &&
+        TestExactDiagnosticCallerGate();
     if (!passed) return 1;
     std::puts("game frame authority fake harness passed");
     return 0;

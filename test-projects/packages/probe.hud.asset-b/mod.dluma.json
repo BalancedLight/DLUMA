@@ -1,0 +1,1 @@
+{"schema":"dluma.mod.v1","api_version":"1.0","id":"probe.hud.asset-b","name":"DLUMA Feature Probe B","version":"1.0.0","description":"Second scoped boss callback probe.","author":"DLUMA","language":"lua","scope":"project","entry":"main.lua","load_priority":0,"hosts":["player"],"access":["quest.phase.handle"]}

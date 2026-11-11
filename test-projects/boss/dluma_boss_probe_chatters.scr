@@ -1,0 +1,27 @@
+sub main()
+{
+    Preset("DlumaBossProbe")
+    {
+        Variation()
+        {
+            Group("FinalAmbient")
+            {
+                Random(1)
+                {
+                    Sequence()
+                    {
+                        Chatter("Player", "CIN_Closing_27_Player.ogg", "CIN_Closing_27_Player", "player", false, "QuestDialog");
+                    }
+                    Sequence()
+                    {
+                        Chatter("Player", "CIN_Closing_28_Player.ogg", "CIN_Closing_28_Player", "player", false, "QuestDialog");
+                    }
+                    Sequence()
+                    {
+                        Chatter("Player", "CIN_Closing_29_Player.ogg", "CIN_Closing_29_Player", "player", false, "QuestDialog");
+                    }
+                }
+            }
+        }
+    }
+}

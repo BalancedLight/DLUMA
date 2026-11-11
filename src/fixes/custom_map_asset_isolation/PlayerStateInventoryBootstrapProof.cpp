@@ -1,29 +1,16 @@
 #define _HAS_EXCEPTIONS 0
 
 #include "PlayerStateInventoryBootstrapProof.h"
+#include "../../core/dlw_engine_script_bootstrap.h"
 
 #include <cstring>
 
 namespace dluma::fixes::custom_map_asset_isolation::cold_reboot::player_restart {
 namespace {
 
-/* These prefixes are from the exact supported Player/engine images.  The
- * full-image SHA-256 gates in production remain mandatory; the prefixes keep
- * the specific semantic facts independently visible and fail closed if a
- * future profile accidentally reuses the same RVAs.
- *
- * engine 0x24B9A2:
- *   load stored initializer callback; call it; publish its result; only then
- *   allocate/publish CFactory.
- */
-constexpr unsigned char kEngineOrderPrefix[] = {
-    0x48, 0x8B, 0x3D, 0xAF, 0x12, 0x88, 0x00,
-    0xFF, 0xD7,
-    0x48, 0x8B, 0xF8,
-    0x48, 0x89, 0x05, 0xB3, 0x12, 0x88, 0x00,
-    0x48, 0x85, 0xC0,
-    0x75, 0x39,
-};
+/* Engine publication checks are shared with the strict actual-entry proof in
+ * core/dlw_engine_script_bootstrap.c. The inventory-specific RTTI, creator,
+ * global-slot and lifecycle-route proof below remains authoritative here. */
 
 /* PlayerState's dynamic initializer registers the RTTI descriptor and writes
  * CRTTIGameScript<PlayerState>'s vtable.  The exact-image static-initializer
@@ -80,6 +67,31 @@ bool ReadPointer(const PlayerInventoryBootstrapProofInput& input,
         input.read_memory_user, address, output, sizeof(*output));
 }
 
+int ReadEngineStage(void* user, uintptr_t address, void* output, size_t bytes) noexcept
+{
+    const auto* input = static_cast<const PlayerInventoryBootstrapProofInput*>(user);
+    return input->read_memory(input->read_memory_user, address, output, bytes) ? 1 : 0;
+}
+
+PlayerInventoryBootstrapProofFailure MapEngineFailure(DlumaEngineScriptBootstrapFailure failure) noexcept
+{
+    using F = PlayerInventoryBootstrapProofFailure;
+    switch (failure) {
+    case DLUMA_EBS_UNSUPPORTED_IMAGE: return F::UnsupportedImage;
+    case DLUMA_EBS_NOT_BEFORE_INITIALIZER: return F::NotBeforeOriginalInitializer;
+    case DLUMA_EBS_ADDRESS_OVERFLOW: return F::AddressOverflow;
+    case DLUMA_EBS_ORDER_MISMATCH: return F::EngineOrderMismatch;
+    case DLUMA_EBS_CALLBACK_UNREADABLE: return F::EngineCallbackUnreadable;
+    case DLUMA_EBS_CALLBACK_MISMATCH: return F::EngineCallbackMismatch;
+    case DLUMA_EBS_MANAGER_UNREADABLE: return F::EngineScriptManagerUnreadable;
+    case DLUMA_EBS_MANAGER_PUBLISHED: return F::EngineScriptManagerAlreadyPublished;
+    case DLUMA_EBS_FACTORY_UNREADABLE: return F::EngineFactoryUnreadable;
+    case DLUMA_EBS_FACTORY_PUBLISHED: return F::EngineFactoryAlreadyPublished;
+    default: return F::InvalidArgument;
+    }
+}
+
+
 void Fail(PlayerInventoryBootstrapProofResult* output,
           PlayerInventoryBootstrapProofFailure failure) noexcept
 {
@@ -116,56 +128,24 @@ bool ProvePlayerStateInventoryBootstrap(
         return false;
     }
 
-    if (!ReadExact(*input, input->engine_base,
-                   kEngineInitializeCallbackCallRva - 7U,
-                   kEngineOrderPrefix, sizeof(kEngineOrderPrefix))) {
-        Fail(output, PlayerInventoryBootstrapProofFailure::
-                         EngineOrderMismatch);
+    DlumaEngineScriptBootstrapInput engine_input = {};
+    engine_input.engine_base = input->engine_base;
+    engine_input.proxy_initializer = input->proxy_initialize_callback;
+    engine_input.exact_engine_profile = input->exact_engine_image_validated ? 1 : 0;
+    engine_input.before_original_initializer = input->before_original_game_script_initializer ? 1 : 0;
+    engine_input.read_memory = &ReadEngineStage;
+    engine_input.user = const_cast<PlayerInventoryBootstrapProofInput*>(input);
+    DlumaEngineScriptBootstrapResult engine_result = {};
+    // Preserve publication-only legacy behavior. New installers use the strict
+    // actual-entry function; this path does not manufacture caller evidence.
+    if (!dluma_engine_script_bootstrap_unpublished(&engine_input, &engine_result)) {
+        Fail(output, MapEngineFailure(engine_result.failure));
         return false;
     }
-
+    output->engine_callback_owned = engine_result.callback_owned != 0;
+    output->engine_script_manager_unpublished = engine_result.manager_unpublished != 0;
+    output->engine_factory_unavailable = engine_result.factory_unavailable != 0;
     std::uintptr_t pointer = 0;
-    if (!ReadPointer(*input, input->engine_base,
-                     kEngineInitializeCallbackGlobalRva, &pointer)) {
-        Fail(output, PlayerInventoryBootstrapProofFailure::
-                         EngineCallbackUnreadable);
-        return false;
-    }
-    if (pointer != input->proxy_initialize_callback) {
-        Fail(output, PlayerInventoryBootstrapProofFailure::
-                         EngineCallbackMismatch);
-        return false;
-    }
-    output->engine_callback_owned = true;
-
-    if (!ReadPointer(*input, input->engine_base,
-                     kEnginePublishedScriptManagerGlobalRva, &pointer)) {
-        Fail(output, PlayerInventoryBootstrapProofFailure::
-                         EngineScriptManagerUnreadable);
-        return false;
-    }
-    if (pointer) {
-        Fail(output, PlayerInventoryBootstrapProofFailure::
-                         EngineScriptManagerAlreadyPublished);
-        return false;
-    }
-    output->engine_callback_owned = true;
-    output->engine_script_manager_unpublished = true;
-
-    if (!ReadPointer(*input, input->engine_base,
-                     kEngineFactoryGlobalRva, &pointer)) {
-        Fail(output, PlayerInventoryBootstrapProofFailure::
-                         EngineFactoryUnreadable);
-        return false;
-    }
-    if (pointer) {
-        Fail(output, PlayerInventoryBootstrapProofFailure::
-                         EngineFactoryAlreadyPublished);
-        return false;
-    }
-    output->engine_callback_owned = true;
-    output->engine_script_manager_unpublished = true;
-    output->engine_factory_unavailable = true;
 
     if (!ReadExact(*input, input->gamedll_base,
                    kBootstrapPlayerStateRttiInitializerRva,

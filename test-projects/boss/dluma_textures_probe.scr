@@ -1,0 +1,24 @@
+sub main()
+{
+    Phase("Run")
+    {
+        CallMod("probe.hud.asset-a", "textures", "{}");
+        PhaseTransition() { Conditions() { TimePassed(8.0); } Target("Observe"); }
+    }
+    Phase("Observe")
+    {
+        InfectionFlashback();
+        PhaseTransition() { Conditions() { TimePassed(20.0); } Target("Reset"); }
+    }
+    Phase("Reset")
+    {
+        CallMod("probe.hud.asset-a", "reset", "{}");
+        PhaseTransition() { Conditions() { TimePassed(10.0); } Target("ObserveRestored"); }
+    }
+    Phase("ObserveRestored")
+    {
+        InfectionFlashback();
+        PhaseTransition() { Conditions() { TimePassed(8.0); } Target("End"); }
+    }
+    Phase("End") { Finish(); }
+}

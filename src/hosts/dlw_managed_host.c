@@ -4,6 +4,8 @@
 #include "../core/dlw_api_runtime.h"
 #include "../core/dlw_runtime_tree.h"
 #include "../game/dlw_game_backend.h"
+#include "../game/dlw_quest_phase_service.h"
+#include "../game/dlw_mod_handler_service.h"
 #include "../generated/dluma_api_catalog.generated.h"
 #include "../dlw_native_gameplay.h"
 #include "../dlw_native_mod_config.h"
@@ -249,6 +251,9 @@ static char g_dluma_managed_crash_context[
 static void dluma_managed_dispatch_event(
     DlumaManagedModEntry* entry,
     const DlumaManagedQueuedEvent* queued);
+static int dluma_managed_phase_sink(void* user, uint32_t kind, uint64_t callback_id,
+    uint64_t token, const DlumaQuestPhaseEvent* phase);
+static int dluma_managed_handler_sink(void* user, const DlumaModHandlerEventV1* handler);
 static void dluma_managed_host_event_sink(
     void* user,
     uint32_t kind,
@@ -1667,6 +1672,7 @@ static int dluma_managed_runtime_paths(
     WCHAR host_fxr_relative[256];
     WCHAR managed_root[DLUMA_MAX_WPATH];
     WCHAR runtime_root[DLUMA_MAX_WPATH];
+    WCHAR dotnet_root[DLUMA_MAX_WPATH];
     if (!runtime) return 0;
     host_fxr_relative[0] = 0;
     dluma_wstr_copy(
@@ -1685,16 +1691,21 @@ static int dluma_managed_runtime_paths(
             runtime_root,
             DLUMA_ARRAY_COUNT(runtime_root),
             g_dluma.module_dir,
-            L"dluma_runtime\\dotnet") ||
+            L"dluma_runtime") ||
+        !dluma_managed_join_checked(
+            dotnet_root,
+            DLUMA_ARRAY_COUNT(dotnet_root),
+            runtime_root,
+            L"dotnet") ||
         !dluma_managed_join_checked(
             managed_root,
             DLUMA_ARRAY_COUNT(managed_root),
-            g_dluma.module_dir,
-            L"dluma_runtime\\managed") ||
+            runtime_root,
+            L"managed") ||
         !dluma_managed_join_checked(
             runtime->hostfxr_path,
             DLUMA_ARRAY_COUNT(runtime->hostfxr_path),
-            runtime_root,
+            dotnet_root,
             host_fxr_relative) ||
         !dluma_managed_join_checked(
             runtime->bootstrap_path,
@@ -1714,7 +1725,7 @@ static int dluma_managed_runtime_paths(
     dluma_wstr_copy(
         runtime->dotnet_root,
         DLUMA_ARRAY_COUNT(runtime->dotnet_root),
-        runtime_root);
+        dotnet_root);
     return 1;
 }
 
@@ -2048,6 +2059,15 @@ static int dluma_managed_api_initialize_entry(
         return 0;
     }
     memset(&entry->bridge, 0, sizeof(entry->bridge));
+    if (!dluma_quest_phase_service_attach(&entry->api_owner, &entry->package,
+            entry->snapshot.load_priority, dluma_managed_phase_sink, entry) ||
+        !dluma_mod_handler_service_attach(&entry->api_owner, &entry->package,
+            dluma_managed_handler_sink, entry)) {
+        dluma_game_host_context_revoke(&entry->api_host);
+        dluma_mod_owner_begin_revoke(&entry->api_owner);
+        dluma_mod_owner_finish_revoke(&entry->api_owner);
+        return 0;
+    }
     entry->bridge.struct_size =
         (uint32_t)sizeof(entry->bridge);
     entry->bridge.struct_version =
@@ -2941,6 +2961,75 @@ static void dluma_managed_dispatch_event(
         entry->lifecycle_phase =
             DLUMA_MANAGED_PHASE_READY;
     }
+}
+
+typedef struct DlumaManagedExtendedEventV1 {
+    DlumaManagedEventV1 base;
+    const DlumaQuestPhaseNativeEventV1* quest_phase;
+    const DlumaModHandlerEventV1* mod_handler;
+} DlumaManagedExtendedEventV1;
+
+static int dluma_managed_extended_dispatch(DlumaManagedModEntry* entry,
+    DlumaManagedExtendedEventV1* event, unsigned int access)
+{
+    DlumaModPackageSnapshot current;
+    char diagnostic[DLUMA_MANAGED_DIAGNOSTIC_CAPACITY];
+    int success = 0;
+    unsigned int previous_phase;
+    if (!entry || !entry->managed_handle || !entry->snapshot.active ||
+        entry->api_owner.state != DLUMA_MOD_OWNER_ACTIVE ||
+        event->base.map_generation != entry->api_owner.map_generation ||
+        g_dluma_managed_map_exit_frozen ||
+        (g_dluma_managed_project_exit_gate && entry->package.manifest.scope != DLUMA_SCOPE_GLOBAL) ||
+        (entry->lifecycle_phase != DLUMA_MANAGED_PHASE_READY &&
+         entry->lifecycle_phase != DLUMA_MANAGED_PHASE_CALLBACK)) return 0;
+    memset(&current, 0, sizeof(current)); current.struct_size = sizeof(current);
+    if (dluma_mod_package_revalidate(&entry->package, &current) != DLUMA_STATUS_OK ||
+        !dluma_mod_manifest_has_access(&current.manifest, access)) return 0;
+    event->base.struct_size = sizeof(*event); event->base.struct_version = 1U;
+    previous_phase = entry->lifecycle_phase;
+    entry->lifecycle_phase = DLUMA_MANAGED_PHASE_CALLBACK;
+    __try { success = g_dluma_managed.runtime.api.dispatch(entry->managed_handle,
+        &event->base, diagnostic, sizeof(diagnostic)); }
+    __except(1) { success = 0; }
+    if (entry->lifecycle_phase == DLUMA_MANAGED_PHASE_CALLBACK)
+        entry->lifecycle_phase = previous_phase;
+    return success;
+}
+static DlumaStringView dluma_managed_phase_view(const char* value)
+{
+    DlumaStringView view; view.data = value; view.size = strlen(value); return view;
+}
+static int dluma_managed_handler_sink(void* user, const DlumaModHandlerEventV1* handler)
+{
+    DlumaManagedExtendedEventV1 event;
+    memset(&event, 0, sizeof(event));
+    event.base.kind = 13U; event.base.map_generation = handler->map_generation;
+    event.mod_handler = handler;
+    return dluma_managed_extended_dispatch(user, &event, DLUMA_ACCESS_QUEST_PHASE_HANDLE);
+}
+static int dluma_managed_phase_sink(void* user, uint32_t kind, uint64_t callback_id,
+    uint64_t token, const DlumaQuestPhaseEvent* phase)
+{
+    DlumaManagedExtendedEventV1 event;
+    DlumaQuestPhaseNativeEventV1 payload;
+    memset(&event, 0, sizeof(event)); memset(&payload, 0, sizeof(payload));
+    payload.struct_size = sizeof(payload); payload.struct_version = 1U;
+    payload.kind = kind; payload.map_generation = phase->map_generation;
+    payload.callback_id = callback_id; payload.token = token; payload.sequence = phase->sequence;
+    payload.runtime_kind = phase->runtime_kind; payload.completion = phase->completion;
+    payload.local_peer = phase->local_peer; payload.wait_seconds = phase->wait_seconds;
+    payload.quest_id = dluma_managed_phase_view(phase->quest_id);
+    payload.phase_id = dluma_managed_phase_view(phase->phase_id);
+    payload.contract_id = dluma_managed_phase_view(phase->contract_id);
+    payload.provider = dluma_managed_phase_view(phase->provider_mod);
+    payload.handler = dluma_managed_phase_view(phase->handler_id);
+    payload.binding_hash = dluma_managed_phase_view(phase->binding_hash);
+    payload.arguments_json = dluma_managed_phase_view(phase->arguments_json);
+    event.base.kind = kind; event.base.map_generation = phase->map_generation;
+    event.quest_phase = &payload;
+    return dluma_managed_extended_dispatch(user, &event,
+        kind == DLUMA_MOD_EVENT_QUEST_PHASE_PROVIDER ? DLUMA_ACCESS_QUEST_PHASE_HANDLE : DLUMA_ACCESS_QUEST_PHASE_OBSERVE);
 }
 
 static void dluma_managed_finish_pending_cleanup(

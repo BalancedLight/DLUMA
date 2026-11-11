@@ -21,3 +21,10 @@ Replace the SDK snapshot, update source imports and names, and update package me
 The API remains version 1.0. Numeric capability and operation IDs and ABI record layouts are retained; the renamed native entry point and managed assembly identities require recompilation. Existing package approvals do not cover newly built files, so players review the new package and restart Player.
 
 Older Lua `dlua` APIs and native ABI V1 mods need a source migration to the current package and lifecycle model. There is no automatic source converter. Start from a current example or creator template, move your behavior to the common API, and validate the resulting package.
+
+The HUD document and flashback texture requests are additive API 1.0
+operations. Existing operation IDs and record layouts are unchanged, and older
+compatible catalog provenance remains accepted. Mods using the new operations
+must rebuild against the updated SDK and regenerate their package lock after
+changing package content. A capability check is still required: an updated SDK
+does not make the native backend available on an unsupported game build.

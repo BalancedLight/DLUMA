@@ -3,6 +3,8 @@
 #include "dlw_native_gameplay.h"
 #include "dlw_native_mods.h"
 #include "dlw_quest_hud.h"
+#include "game/dlw_hud_visibility_service.h"
+#include "dlw_boss_actions.h"
 
 #include <math.h>
 
@@ -3750,6 +3752,8 @@ void dluma_native_gameplay_on_map_generation_changed(
     g_dluma_native.subtitle_validation_failure_logged = 0;
     g_dluma_native.subtitle_expires_ms = 0;
     dluma_quest_hud_on_map_generation_changed(map_generation);
+    dluma_hud_visibility_reset_map(map_generation);
+    dluma_boss_actions_on_map_generation_changed(map_generation);
     dluma_native_lock(&g_dluma_native.match_lock);
     g_dluma_native.generation = map_generation;
     g_dluma_native.level = active_level;

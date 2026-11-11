@@ -1,4 +1,5 @@
 #include "dlw_quest_phase_service.h"
+#include "dlw_mod_handler_service.h"
 
 #include "../dlw_common.h"
 #include "../dlw_log.h"
@@ -169,6 +170,75 @@ static void dluma_qps_dispatch(
     }
 }
 
+int dluma_quest_phase_service_resolve_named(const char* mod_id,
+    const char* handler_id, uint32_t map_generation, uint64_t* owner_id,
+    uint32_t* owner_generation, uint64_t* registration_token)
+{
+    unsigned int index;
+    if (!mod_id || !handler_id || !owner_id || !owner_generation || !registration_token) return 0;
+    for (index = 0; index < DLUMA_QPS_MAX_REGISTRATIONS; ++index) {
+        DlumaQuestPhaseServiceRegistration* registration = &g_dluma_qps_registrations[index];
+        DlumaQuestPhaseServiceOwner* endpoint;
+        if (!registration->active || registration->event_kind != DLUMA_MOD_EVENT_QUEST_PHASE_PROVIDER ||
+            !dluma_qps_equal(registration->key, handler_id)) continue;
+        endpoint = dluma_qps_find_owner(registration->owner_id);
+        if (!endpoint || !dluma_qps_equal(endpoint->owner->stable_id, mod_id) ||
+            endpoint->owner->state != DLUMA_MOD_OWNER_ACTIVE ||
+            endpoint->owner->map_generation != map_generation ||
+            !dluma_qps_handler_declared(endpoint, handler_id)) continue;
+        *owner_id = endpoint->owner->owner_id;
+        *owner_generation = endpoint->owner->generation;
+        *registration_token = registration->dispatcher_token;
+        return 1;
+    }
+    return 0;
+}
+
+DlumaStatus dluma_quest_phase_service_dispatch_named(const char* mod_id,
+    const char* handler_id, const char* arguments_json, uint32_t map_generation,
+    const char* quest_id, const char* phase_id)
+{
+    unsigned int index;
+    static uint64_t sequence;
+    if (!dluma_engine_game_frame_dispatch_active_on_current_thread(&g_dluma.engine) ||
+        dluma_engine_game_frame_authority_status(&g_dluma.engine, GetTickCount64()) !=
+            DLUMA_GAME_FRAME_AUTHORITY_STATUS_AUTHORITATIVE) return DLUMA_STATUS_WRONG_THREAD;
+    for (index = 0; index < DLUMA_QPS_MAX_REGISTRATIONS; ++index) {
+        DlumaQuestPhaseServiceRegistration* registration = &g_dluma_qps_registrations[index];
+        DlumaQuestPhaseServiceOwner* endpoint;
+        DlumaQuestPhaseEvent event;
+        if (!registration->active || registration->event_kind != DLUMA_MOD_EVENT_QUEST_PHASE_PROVIDER ||
+            !dluma_qps_equal(registration->key, handler_id)) continue;
+        endpoint = dluma_qps_find_owner(registration->owner_id);
+        if (!endpoint || !dluma_qps_equal(endpoint->owner->stable_id, mod_id) ||
+            endpoint->owner->state != DLUMA_MOD_OWNER_ACTIVE ||
+            endpoint->owner->map_generation != map_generation ||
+            !dluma_qps_handler_declared(endpoint, handler_id)) continue;
+        if ((quest_id && strlen(quest_id) >= sizeof(event.quest_id)) ||
+            (phase_id && strlen(phase_id) >= sizeof(event.phase_id))) {
+            dluma_log_pair("WARN", "legacy_mod_handler_context_limit", handler_id);
+            return DLUMA_STATUS_LIMIT_EXCEEDED;
+        }
+        memset(&event, 0, sizeof(event));
+        event.struct_size = sizeof(event); event.map_generation = map_generation;
+        event.sequence = ++sequence; event.local_peer = 1U; event.completion = 1U;
+        event.runtime_kind = endpoint->owner->language == DLUMA_MOD_LANGUAGE_LUA ? 1U : 2U;
+        dluma_str_copy(event.quest_id, DLUMA_ARRAY_COUNT(event.quest_id), quest_id ? quest_id : "");
+        dluma_str_copy(event.phase_id, DLUMA_ARRAY_COUNT(event.phase_id), phase_id ? phase_id : "");
+        dluma_str_copy(event.provider_mod, DLUMA_ARRAY_COUNT(event.provider_mod), mod_id);
+        dluma_str_copy(event.handler_id, DLUMA_ARRAY_COUNT(event.handler_id), handler_id);
+        memcpy(event.contract_id, mod_id, strlen(mod_id));
+        event.contract_id[strlen(mod_id)] = ':';
+        memcpy(event.contract_id + strlen(mod_id) + 1U, handler_id, strlen(handler_id) + 1U);
+        event.arguments_json = arguments_json; event.arguments_size = (unsigned int)strlen(arguments_json);
+        endpoint->owner->game_thread_id = GetCurrentThreadId();
+        return endpoint->sink(endpoint->sink_user, registration->event_kind,
+            registration->callback_id, registration->dispatcher_token, &event)
+            ? DLUMA_STATUS_OK : DLUMA_STATUS_INTERNAL_ERROR;
+    }
+    return DLUMA_STATUS_NOT_FOUND;
+}
+
 int dluma_quest_phase_service_attach(
     DlumaModOwner* owner,
     const DlumaModPackageSnapshot* package,
@@ -192,6 +262,7 @@ int dluma_quest_phase_service_attach(
             g_dluma_qps_owners[index].sink = sink;
             g_dluma_qps_owners[index].sink_user = sink_user;
             g_dluma_qps_owners[index].active = 1U;
+            dluma_mod_handler_service_registry_changed();
             return 1;
         }
     return 0;
@@ -203,6 +274,7 @@ int dluma_quest_phase_service_detach(uint64_t owner_id)
     unsigned int index;
     if (!endpoint) return 1;
     endpoint->active = 0U;
+    dluma_mod_handler_service_registry_changed();
     for (index = 0; index < DLUMA_QPS_MAX_REGISTRATIONS; ++index) {
         DlumaQuestPhaseServiceRegistration* registration =
             &g_dluma_qps_registrations[index];
@@ -216,6 +288,23 @@ int dluma_quest_phase_service_detach(uint64_t owner_id)
     }
     memset(endpoint, 0, sizeof(*endpoint));
     return 1;
+}
+
+void dluma_quest_phase_service_clear(uint64_t owner_id)
+{
+    unsigned int index;
+    for (index = 0; index < DLUMA_QPS_MAX_REGISTRATIONS; ++index) {
+        DlumaQuestPhaseServiceRegistration* r = &g_dluma_qps_registrations[index];
+        if (r->active && r->owner_id == owner_id)
+            (void)dluma_quest_phase_service_unregister_callback(owner_id, r->event_kind, r->callback_id, r->key);
+    }
+}
+unsigned int dluma_quest_phase_service_count(uint64_t owner_id)
+{
+    unsigned int index, count = 0;
+    for (index = 0; index < DLUMA_QPS_MAX_REGISTRATIONS; ++index)
+        if (g_dluma_qps_registrations[index].active && g_dluma_qps_registrations[index].owner_id == owner_id) ++count;
+    return count;
 }
 
 int dluma_quest_phase_service_unregister_callback(
@@ -237,6 +326,7 @@ int dluma_quest_phase_service_unregister_callback(
         (void)dluma_quest_phase_player_unregister(
             registration->dispatcher_token);
         memset(registration, 0, sizeof(*registration));
+        dluma_mod_handler_service_registry_changed();
         if (endpoint && endpoint->owner &&
             endpoint->owner->active_subscriptions)
             --endpoint->owner->active_subscriptions;
@@ -255,7 +345,6 @@ static DlumaStatus dluma_qps_register(
     DlumaQuestPhaseServiceRegistration* slot = 0;
     char key[257];
     unsigned int index;
-    unsigned int owned_count = 0;
     int registered;
     if (!owner || !request || !result || !request->callback_id ||
         !request->key.data || !request->key.size ||
@@ -284,12 +373,11 @@ static DlumaStatus dluma_qps_register(
             continue;
         }
         if (current->owner_id != owner->owner_id) continue;
-        ++owned_count;
         if (current->event_kind == event_kind &&
             dluma_qps_equal(current->key, key))
             return DLUMA_STATUS_LIMIT_EXCEEDED;
     }
-    if (!slot || owned_count >= owner->max_subscriptions)
+    if (!slot || owner->active_subscriptions >= owner->max_subscriptions)
         return DLUMA_STATUS_LIMIT_EXCEEDED;
     memset(slot, 0, sizeof(*slot));
     slot->owner_id = owner->owner_id;
@@ -307,10 +395,12 @@ static DlumaStatus dluma_qps_register(
             dluma_qps_dispatch, slot, &slot->dispatcher_token);
     if (!registered) {
         memset(slot, 0, sizeof(*slot));
+        dluma_mod_handler_service_registry_changed();
         return DLUMA_STATUS_UNAVAILABLE;
     }
     ++owner->active_subscriptions;
     result->token = slot->dispatcher_token;
+    dluma_mod_handler_service_registry_changed();
     return DLUMA_STATUS_OK;
 }
 
@@ -332,6 +422,7 @@ static DlumaStatus dluma_qps_unregister(
         (void)dluma_quest_phase_player_unregister(
             registration->dispatcher_token);
         memset(registration, 0, sizeof(*registration));
+        dluma_mod_handler_service_registry_changed();
         if (owner->active_subscriptions) --owner->active_subscriptions;
         result->value = 1U;
         return DLUMA_STATUS_OK;

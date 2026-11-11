@@ -19,10 +19,11 @@ internal partial class GitView : UserControl, IDisposable
     private GitRepository? _repository;
     private GitStatus? _status;
     private string? _reviewToken;
+    private string? _unavailableMessage;
     private CancellationTokenSource? _operation;
     private Task _running = Task.CompletedTask;
     private string? _cloneTarget;
-    private bool _loaded, _disposed, _admitted, _enabled, _mutationsAvailable, _worktreeAvailable, _notRepository;
+    private bool _loaded, _disposed, _admitted, _enabled, _mutationsAvailable, _worktreeAvailable, _notRepository, _localWritesOnly, _branchCreateAvailable, _diagnosticFixtureOnly, _snapshotStale;
     internal event Action? CommandReady;
     internal bool IsReadyForCommands => _admitted && _enabled && !_disposed && _repository is not null && _running.IsCompleted;
 
@@ -39,6 +40,8 @@ internal partial class GitView : UserControl, IDisposable
         _processObserver = processObserver;
         _registerGit = registerGit;
         InitializeComponent();
+        foreach (var button in new[] { Initialize, Clone, AddRemote, Fetch, Publish, Push, Pull, SwitchBranch, NewBranch })
+            ToolTipService.SetShowOnDisabled(button, true);
         RemotePicker.SelectionChanged += (_, _) => UpdateActions(!_running.IsCompleted);
         BranchName.SelectionChanged += (_, _) => UpdateActions(!_running.IsCompleted);
         IsEnabled = false;
@@ -70,6 +73,9 @@ internal partial class GitView : UserControl, IDisposable
             context.ProjectGeneration != _projectGeneration)
         {
             _enabled = _mutationsAvailable = _worktreeAvailable = false;
+            _localWritesOnly = false;
+            _branchCreateAvailable = _diagnosticFixtureOnly = false;
+            _unavailableMessage = null;
             _operation?.Cancel();
             Status.Text = "The Editor project changed. Reopen Git.";
         }
@@ -78,7 +84,12 @@ internal partial class GitView : UserControl, IDisposable
             _enabled = context.Enabled;
             _mutationsAvailable = context.MutationsAvailable;
             _worktreeAvailable = context.WorktreeAvailable;
+            _localWritesOnly = context.LocalWritesOnly;
+            _branchCreateAvailable = context.BranchCreateAvailable;
+            _diagnosticFixtureOnly = GitContextRefresh.RequiresDiagnosticFixtureCheck(context);
+            _unavailableMessage = GitContextRefresh.UnavailableMessage(context);
             if (!_enabled) { _operation?.Cancel(); Status.Text = context.Message; }
+            else if (_unavailableMessage is not null) Status.Text = _unavailableMessage;
         }
         UpdateActions(!_running.IsCompleted);
     }
@@ -121,7 +132,10 @@ internal partial class GitView : UserControl, IDisposable
             _requireProjectHost();
             GitExecutable.Text = executable;
             _enabled = _mutationsAvailable = _worktreeAvailable = false;
+            _localWritesOnly = false;
+            _branchCreateAvailable = _diagnosticFixtureOnly = false;
             _status = null;
+            _snapshotStale = true;
             _repository = null;
             if (_registerGit is null || _processObserver is null)
                 throw new GitException("Git is waiting for the Editor connection.");
@@ -131,7 +145,7 @@ internal partial class GitView : UserControl, IDisposable
             _repository = new GitRepository(executable, _projectRoot, _processObserver);
             GitExecutable.Text = executable;
             await RefreshAsync(operation.Token).ConfigureAwait(true);
-            Status.Text = _notRepository ? "Initialize this project or clone a repository." : "Ready.";
+            Status.Text = _unavailableMessage ?? (_notRepository ? "Initialize this project or clone a repository." : "Ready.");
         }
         catch (Exception exception) when (exception is GitException or ArgumentException or IOException or InvalidOperationException or OperationCanceledException or UnauthorizedAccessException)
         {
@@ -165,15 +179,18 @@ internal partial class GitView : UserControl, IDisposable
         Status.Text = "Working…";
         string? result = null;
         IAsyncDisposable? projectLease = null;
+        var localDiagnostic = _diagnosticFixtureOnly;
         try
         {
             _requireProjectHost();
             if (kind is { } mutation)
             {
+                if (localDiagnostic) await _repository!.VerifyDiagnosticRepositoryAsync(operation.Token).ConfigureAwait(true);
                 projectLease = await _projectGate!.AcquireProjectLeaseAsync(
                     _projectRoot, _projectGeneration, mutation, operation.Token, destination).ConfigureAwait(true)
                     ?? throw new GitException("The Editor project changed. Reopen Git.");
                 _requireProjectHost();
+                if (localDiagnostic) await _repository!.VerifyDiagnosticRepositoryAsync(operation.Token).ConfigureAwait(true);
             }
             await action(operation.Token).ConfigureAwait(true);
             result = "Done.";
@@ -188,36 +205,42 @@ internal partial class GitView : UserControl, IDisposable
         catch (Exception) { result = "Git could not complete the action."; }
         finally
         {
-            if (!_disposed && _admitted && _enabled)
+            var retainLease = projectLease is not null && (_repository?.RequiresRecovery == true ||
+                (kind == GitProjectOperation.Clone && _cloneTarget is not null && GitRepository.RequiresRecoveryAt(_cloneTarget)));
+            if (retainLease) RetainedProjectLeases.Add(projectLease!);
+            Func<CancellationToken, Task>? refresh = !_disposed && _admitted && _enabled ? async token =>
             {
-                try
-                {
-                    _requireProjectHost();
-                    using var refresh = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                    await RefreshAsync(refresh.Token).ConfigureAwait(true);
-                }
-                catch (Exception exception)
-                {
-                    _status = null;
-                    Changes.ItemsSource = null;
-                    result ??= exception is GitException git ? git.Message : "Could not refresh Git status.";
-                }
-                Status.Text = result ?? "Refresh to continue.";
+                _requireProjectHost();
+                await RefreshAsync(token).ConfigureAwait(true);
+            } : null;
+            using var refreshCancellation = new CancellationTokenSource();
+            _operation = refreshCancellation;
+            var completion = await GitContextRefresh.CompleteAsync(projectLease, retainLease, refresh,
+                refreshCancellation: refreshCancellation.Token).ConfigureAwait(true);
+            if (completion.ReleaseFailure is not null)
+            {
+                if (!retainLease && projectLease is not null) RetainedProjectLeases.Add(projectLease);
+                _snapshotStale = true;
+                result = completion.ReleaseFailure;
+            }
+            if (completion.RefreshFailure is not null)
+            {
+                _status = null;
+                _snapshotStale = true;
+                _reviewToken = null;
+                Commit.Content = "Commit…";
             }
             _operation = null;
-            if (projectLease is not null)
+            if (!_disposed && _admitted && _enabled)
             {
-                if (_repository?.RequiresRecovery == true ||
-                    (kind == GitProjectOperation.Clone && _cloneTarget is not null && GitRepository.RequiresRecoveryAt(_cloneTarget)))
-                    RetainedProjectLeases.Add(projectLease);
-                else
-                {
-                    try { await projectLease.DisposeAsync().ConfigureAwait(true); }
-                    catch (Exception)
-                    {
-                        if (!_disposed) Status.Text = "The Editor project could not be released.";
-                    }
-                }
+                if (completion.RefreshFailure is not null) result = kind is null && (result is null or "Done.")
+                    ? "Refresh failed. " + completion.RefreshFailure
+                    : GitContextRefresh.AfterRefreshFailure(result, completion.RefreshFailure);
+                if (completion.RefreshFailure is not null && Changes.ItemsSource is not null)
+                    result += " Displayed changes may be out of date.";
+                Status.Text = result is null or "Done."
+                    ? _unavailableMessage ?? result ?? "Refresh to continue."
+                    : result;
             }
             if (!_disposed) UpdateActions(false);
         }
@@ -226,11 +249,14 @@ internal partial class GitView : UserControl, IDisposable
     private async Task RefreshAsync(CancellationToken token)
     {
         if (_repository is null) return;
-        try { _status = await _repository.GetStatusAsync(token).ConfigureAwait(true); }
+        DiffText.Clear(); DiffText.Visibility = Visibility.Collapsed;
+        GitStatus status;
+        try { status = await _repository.GetStatusAsync(token).ConfigureAwait(true); }
         catch (GitException exception) when (exception.Kind == GitFailureKind.NotRepository)
         {
             _notRepository = true;
             _status = null;
+            _snapshotStale = false;
             _reviewToken = null;
             Changes.ItemsSource = null;
             HistoryList.ItemsSource = null;
@@ -242,41 +268,53 @@ internal partial class GitView : UserControl, IDisposable
             Commit.Content = "Commit…";
             return;
         }
-        _notRepository = false;
         _requireProjectHost();
-        _reviewToken = null;
-        Commit.Content = "Commit…";
-        Changes.ItemsSource = _status.Changes;
-        BranchStatus.Text = _status.Detached ? "Detached HEAD" : _status.Branch ?? "New repository";
-        if (_status.Upstream is not null) BranchStatus.Text += $"  ↑{_status.Ahead} ↓{_status.Behind}";
-        BranchStatus.ToolTip = _projectRoot;
         var oldBranch = BranchName.Text;
         var oldRemote = (RemotePicker.SelectedItem as GitRemote)?.Name;
-        BranchName.ItemsSource = await _repository.GetBranchesAsync(token).ConfigureAwait(true);
-        BranchName.Text = string.IsNullOrEmpty(oldBranch) ? _status.Branch ?? "" : oldBranch;
-        var remotes = await _repository.GetRemotesAsync(token).ConfigureAwait(true);
+        var branches = await _repository.GetBranchesAsync(token).ConfigureAwait(true);
+        var remotes = _localWritesOnly ? Array.Empty<GitRemote>() : await _repository.GetRemotesAsync(token).ConfigureAwait(true);
+        _requireProjectHost();
+        _status = status;
+        _snapshotStale = false;
+        _notRepository = false;
+        _reviewToken = null;
+        Commit.Content = "Commit…";
+        Changes.ItemsSource = status.Changes;
+        BranchStatus.Text = status.Detached ? "Detached HEAD" : status.Branch ?? "New repository";
+        if (status.Upstream is not null) BranchStatus.Text += $"  ↑{status.Ahead} ↓{status.Behind}";
+        BranchStatus.ToolTip = _projectRoot;
+        BranchName.ItemsSource = branches;
+        BranchName.Text = string.IsNullOrEmpty(oldBranch) ? status.Branch ?? "" : oldBranch;
         RemotePicker.ItemsSource = remotes;
         RemotePicker.SelectedItem = remotes.FirstOrDefault(remote => remote.Name == oldRemote) ?? remotes.FirstOrDefault();
     }
 
     private void UpdateActions(bool busy)
     {
+        var localOnly = _localWritesOnly;
+        Initialize.ToolTip = localOnly ? "Repository initialization is not available yet." : null;
+        Clone.ToolTip = localOnly ? "Cloning is not available yet." : null;
+        AddRemote.ToolTip = Fetch.ToolTip = Publish.ToolTip = Push.ToolTip =
+            localOnly ? "Remote operations are not available yet." : null;
+        Pull.ToolTip = localOnly ? "Pulling is not available yet." : "Save and close project documents before pulling.";
+        SwitchBranch.ToolTip = localOnly ? "Switching branches is not available yet." : "Save and close project documents before switching.";
+        NewBranch.ToolTip = localOnly && !_branchCreateAvailable ? "Branch creation is not available for this project." : null;
         Actions.IsEnabled = !busy && _enabled && _repository is not null;
         Cancel.IsEnabled = busy;
-        var canMutate = !busy && _enabled && _mutationsAvailable && _projectGate is not null && _repository is not null && !_repository.RequiresRecovery;
-        CloneOptions.IsEnabled = canMutate;
+        var canMutate = !busy && !_snapshotStale && _enabled && _mutationsAvailable && _projectGate is not null && _repository is not null && !_repository.RequiresRecovery;
+        CloneOptions.IsEnabled = canMutate && !_localWritesOnly;
         var repo = _status is not null && !_notRepository;
         var namedBranch = repo && !_status!.Detached && !_status.Unborn && _status.Branch is not null;
         var hasRemote = RemotePicker.SelectedItem is GitRemote;
-        Initialize.IsEnabled = canMutate && _notRepository;
-        Clone.IsEnabled = canMutate;
+        Initialize.IsEnabled = canMutate && !_localWritesOnly && _notRepository;
+        Clone.IsEnabled = canMutate && !_localWritesOnly;
         Stage.IsEnabled = Unstage.IsEnabled = canMutate && repo && _status!.Changes.Count != 0;
-        AddRemote.IsEnabled = canMutate && repo;
-        NewBranch.IsEnabled = canMutate && repo && !_status!.Unborn;
+        AddRemote.IsEnabled = canMutate && !_localWritesOnly && repo;
+        NewBranch.IsEnabled = canMutate && (!_localWritesOnly || _branchCreateAvailable) && repo && !_status!.Unborn;
         Commit.IsEnabled = canMutate && repo && _status!.Changes.Any(change => !change.Untracked && change.Index != '.') && !_status.Changes.Any(change => change.Conflicted);
-        Fetch.IsEnabled = canMutate && repo && hasRemote;
-        Publish.IsEnabled = canMutate && namedBranch && _status!.Upstream is null && hasRemote;
-        Push.IsEnabled = canMutate && namedBranch && _status!.Upstream is not null;
+        Fetch.IsEnabled = canMutate && !_localWritesOnly && repo && hasRemote;
+        Publish.IsEnabled = canMutate && !_localWritesOnly && namedBranch && _status!.Upstream is null && hasRemote;
+        Push.IsEnabled = canMutate && !_localWritesOnly && namedBranch && _status!.Upstream is not null;
         Pull.IsEnabled = canMutate && namedBranch && _status!.Upstream is not null && _status.IsClean && _worktreeAvailable && _documentGate is not null;
         SwitchBranch.IsEnabled = canMutate && repo && !_status!.Unborn && _status.IsClean && _worktreeAvailable && _documentGate is not null;
         History.IsEnabled = !busy && _enabled && repo && !_status!.Unborn;
@@ -286,11 +324,48 @@ internal partial class GitView : UserControl, IDisposable
         .SelectMany(change => change.OriginalPath is { } original ? new[] { change.Path, original } : new[] { change.Path })
         .Distinct(StringComparer.Ordinal).ToArray();
 
+    private void OnStagedDiff(object sender, RoutedEventArgs e) => ShowDiff(GitDiffKind.Staged);
+    private void OnWorkingDiff(object sender, RoutedEventArgs e) => ShowDiff(GitDiffKind.Worktree);
+    private void OnCloseDiff(object sender, RoutedEventArgs e) { DiffText.Visibility = Visibility.Collapsed; DiffText.Clear(); }
+
+    private void ShowDiff(GitDiffKind kind)
+    {
+        if (!_admitted || !_enabled || _disposed || !_running.IsCompleted || _repository is null) return;
+        if (Changes.SelectedItems.Count != 1 || Changes.SelectedItem is not GitChange change)
+        { Status.Text = "Select one changed file."; return; }
+        _running = ShowDiffAsync(change.Path, kind);
+    }
+
+    private async Task ShowDiffAsync(string path, GitDiffKind kind)
+    {
+        using var operation = new CancellationTokenSource();
+        _operation = operation;
+        UpdateActions(true);
+        DiffText.Clear();
+        DiffText.Visibility = Visibility.Visible;
+        try
+        {
+            _requireProjectHost();
+            var diff = await _repository!.GetDiffAsync(path, kind, operation.Token).ConfigureAwait(true);
+            if (!_disposed) { DiffText.Text = string.IsNullOrEmpty(diff) ? "No changes in this view." : diff; Status.Text = path; }
+        }
+        catch (Exception exception) when (exception is GitException or ArgumentException or IOException or InvalidOperationException or OperationCanceledException)
+        { if (!_disposed) Status.Text = exception is OperationCanceledException ? "Canceled." : exception.Message; }
+        finally { _operation = null; if (!_disposed) UpdateActions(false); }
+    }
     private void OnRefresh(object sender, RoutedEventArgs e)
     {
         Changes.Visibility = Visibility.Visible;
         HistoryList.Visibility = Visibility.Collapsed;
-        Run(RefreshAsync);
+        Run(RefreshProjectContextAsync);
+    }
+
+    private async Task RefreshProjectContextAsync(CancellationToken token)
+    {
+        if (_registerGit is null || string.IsNullOrWhiteSpace(GitExecutable.Text))
+            throw new GitException("Git is waiting for the Editor connection.");
+        await GitContextRefresh.RequeryAsync(GitExecutable.Text, _registerGit, ApplyContext, token).ConfigureAwait(true);
+        if (!_enabled) throw new GitException("The Editor project changed. Reopen Git.");
     }
     private void OnInitialize(object sender, RoutedEventArgs e) =>
         Run(token => _repository!.InitializeAsync(cancellationToken: token), GitProjectOperation.Initialize);

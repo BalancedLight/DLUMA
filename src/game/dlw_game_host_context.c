@@ -4,6 +4,10 @@
 #include "dlw_quest_phase_service.h"
 #include "dlw_quest_hud_service.h"
 #include "dlw_hud_surface_service.h"
+#include "dlw_hud_visibility_service.h"
+#include "dlw_xui_document_native.h"
+#include "dlw_texture_swap_native.h"
+#include "dlw_mod_handler_service.h"
 
 #include "../dlw_native_gameplay.h"
 #include "../dlw_quest_hud.h"
@@ -1573,7 +1577,13 @@ void dluma_game_host_context_revoke(
         (void)dluma_quest_phase_service_detach(
             state->owner->owner_id);
     dluma_game_host_quest_hud_clear(state);
-    if (state->owner) dluma_hud_surface_revoke_owner(state->owner->owner_id);
+    if (state->owner) {
+        dluma_hud_surface_revoke_owner(state->owner->owner_id);
+        dluma_hud_visibility_revoke_owner(state->owner->owner_id);
+        dluma_xui_document_service_revoke(state->owner->owner_id,state->owner->generation);
+        dluma_texture_service_revoke(state->owner->owner_id,state->owner->generation);
+        dluma_mod_handler_service_detach(state->owner->owner_id);
+    }
     if (state->owner)
         media_drained = dluma_media_service_revoke_owner(
             state->owner->owner_id,
@@ -1625,7 +1635,16 @@ void dluma_game_host_context_advance_scope(
     int media_drained;
     if (!state) return;
     dluma_game_host_quest_hud_clear(state);
-    if (state->owner) dluma_hud_surface_revoke_owner(state->owner->owner_id);
+    if (state->owner) {
+        dluma_hud_surface_revoke_owner(state->owner->owner_id);
+        dluma_hud_visibility_revoke_owner(state->owner->owner_id);
+        dluma_xui_document_service_revoke(state->owner->owner_id,state->owner->generation);
+        dluma_texture_service_revoke(state->owner->owner_id,state->owner->generation);
+        if (state->owner->language != DLUMA_MOD_LANGUAGE_LUA) {
+            dluma_mod_handler_service_clear(state->owner->owner_id);
+            dluma_quest_phase_service_clear(state->owner->owner_id);
+        }
+    }
     media_drained = state->owner
         ? dluma_media_service_revoke_owner(
               state->owner->owner_id,
@@ -1663,7 +1682,8 @@ void dluma_game_host_context_advance_scope(
         dluma_player_service_revoke_owner(
             state->owner->owner_id);
         state->owner->active_timers = 0U;
-        state->owner->active_subscriptions = 0U;
+        state->owner->active_subscriptions = dluma_mod_handler_service_count(state->owner->owner_id) +
+            dluma_quest_phase_service_count(state->owner->owner_id);
         state->owner->active_companion_artifacts = 0U;
         state->owner->active_handles = 0U;
     }
@@ -1680,6 +1700,8 @@ int dluma_game_host_context_suspend_map_for_exit(DlumaGameHostContext* context)
     dluma_mod_owner_begin_revoke(state->owner);
     dluma_game_host_quest_hud_clear(state);
     dluma_hud_surface_revoke_owner(state->owner->owner_id);
+    dluma_xui_document_service_revoke(state->owner->owner_id,state->owner->generation);
+    dluma_texture_service_revoke(state->owner->owner_id,state->owner->generation);
     if (!dluma_media_service_revoke_owner(state->owner->owner_id,0U)) complete=0;
     for (index=0;index<state->subscription_capacity;++index) {
         DlumaGameHostSubscription* sub=&state->subscriptions[index];
@@ -1706,7 +1728,8 @@ void dluma_game_host_context_bind_clean_frontend(DlumaGameHostContext* context)
     if (!state || !state->owner || !state->map_exit_suspended) return;
     state->owner->active_handles=0U;
     state->owner->active_timers=0U;
-    state->owner->active_subscriptions=0U;
+    state->owner->active_subscriptions = dluma_mod_handler_service_count(state->owner->owner_id) +
+        dluma_quest_phase_service_count(state->owner->owner_id);
     state->owner->active_companion_artifacts=0U;
     for(index=0;index<state->timer_capacity;++index)
         if(state->timers[index].active)++state->owner->active_timers;
@@ -1732,6 +1755,8 @@ void dluma_game_host_context_rebind_map(
     if (!state || !state->owner) return;
     dluma_game_host_quest_hud_clear(state);
     dluma_hud_surface_revoke_owner(state->owner->owner_id);
+    dluma_xui_document_service_revoke(state->owner->owner_id,0U);
+    dluma_texture_service_revoke(state->owner->owner_id,0U);
     /* Rebind is called after the owner generation advances.  Revoke media
      * across that owner's generations so a stale cue or music token cannot
      * leave engine audio running without a callable owner handle. */
@@ -1739,7 +1764,8 @@ void dluma_game_host_context_rebind_map(
         state->owner->owner_id,
         0U);
     state->owner->active_timers = 0U;
-    state->owner->active_subscriptions = 0U;
+    state->owner->active_subscriptions = dluma_mod_handler_service_count(state->owner->owner_id) +
+        dluma_quest_phase_service_count(state->owner->owner_id);
     state->owner->active_companion_artifacts = 0U;
     for (index = 0;
          index < state->timer_capacity;

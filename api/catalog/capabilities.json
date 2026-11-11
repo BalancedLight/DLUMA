@@ -140,6 +140,51 @@
       "id": 43,
       "name": "ui.surface",
       "description": "Owner-bound RGBA HUD surfaces are available for the current game build."
+    },
+    {
+      "id": 71,
+      "name": "actions.mod_handlers",
+      "description": "Named mod handlers can be registered and invoked."
+    },
+    {
+      "id": 44,
+      "name": "hud.visibility",
+      "description": "Authored HUD targets can be shown, hidden, and restored."
+    },
+    {
+      "id": 45,
+      "name": "hud.position",
+      "description": "Supported authored XUI elements can be moved to a relative position."
+    },
+    {
+      "id": 72,
+      "name": "actions.infection_flashback",
+      "description": "The local player can request a stock infection flashback."
+    },
+    {
+      "id": 46,
+      "name": "hud.visual",
+      "description": "Supported authored XUI elements accept immediate opacity and view color changes."
+    },
+    {
+      "id": 47,
+      "name": "hud.text_key",
+      "description": "A supported XUI text element can receive a localization key."
+    },
+    {
+      "id": 48,
+      "name": "hud.animation",
+      "description": "A supported XUI timeline can start a named animation."
+    },
+    {
+      "id": 49,
+      "name": "hud.document",
+      "description": "A project-owned HUD document can be replaced and restored."
+    },
+    {
+      "id": 73,
+      "name": "hud.flashback_textures",
+      "description": "The authored flashback texture aliases can be replaced and restored."
     }
   ]
 }

@@ -125,7 +125,8 @@ enum DlumaLua54EventKind {
     DLUMA_LUA54_EVENT_ENEMY_KILLED = 11,
     DLUMA_LUA54_EVENT_CONFIG_CHANGED = 12,
     DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER = 13,
-    DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER = 14
+    DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER = 14,
+    DLUMA_LUA54_EVENT_MOD_HANDLER = 15
 };
 
 enum DlumaLua54QuestOperation {
@@ -600,6 +601,8 @@ typedef struct DlumaLua54ScriptConfig {
     DlumaLua54HostCallbacks host;
 } DlumaLua54ScriptConfig;
 
+/* Quest-provider events synthesized by a shared named handler have no sidecar hash. */
+#define DLUMA_LUA54_QUEST_PHASE_SHARED_CONTEXT 1
 typedef struct DlumaLua54Event {
     uint32_t struct_size;
     uint32_t kind;
@@ -612,6 +615,10 @@ typedef struct DlumaLua54Event {
     DlumaLua54EnemyKilledEvent enemy_killed;
     DlumaLua54ConfigChangedEvent config_changed;
     DlumaLua54QuestPhaseEvent quest_phase;
+    /* Optional tail for MOD_HANDLER only. Older event kinds retain the prefix
+     * ending at quest_phase; dispatch must not require or read this tail. */
+    uint32_t handler_source_kind;
+    DlumaLua54ByteView handler_source_mod;
 } DlumaLua54Event;
 
 typedef struct DlumaLua54Status {

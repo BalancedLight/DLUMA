@@ -3,6 +3,7 @@
 #include "dlw_log.h"
 #include "dlw_path_security.h"
 #include "dlw_quest_phase_runtime.h"
+#include "game/dlw_mod_handler_service.h"
 
 #define DLUMA_QPP_GAMEDLL_TIMESTAMP 0x623397AAUL
 #define DLUMA_QPP_GAMEDLL_IMAGE_SIZE 0x02082000UL
@@ -817,6 +818,20 @@ void dluma_quest_phase_player_game_thread_pump(void)
         dluma_qpp_unlock();
         if (!have_event) break;
         observation.event_value.arguments_json = observation.arguments;
+        if (observation.event_value.map_generation == g_dluma_qpp.map_generation &&
+            observation.event_value.runtime_kind == DLUMA_QUEST_PHASE_RUNTIME_MOD) {
+            DlumaStatus status = dluma_mod_handler_service_dispatch(
+                observation.event_value.provider_mod,
+                observation.event_value.handler_id,
+                observation.arguments,
+                observation.event_value.map_generation, 2U, "",
+                observation.event_value.quest_id,
+                observation.event_value.phase_id);
+            if (status != DLUMA_STATUS_OK)
+                dluma_log_u64("WARN", "quest_mod_handler_status", status);
+            ++copied;
+            continue;
+        }
         if (observation.event_value.map_generation ==
                 g_dluma_qpp.map_generation &&
             !dluma_quest_phase_enqueue(

@@ -15,6 +15,7 @@
 #define DLUMA_QUEST_PHASE_MAX_OBSERVERS 256U
 
 typedef enum DlumaQuestPhaseRuntimeKind {
+    DLUMA_QUEST_PHASE_RUNTIME_MOD = 0,
     DLUMA_QUEST_PHASE_RUNTIME_LUA = 1,
     DLUMA_QUEST_PHASE_RUNTIME_NATIVE = 2
 } DlumaQuestPhaseRuntimeKind;
@@ -95,8 +96,8 @@ int dluma_quest_phase_build_edf(
 
 /* Lower one already-validated named authoring directive into the positional
  * macro call accepted by pxslcc.  The argument payload is intentionally not
- * copied into the compiler carrier: the immutable original source remains
- * authoritative for sidecar generation, while the EDF needs only the phase
+ * copied into the compiler carrier: the source supplies sidecar arguments,
+ * while the EDF needs only the phase
  * identity and stock wait duration. */
 int dluma_quest_phase_build_compiler_line(
     const char* command,

@@ -1544,7 +1544,8 @@ static int dluma_quest_editor_validate_loaded_definition(
             dluma_log_u64(
                 "INFO", "quest_editor_definition_macro_name_bytes", name_size);
         }
-        if (dluma_stricmp(logged_name, "call-lua") == 0 ||
+        if (dluma_stricmp(logged_name, "call-mod") == 0 ||
+            dluma_stricmp(logged_name, "call-lua") == 0 ||
             dluma_stricmp(logged_name, "call-native") == 0)
             expected = 1;
         for (alias_index = 0;
@@ -1626,7 +1627,7 @@ static int dluma_quest_editor_ensure_edf(__int64 context)
             compiler, &definitions, &definition_count))
         goto done;
     edf_path = g_dluma_quest_editor.edf_path_utf8;
-    expected_macro_count = 2U +
+    expected_macro_count = 3U +
         g_dluma_quest_editor.accepted_alias_count;
     __try {
         (void)g_dluma_quest_editor.definition_loader(compiler, &edf_path);

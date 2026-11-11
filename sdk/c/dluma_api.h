@@ -21,7 +21,7 @@ extern "C" {
 #define DLUMA_API_VERSION_MAJOR 1u
 #define DLUMA_API_VERSION_MINOR 0u
 #define DLUMA_API_ABI_VERSION 0x00010000u
-#define DLUMA_API_CATALOG_SHA256 "44F3EE6956A4112DEF065128AAA7F7E4B03AA666B3903CF2557EBC9AD7626376"
+#define DLUMA_API_CATALOG_SHA256 "153F44193466F9658B78A8AAC9A70D96FEDBEF5622CC0A4F4B5747DA49050B01"
 #define DLUMA_NATIVE_MOD_ABI_V2 0x00020000u
 
 typedef enum DlumaStatus {
@@ -141,6 +141,12 @@ typedef enum DlumaCapabilityId {
     DLUMA_CAPABILITY_UI_QUEST_HUD = 41,
     DLUMA_CAPABILITY_UI_OVERLAY = 42,
     DLUMA_CAPABILITY_UI_SURFACE = 43,
+    DLUMA_CAPABILITY_HUD_VISIBILITY = 44,
+    DLUMA_CAPABILITY_HUD_POSITION = 45,
+    DLUMA_CAPABILITY_HUD_VISUAL = 46,
+    DLUMA_CAPABILITY_HUD_TEXT_KEY = 47,
+    DLUMA_CAPABILITY_HUD_ANIMATION = 48,
+    DLUMA_CAPABILITY_HUD_DOCUMENT = 49,
     DLUMA_CAPABILITY_AUDIO_RADIO_DIALOG = 50,
     DLUMA_CAPABILITY_AUDIO_REGISTERED_CUES = 51,
     DLUMA_CAPABILITY_AUDIO_STEM = 52,
@@ -150,6 +156,9 @@ typedef enum DlumaCapabilityId {
     DLUMA_CAPABILITY_QUESTS_NATIVE = 60,
     DLUMA_CAPABILITY_QUESTS_PHASE_HANDLERS = 61,
     DLUMA_CAPABILITY_ACTIONS_CHAIN = 70,
+    DLUMA_CAPABILITY_ACTIONS_MOD_HANDLERS = 71,
+    DLUMA_CAPABILITY_ACTIONS_INFECTION_FLASHBACK = 72,
+    DLUMA_CAPABILITY_HUD_FLASHBACK_TEXTURES = 73,
     DLUMA_CAPABILITY_CONFIGURATION_MOD = 80,
     DLUMA_CAPABILITY_STORAGE_MOD = 90,
     DLUMA_CAPABILITY_COMPANION_CONTENT = 100,
@@ -607,6 +616,98 @@ typedef struct DlumaHudSurfaceSuppressRequest {
     uint32_t mask;
 } DlumaHudSurfaceSuppressRequest;
 
+typedef struct DlumaModHandlerRegistrationRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    DlumaStringView handler;
+    uint64_t callback_id;
+} DlumaModHandlerRegistrationRequest;
+
+typedef struct DlumaModHandlerInvokeRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    DlumaStringView mod;
+    DlumaStringView handler;
+    DlumaStringView arguments_json;
+} DlumaModHandlerInvokeRequest;
+
+typedef struct DlumaHudVisibilityRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    DlumaStringView screen;
+    DlumaStringView target;
+} DlumaHudVisibilityRequest;
+
+typedef struct DlumaHudPositionRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    DlumaStringView screen;
+    DlumaStringView target;
+    DlumaVec3 position;
+} DlumaHudPositionRequest;
+
+typedef struct DlumaHudOpacityRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    DlumaStringView screen;
+    DlumaStringView target;
+    float opacity;
+} DlumaHudOpacityRequest;
+
+typedef struct DlumaHudColorRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    DlumaStringView screen;
+    DlumaStringView target;
+    float red;
+    float green;
+    float blue;
+    float alpha;
+} DlumaHudColorRequest;
+
+typedef struct DlumaHudNamedRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    DlumaStringView screen;
+    DlumaStringView target;
+    DlumaStringView name;
+} DlumaHudNamedRequest;
+
+typedef struct DlumaHudDocumentSwapRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    DlumaStringView original_document;
+    DlumaStringView replacement_document;
+} DlumaHudDocumentSwapRequest;
+
+typedef struct DlumaHudDocumentStatusResult {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    DlumaResult call;
+    uint64_t token;
+    uint32_t state;
+    uint32_t reason;
+} DlumaHudDocumentStatusResult;
+
+typedef struct DlumaHudFlashbackTextureStatusResult {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    DlumaResult call;
+    uint64_t token;
+    uint32_t state;
+    uint32_t reason;
+    uint32_t ready_count;
+    uint32_t asset_count;
+} DlumaHudFlashbackTextureStatusResult;
+
+typedef struct DlumaHudFlashbackTextureRequest {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    const DlumaStringView* originals;
+    const DlumaStringView* replacements;
+    uint32_t count;
+} DlumaHudFlashbackTextureRequest;
+
 #define DLUMA_SERVICE_CORE_V1 "dluma.core.v1"
 typedef struct DlumaCoreV1 {
     uint32_t struct_size;
@@ -861,6 +962,10 @@ typedef struct DlumaActionsV1 {
         void* context,
         const DlumaNamedRequest* request,
         DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *infection_flashback)(
+        void* context,
+        const DlumaNoRequest* request,
+        DlumaBoolResult* result);
 } DlumaActionsV1;
 
 #define DLUMA_SERVICE_CONFIGURATION_V1 "dluma.configuration.v1"
@@ -962,6 +1067,92 @@ typedef struct DlumaUiSurfaceV1 {
         DlumaBoolResult* result);
 } DlumaUiSurfaceV1;
 
+#define DLUMA_SERVICE_HUD_V1 "dluma.hud.v1"
+typedef struct DlumaHudV1 {
+    uint32_t struct_size;
+    uint32_t version;
+    void* context;
+    DlumaStatus (DLUMA_API_CALL *show)(
+        void* context,
+        const DlumaHudVisibilityRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *hide)(
+        void* context,
+        const DlumaHudVisibilityRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *reset)(
+        void* context,
+        const DlumaHudVisibilityRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *set_position)(
+        void* context,
+        const DlumaHudPositionRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *set_opacity)(
+        void* context,
+        const DlumaHudOpacityRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *set_color)(
+        void* context,
+        const DlumaHudColorRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *set_text_key)(
+        void* context,
+        const DlumaHudNamedRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *start_animation)(
+        void* context,
+        const DlumaHudNamedRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *swap_document)(
+        void* context,
+        const DlumaHudDocumentSwapRequest* request,
+        DlumaTokenResult* result);
+    DlumaStatus (DLUMA_API_CALL *restore_document)(
+        void* context,
+        const DlumaTokenRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *document_status)(
+        void* context,
+        const DlumaTokenRequest* request,
+        DlumaHudDocumentStatusResult* result);
+    DlumaStatus (DLUMA_API_CALL *cancel_document)(
+        void* context,
+        const DlumaTokenRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *swap_flashback_textures)(
+        void* context,
+        const DlumaHudFlashbackTextureRequest* request,
+        DlumaTokenResult* result);
+    DlumaStatus (DLUMA_API_CALL *flashback_texture_status)(
+        void* context,
+        const DlumaTokenRequest* request,
+        DlumaHudFlashbackTextureStatusResult* result);
+    DlumaStatus (DLUMA_API_CALL *restore_flashback_textures)(
+        void* context,
+        const DlumaTokenRequest* request,
+        DlumaBoolResult* result);
+} DlumaHudV1;
+
+#define DLUMA_SERVICE_MOD_HANDLERS_V1 "dluma.mod_handlers.v1"
+typedef struct DlumaModHandlersV1 {
+    uint32_t struct_size;
+    uint32_t version;
+    void* context;
+    DlumaStatus (DLUMA_API_CALL *register_handler)(
+        void* context,
+        const DlumaModHandlerRegistrationRequest* request,
+        DlumaTokenResult* result);
+    DlumaStatus (DLUMA_API_CALL *invoke)(
+        void* context,
+        const DlumaModHandlerInvokeRequest* request,
+        DlumaBoolResult* result);
+    DlumaStatus (DLUMA_API_CALL *unregister)(
+        void* context,
+        const DlumaTokenRequest* request,
+        DlumaBoolResult* result);
+} DlumaModHandlersV1;
+
 typedef DlumaStatus (DLUMA_API_CALL *DlumaGetServiceFn)(
     void* context,
     DlumaStringView service_id,
@@ -1034,6 +1225,24 @@ typedef struct DlumaQuestPhaseNativeEventV1 {
     DlumaStringView arguments_json;
 } DlumaQuestPhaseNativeEventV1;
 
+#define DLUMA_MOD_HANDLER_SOURCE_MOD 1U
+#define DLUMA_MOD_HANDLER_SOURCE_QUEST 2U
+#define DLUMA_MOD_HANDLER_SOURCE_BOSS 3U
+typedef struct DlumaModHandlerEventV1 {
+    uint32_t struct_size;
+    uint32_t struct_version;
+    uint32_t source_kind;
+    uint32_t map_generation;
+    uint64_t callback_id;
+    uint64_t token;
+    DlumaStringView source_mod;
+    DlumaStringView quest_id;
+    DlumaStringView phase_id;
+    DlumaStringView provider;
+    DlumaStringView handler;
+    DlumaStringView arguments_json;
+} DlumaModHandlerEventV1;
+
 typedef struct DlumaNativeModApiV2 {
     uint32_t struct_size;
     uint32_t abi_version;
@@ -1049,6 +1258,8 @@ typedef struct DlumaNativeModApiV2 {
         const DlumaApiV1* api, const DlumaModEventV1* event_value);
     DlumaStatus (DLUMA_API_CALL *quest_phase_event)(
         const DlumaApiV1* api, const DlumaQuestPhaseNativeEventV1* event_value);
+    DlumaStatus (DLUMA_API_CALL *mod_handler_event)(
+        const DlumaApiV1* api, const DlumaModHandlerEventV1* event_value);
 } DlumaNativeModApiV2;
 
 typedef const DlumaNativeModApiV2* (DLUMA_API_CALL *DlumaNativeModGetApiV2Fn)(void);

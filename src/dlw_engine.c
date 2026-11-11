@@ -7,8 +7,13 @@
 #include "dlw_path_security.h"
 #include "dlw_project_owner_identity.h"
 #include "dlw_dual_host_runtime.h"
+#include "dlw_lua_project_exit.h"
 #include "game/dlw_media_service.h"
 #include "game/dlw_hud_surface_service.h"
+#include "game/dlw_hud_visibility_service.h"
+#include "game/dlw_xui_document_native.h"
+#include "game/dlw_texture_swap_native.h"
+#include "game/dlw_mod_handler_service.h"
 #include <intrin.h>
 
 #pragma intrinsic(_ReturnAddress)
@@ -38,6 +43,9 @@ static volatile LONG g_dluma_game_frame_last_route_proof_logged = -1;
 static volatile LONG g_dluma_game_frame_route_log_count;
 static volatile LONG g_dluma_game_frame_result_seen_mask;
 static volatile LONG g_dluma_game_frame_result_log_count;
+static volatile LONG g_dluma_game_frame_caller_diagnostics_enabled;
+static volatile LONG g_dluma_game_frame_caller_last_generation;
+static volatile LONG g_dluma_game_frame_caller_gameplay_log_count;
 static ULONG_PTR __fastcall dluma_game_frame_hook(
     void* game_subobject, void* gesture_manager, float delta_seconds);
 static int dluma_get_pe_identity(
@@ -557,12 +565,49 @@ static void dluma_engine_log_game_frame_result_transition(
     dluma_log_u64(
         "INFO", "game_frame_authority_result_game_subobject",
         (ULONGLONG)observation->game_subobject);
+    if (g_dluma.config.developer_mode) {
+        WCHAR diagnostics[16];
+        if (GetPrivateProfileStringW(L"loader", L"game_frame_caller_diagnostics",
+                L"0", diagnostics, DLUMA_ARRAY_COUNT(diagnostics),
+                g_dluma.config_path) == 1U && diagnostics[0] == L'1') {
+            dluma_log_pair("INFO", "game_frame_authority_caller_module",
+                           observation->caller_module_name);
+            dluma_log_hex("INFO", "game_frame_authority_caller_rva",
+                          (DWORD)observation->caller_rva);
+        }
+    }
     if (decision->conflict_reason !=
             DLUMA_GAME_FRAME_AUTHORITY_CONFLICT_NONE)
         dluma_log_pair(
             "WARN", "game_frame_authority_conflict_reason",
             dluma_game_frame_authority_conflict_reason_name(
                 decision->conflict_reason));
+}
+
+/* Diagnostic-only: use the already-copied frame probe, and emit at most one
+ * caller identity per sampled loader map generation. This does not establish
+ * engine locking, object lifetime, or permission to make native mutations. */
+static void dluma_engine_log_gameplay_caller(
+    const DlumaGameFrameAuthorityObservation* observation)
+{
+    unsigned int generation; LONG previous, count;
+    if(!observation || !g_dluma_game_frame_caller_diagnostics_enabled ||
+       observation->pre_original_probe.result!=DLUMA_GAME_FRAME_LEVEL_QUERY_SUCCESS ||
+       observation->pre_original_probe.frontend_identity_valid ||
+       !observation->pre_original_probe.gameplay_player ||
+       !observation->pre_original_probe.level_name[0] ||
+       !observation->caller_module_name[0]) return;
+    generation=dluma_lua_runtime_current_map_generation();
+    if(!generation) return;
+    previous=dluma_atomic_exchange(&g_dluma_game_frame_caller_last_generation,(LONG)generation);
+    if((unsigned int)previous==generation) return;
+    count=dluma_atomic_increment(&g_dluma_game_frame_caller_gameplay_log_count);
+    if(count<=0 || (unsigned int)count>DLUMA_GAME_FRAME_AUTHORITY_TRANSITION_LOG_LIMIT) return;
+    dluma_log_pair("INFO","game_frame_gameplay_caller_map",observation->pre_original_probe.level_name);
+    dluma_log_u64("INFO","game_frame_gameplay_caller_generation",generation);
+    dluma_log_u64("INFO","game_frame_gameplay_caller_sequence",observation->sequence);
+    dluma_log_pair("INFO","game_frame_authority_caller_module",observation->caller_module_name);
+    dluma_log_hex("INFO","game_frame_authority_caller_rva",(DWORD)observation->caller_rva);
 }
 
 void dluma_engine_note_startup_b0_onframe_skip(
@@ -1043,6 +1088,9 @@ static ULONG_PTR __fastcall dluma_game_frame_hook(
                     current_thread, 0) == 0) {
                 dluma_media_service_tick(
                     game_subobject, delta_seconds);
+                dluma_hud_visibility_pump();
+                dluma_xui_document_service_pump();
+                dluma_texture_service_pump();
                 dluma_hud_surface_pump();
                 if (dluma_atomic_compare_exchange(
                         &g_dluma_game_frame_first_tick_logged,
@@ -1059,6 +1107,8 @@ static ULONG_PTR __fastcall dluma_game_frame_hook(
                 dluma_localization_game_thread_tick();
                 dluma_ui_game_thread_tick(
                     game_subobject, callback_sequence);
+                dluma_mod_handler_service_pump();
+                dluma_engine_log_gameplay_caller(&observation);
                 dluma_discord_presence_game_thread_tick(
                     game_subobject, callback_sequence);
                 (void)dluma_atomic_compare_exchange(
@@ -1314,6 +1364,16 @@ static int dluma_install_game_frame_hook(DlumaEngineState* state)
     g_dluma_game_frame_route_log_count = 0;
     g_dluma_game_frame_result_seen_mask = 0;
     g_dluma_game_frame_result_log_count = 0;
+    g_dluma_game_frame_caller_diagnostics_enabled = 0;
+    g_dluma_game_frame_caller_last_generation = 0;
+    g_dluma_game_frame_caller_gameplay_log_count = 0;
+    if (g_dluma.config.developer_mode) {
+        WCHAR diagnostics[16];
+        if (GetPrivateProfileStringW(L"loader", L"game_frame_caller_diagnostics",
+                L"0", diagnostics, DLUMA_ARRAY_COUNT(diagnostics),
+                g_dluma.config_path) == 1U && diagnostics[0] == L'1')
+            g_dluma_game_frame_caller_diagnostics_enabled = 1;
+    }
     dluma_game_frame_authority_initialize(
         &state->game_frame_authority,
         GetTickCount64(),
@@ -1729,6 +1789,25 @@ int dluma_engine_game_frame_dispatch_active_on_current_thread(
                    game_frame_loader_dispatch_active_thread_id,
            0, 0) == current;
 }
+
+ULONGLONG dluma_engine_game_frame_active_caller_sequence(
+    DlumaEngineState* state, HMODULE module, ULONG_PTR caller_rva)
+{
+    ULONGLONG sequence = 0; LONG thread;
+    if (!state || !module || !caller_rva || state->game_frame_stopping ||
+        !dluma_engine_game_frame_dispatch_active_on_current_thread(state) ||
+        !dluma_engine_game_frame_authority_lock(state)) return 0;
+    thread = (LONG)GetCurrentThreadId();
+    if (!dluma_atomic_compare_exchange(&state->game_frame_authority_conflict_pending,0,0))
+        if (dluma_game_frame_authority_matches_active_caller(
+                &state->game_frame_authority, thread, (ULONG_PTR)module, caller_rva))
+            sequence=state->game_frame_authority.last_route_sequence;
+    dluma_engine_game_frame_authority_unlock(state);
+    return sequence;
+}
+int dluma_engine_game_frame_active_caller_matches(
+    DlumaEngineState* state, HMODULE module, ULONG_PTR caller_rva)
+{ return dluma_engine_game_frame_active_caller_sequence(state,module,caller_rva)!=0; }
 
 int dluma_engine_game_frame_hook_owned(const DlumaEngineState* state)
 {

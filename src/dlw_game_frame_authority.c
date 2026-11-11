@@ -169,6 +169,17 @@ static int dluma_game_frame_route_matches(
                observation->serialization_token;
 }
 
+int dluma_game_frame_authority_matches_active_caller(
+    const DlumaGameFrameAuthorityState* state, LONG thread_id,
+    ULONG_PTR module_base, ULONG_PTR caller_rva)
+{
+    return state && thread_id && module_base && caller_rva &&
+        state->exact_route_identity_seeded && !state->game_frame_authority_conflict &&
+        state->current_dispatch_thread_id == thread_id &&
+        state->exact_route_caller_module_base == module_base &&
+        state->exact_route_caller_rva == caller_rva;
+}
+
 static void dluma_game_frame_set_conflict(
     DlumaGameFrameAuthorityState* state,
     DlumaGameFrameAuthorityConflictReason reason)

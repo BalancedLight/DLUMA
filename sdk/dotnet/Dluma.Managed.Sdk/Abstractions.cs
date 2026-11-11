@@ -133,6 +133,46 @@ public interface IDlumaMod
     void OnStop(DlumaStopReason reason);
 }
 
+/// <summary>Arguments and origin of a named mod handler invocation.</summary>
+public sealed class DlumaModHandlerEventArgs(ulong callbackId, ulong token,
+    uint sourceKind, uint mapGeneration, string sourceMod, string questId,
+    string phaseId, string provider, string handler, string argumentsJson) : EventArgs
+{
+    public ulong CallbackId { get; } = callbackId;
+    public ulong Token { get; } = token;
+    public uint SourceKind { get; } = sourceKind;
+    public uint MapGeneration { get; } = mapGeneration;
+    public string SourceMod { get; } = sourceMod;
+    public string QuestId { get; } = questId;
+    public string PhaseId { get; } = phaseId;
+    public string Provider { get; } = provider;
+    public string Handler { get; } = handler;
+    public string ArgumentsJson { get; } = argumentsJson;
+}
+
+/// <summary>A custom quest phase callback.</summary>
+public sealed class DlumaQuestPhaseEventArgs(ulong callbackId, ulong token,
+    uint kind, uint mapGeneration, ulong sequence, uint runtimeKind, uint completion,
+    double waitSeconds, string questId, string phaseId, string contractId,
+    string provider, string handler, string bindingHash, string argumentsJson) : EventArgs
+{
+    public ulong CallbackId { get; } = callbackId;
+    public ulong Token { get; } = token;
+    public uint Kind { get; } = kind;
+    public uint MapGeneration { get; } = mapGeneration;
+    public ulong Sequence { get; } = sequence;
+    public uint RuntimeKind { get; } = runtimeKind;
+    public uint Completion { get; } = completion;
+    public double WaitSeconds { get; } = waitSeconds;
+    public string QuestId { get; } = questId;
+    public string PhaseId { get; } = phaseId;
+    public string ContractId { get; } = contractId;
+    public string Provider { get; } = provider;
+    public string Handler { get; } = handler;
+    public string BindingHash { get; } = bindingHash;
+    public string ArgumentsJson { get; } = argumentsJson;
+}
+
 /// <summary>A copied bounded update event raised on the game thread.</summary>
 public sealed class DlumaUpdateEventArgs(double deltaSeconds) : EventArgs
 {

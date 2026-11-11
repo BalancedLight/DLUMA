@@ -47,6 +47,29 @@ SIZE_T wcslen(const WCHAR* text)
     return n;
 }
 
+/* Minimal C-ABI shims used by the loader's C++ translation units. Keep the
+ * authoritative byte and ASCII-only comparisons in the dluma helpers. */
+int strcmp(const char* a, const char* b)
+{
+    return dluma_strcmp(a, b);
+}
+
+int _stricmp(const char* a, const char* b)
+{
+    return dluma_stricmp(a, b);
+}
+
+int wcsncmp(const WCHAR* a, const WCHAR* b, SIZE_T count)
+{
+    SIZE_T i;
+    for (i = 0; i < count; ++i) {
+        if (a[i] < b[i]) return -1;
+        if (a[i] > b[i]) return 1;
+        if (!a[i]) return 0;
+    }
+    return 0;
+}
+
 char dluma_ascii_lower(char c)
 {
     if (c >= 'A' && c <= 'Z') return (char)(c + ('a' - 'A'));
@@ -57,6 +80,12 @@ WCHAR dluma_wascii_lower(WCHAR c)
 {
     if (c >= L'A' && c <= L'Z') return (WCHAR)(c + (L'a' - L'A'));
     return c;
+}
+
+int dluma_strcmp(const char* a, const char* b)
+{
+    while (*a && (unsigned char)*a == (unsigned char)*b) { ++a; ++b; }
+    return (int)(unsigned char)*a - (int)(unsigned char)*b;
 }
 
 int dluma_stricmp(const char* a, const char* b)

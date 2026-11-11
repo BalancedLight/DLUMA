@@ -807,6 +807,7 @@ struct AssetTraceHeader {
 };
 
 void Initialize(const AssetTracePlatform* platform = nullptr) noexcept;
+bool Initialized() noexcept;
 void Reset() noexcept;
 
 void ClearPayload(AssetTraceEventPayload* payload,

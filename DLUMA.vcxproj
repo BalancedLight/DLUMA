@@ -237,6 +237,11 @@
     <ClCompile Include="src\core\dlw_quest_phase.c" />
     <ClCompile Include="src\dlw_quest_phase_runtime.c" />
     <ClCompile Include="src\dlw_quest_phase_player.c" />
+    <ClCompile Include="src\dlw_boss_actions.c" />
+    <ClCompile Include="src\core\dlw_boss_scheduler.c" />
+    <ClCompile Include="src\core\dlw_boss_scheduler_registry.c" />
+    <ClCompile Include="src\game\dlw_boss_template_resolver.c" />
+    <ClCompile Include="src\game\dlw_boss_receiver_route.c" />
     <ClCompile Include="src\dlw_quest_editor.c" />
     <ClCompile Include="src\dlw_quest_authoring.c" />
     <ClCompile Include="src\core\dlw_mod_owner.c" />
@@ -245,12 +250,44 @@
     <ClCompile Include="src\game\dlw_game_backend.c" />
     <ClCompile Include="src\game\dlw_game_host_context.c" />
     <ClCompile Include="src\game\dlw_hud_surface_service.c" />
+    <ClCompile Include="src\game\dlw_hud_visibility_service.c" />
+    <ClCompile Include="src\game\dlw_xui_element_core.c" />
+    <ClCompile Include="src\game\dlw_xui_document_backend.c" />
+    <ClCompile Include="src\game\dlw_xui_document_sources.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\game\dlw_xui_document_service.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\game\dlw_hud_asset_service.c" />
+    <ClCompile Include="src\game\dlw_texture_swap_core.c" />
+    <ClCompile Include="src\game\dlw_texture_swap_resources.c" />
+    <ClCompile Include="src\game\dlw_texture_swap_native.cpp">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/U_DEBUG %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="src\game\dlw_hud_visibility_backend.c" />
+    <ClCompile Include="src\game\dlw_mod_handler_service.c" />
     <ClCompile Include="src\game\dlw_ui_surface_backend.c" />
     <ClCompile Include="src\game\dlw_player_service.c" />
     <ClCompile Include="src\hosts\dlw_managed_host.c" />
     <ClCompile Include="src\dlw_native_mod_config.c" />
     <ClCompile Include="src\dlw_lua_runtime.c" />
     <ClCompile Include="src\dlw_player_media_adapter.c" />
+    <ClCompile Include="src\game\dlw_player_infection_callbacks.c" />
+    <ClCompile Include="src\core\dlw_infection_request_queue.c" />
+    <ClCompile Include="src\core\dlw_engine_script_bootstrap.c" />
     <ClCompile Include="src\dlw_companion_archive.c" />
     <ClCompile Include="src\game\dlw_media_service.c" />
     <ClCompile Include="src\game\dlw_quest_phase_service.c" />
@@ -1060,7 +1097,22 @@
     <ClInclude Include="src\core\dlw_runtime_tree.h" />
     <ClInclude Include="src\bindings\dlw_player_variables_binding.h" />
     <ClInclude Include="src\bindings\dlw_player_actor_binding.h" />
+    <ClInclude Include="src\game\dlw_player_infection_callbacks.h" />
+    <ClInclude Include="src\core\dlw_infection_request_queue.h" />
+    <ClInclude Include="src\core\dlw_engine_script_bootstrap.h" />
+    <ClInclude Include="src\core\dlw_boss_scheduler.h" />
+    <ClInclude Include="src\core\dlw_boss_scheduler_registry.h" />
+    <ClInclude Include="src\game\dlw_boss_template_resolver.h" />
+    <ClInclude Include="src\game\dlw_boss_receiver_route.h" />
+    <ClInclude Include="src\dlw_boss_periodic_native.inc" />
     <ClInclude Include="src\game\dlw_game_backend.h" />
+    <ClInclude Include="src\game\dlw_xui_document_backend.h" />
+    <ClInclude Include="src\game\dlw_xui_document_native.h" />
+    <ClInclude Include="src\game\dlw_xui_document_sources.h" />
+    <ClInclude Include="src\game\dlw_hud_asset_service.h" />
+    <ClInclude Include="src\game\dlw_texture_swap_core.h" />
+    <ClInclude Include="src\game\dlw_texture_swap_resources.h" />
+    <ClInclude Include="src\game\dlw_texture_swap_native.h" />
     <ClInclude Include="src\game\dlw_game_host_context.h" />
     <ClInclude Include="src\game\dlw_player_service.h" />
     <ClInclude Include="src\game\dlw_game_types.h" />
@@ -1131,9 +1183,14 @@
     <ClInclude Include="src\fixes\custom_map_asset_isolation\PlayerXmlInputDigest.h" />
     <ClInclude Include="src\fixes\custom_map_asset_isolation\AudioSoundPropertyNative.h" />
     <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiRegistrySnapshot.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiDocumentIntegration.inl" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiObservation.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeFileObservation.h" />
     <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiContentOwner.h" />
     <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiCompiledSnapshot.h" />
     <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiInstanceOwner.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeXuiBirthEnvelope.h" />
+    <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeHookRouteMutation.inl" />
     <ClInclude Include="src\fixes\custom_map_asset_isolation\NativeArchiveContent.h" />
     <ClInclude Include="src\fixes\custom_map_asset_isolation\PackedAssetOwner.h" />
     <ClInclude Include="src\fixes\custom_map_asset_isolation\PackedAssetWindows.h" />

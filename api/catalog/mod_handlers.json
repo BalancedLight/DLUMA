@@ -1,0 +1,128 @@
+{
+  "$schema": "../schemas/api-domain.schema.json",
+  "domain": "mod_handlers",
+  "service": {
+    "id": "dluma.mod_handlers.v1",
+    "version": 1
+  },
+  "operations": [
+    {
+      "id": "mod_handlers.register",
+      "ordinal": 1,
+      "status": "implemented",
+      "capability": "actions.mod_handlers",
+      "access": [
+        "quest.phase.handle"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaModHandlerRegistrationRequest",
+      "result": "DlumaTokenResult",
+      "limits": {
+        "handler_id_bytes": 127,
+        "arguments_bytes": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "wrong_thread",
+        "not_found",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Registers one owner-bound named mod handler.",
+      "adapters": {
+        "core": "dluma_mod_handler_register",
+        "lua": "mod:handle",
+        "csharp": "IModContext.ModHandlers.Register",
+        "c": "DlumaModHandlersV1.register_handler",
+        "cpp": "context.mod_handlers().register_handler"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "mod_handlers.invoke",
+      "ordinal": 2,
+      "status": "implemented",
+      "capability": "actions.mod_handlers",
+      "access": [
+        "world.write"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaModHandlerInvokeRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "handler_id_bytes": 127,
+        "arguments_bytes": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "wrong_thread",
+        "not_found",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Invokes one named handler with JSON arguments and source context.",
+      "adapters": {
+        "core": "dluma_mod_handler_invoke",
+        "lua": "dluma.mod_handlers.invoke",
+        "csharp": "IModContext.ModHandlers.Invoke",
+        "c": "DlumaModHandlersV1.invoke",
+        "cpp": "context.mod_handlers().invoke"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    },
+    {
+      "id": "mod_handlers.unregister",
+      "ordinal": 3,
+      "status": "implemented",
+      "capability": "actions.mod_handlers",
+      "access": [],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
+      "thread": "game",
+      "request": "DlumaTokenRequest",
+      "result": "DlumaBoolResult",
+      "limits": {
+        "handler_id_bytes": 127,
+        "arguments_bytes": 8192
+      },
+      "errors": [
+        "invalid_argument",
+        "access_denied",
+        "wrong_thread",
+        "not_found",
+        "quota_exceeded",
+        "owner_revoked"
+      ],
+      "documentation": "Unregisters one handler owned by the calling mod.",
+      "adapters": {
+        "core": "dluma_mod_handler_unregister",
+        "lua": "mod:off",
+        "csharp": "IModContext.ModHandlers.Unregister",
+        "c": "DlumaModHandlersV1.unregister",
+        "cpp": "context.mod_handlers().unregister"
+      },
+      "tests": [
+        "api_catalog_contract"
+      ]
+    }
+  ]
+}

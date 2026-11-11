@@ -440,6 +440,12 @@ static int dluma_api_write_error_text(
     return 1;
 }
 
+int dluma_api_status_xui_uncertain(uint32_t operation_id, DlumaStatus status)
+{
+    return status == DLUMA_STATUS_INTERNAL_ERROR &&
+        operation_id >= 14004U && operation_id <= 14008U;
+}
+
 static void dluma_api_publish_result(
     DlumaResultRecordPrefix* result,
     DlumaStatus status,
@@ -462,6 +468,12 @@ static void dluma_api_publish_result(
     error->operation_id = policy ? policy->operation_id : 0U;
     error->capability_id = policy ? policy->capability_id : 0U;
     error->access_id = policy ? policy->access_id : 0U;
+    if (policy && dluma_api_status_xui_uncertain(policy->operation_id, status)) {
+        dluma_api_write_error_text(&error->code, "xui_result_uncertain");
+        dluma_api_write_error_text(&error->message,
+            "UI may have changed; do not automatically retry.");
+        return;
+    }
     dluma_api_write_error_text(&error->code, dluma_api_status_code(status));
     dluma_api_write_error_text(
         &error->message,

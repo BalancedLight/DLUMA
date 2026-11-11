@@ -585,6 +585,24 @@ def render_c_header(catalog: dict[str, Any]) -> str:
             "    DlumaStringView arguments_json;",
             "} DlumaQuestPhaseNativeEventV1;",
             "",
+            "#define DLUMA_MOD_HANDLER_SOURCE_MOD 1U",
+            "#define DLUMA_MOD_HANDLER_SOURCE_QUEST 2U",
+            "#define DLUMA_MOD_HANDLER_SOURCE_BOSS 3U",
+            "typedef struct DlumaModHandlerEventV1 {",
+            "    uint32_t struct_size;",
+            "    uint32_t struct_version;",
+            "    uint32_t source_kind;",
+            "    uint32_t map_generation;",
+            "    uint64_t callback_id;",
+            "    uint64_t token;",
+            "    DlumaStringView source_mod;",
+            "    DlumaStringView quest_id;",
+            "    DlumaStringView phase_id;",
+            "    DlumaStringView provider;",
+            "    DlumaStringView handler;",
+            "    DlumaStringView arguments_json;",
+            "} DlumaModHandlerEventV1;",
+            "",
             "typedef struct DlumaNativeModApiV2 {",
             "    uint32_t struct_size;",
             "    uint32_t abi_version;",
@@ -600,6 +618,8 @@ def render_c_header(catalog: dict[str, Any]) -> str:
             "        const DlumaApiV1* api, const DlumaModEventV1* event_value);",
             "    DlumaStatus (DLUMA_API_CALL *quest_phase_event)(",
             "        const DlumaApiV1* api, const DlumaQuestPhaseNativeEventV1* event_value);",
+            "    DlumaStatus (DLUMA_API_CALL *mod_handler_event)(",
+            "        const DlumaApiV1* api, const DlumaModHandlerEventV1* event_value);",
             "} DlumaNativeModApiV2;",
             "",
             "typedef const DlumaNativeModApiV2* (DLUMA_API_CALL *DlumaNativeModGetApiV2Fn)(void);",
@@ -821,6 +841,10 @@ def render_csharp(catalog: dict[str, Any]) -> str:
                     "    event EventHandler<DlumaNamedEventArgs>? InteractionBegan;",
                 ]
             )
+        if domain["domain"] == "quest_phases":
+            lines.append("    event EventHandler<DlumaQuestPhaseEventArgs>? PhaseEntered;")
+        if domain["domain"] == "mod_handlers":
+            lines.append("    event EventHandler<DlumaModHandlerEventArgs>? Invoked;")
         if domain["domain"] == "configuration":
             lines.extend(
                 [

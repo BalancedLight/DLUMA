@@ -651,8 +651,7 @@ static int dluma_manifest_validate(DlumaModManifest* output)
     if (output->quest_phase_handler_count) {
         phase_handle_access =
             dluma_manifest_access_id("quest.phase.handle");
-        if (output->language == DLUMA_MOD_LANGUAGE_CSHARP ||
-            !(output->host_flags & DLUMA_MOD_HOST_PLAYER) ||
+        if (!(output->host_flags & DLUMA_MOD_HOST_PLAYER) ||
             !dluma_mod_manifest_has_access(output, phase_handle_access))
             return 0;
     }

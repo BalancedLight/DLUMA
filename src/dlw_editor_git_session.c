@@ -599,7 +599,8 @@ static DWORD WINAPI git_worker(void *context)
         if (!available) { (void)WaitForSingleObject(s->stop, 20); continue; }
         if (!git_read_request(s, &request, frame) ||
             (!git_equal(request.type, "panelReady") && !git_equal(request.type, "gitState") &&
-             !git_equal(request.type, "gitProjectAcquire") && !git_equal(request.type, "gitWorktreeAcquire") &&
+             !git_equal(request.type, "gitProjectAcquire") && !git_equal(request.type, "gitProjectCancel") &&
+             !git_equal(request.type, "gitWorktreeAcquire") &&
              !git_equal(request.type, "gitChildStarted") && !git_equal(request.type, "gitLeaseRelease"))) break;
         if (git_equal(request.type, "panelReady") &&
             (request.parent != (uint64_t)(ULONG_PTR)s->panel.content_window || request.panel_token != s->panel.token ||
@@ -722,6 +723,16 @@ int dluma_editor_git_session_detach(void)
         InterlockedExchange(&s->detached, 2);
     }
     return InterlockedCompareExchange(&s->detached, 0, 0) == 2;
+}
+
+int dluma_editor_git_session_abort(void)
+{
+    GitSession *s = g_session;
+    if (!s) return 1;
+    if (GetCurrentThreadId() != s->owner_thread) return 0;
+    SetEvent(s->stop);
+    if (!s->job) return 0;
+    return TerminateJobObject(s->job, 1) != 0;
 }
 
 int dluma_editor_git_session_close(void)

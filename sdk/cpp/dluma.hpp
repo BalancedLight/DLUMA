@@ -314,6 +314,11 @@ public:
         if (!table_ || !table_->chain_run) return DLUMA_STATUS_UNAVAILABLE;
         return table_->chain_run(table_->context, &request, &result);
     }
+    DlumaStatus infection_flashback(const DlumaNoRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->infection_flashback) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->infection_flashback(table_->context, &request, &result);
+    }
 };
 
 class configuration_service final : public service_ref<DlumaConfigurationV1> {
@@ -418,6 +423,106 @@ public:
                      DlumaBoolResult& result) const noexcept {
         if (!table_ || !table_->release) return DLUMA_STATUS_UNAVAILABLE;
         return table_->release(table_->context, &request, &result);
+    }
+};
+
+class hud_service final : public service_ref<DlumaHudV1> {
+public:
+    using service_ref<DlumaHudV1>::service_ref;
+    DlumaStatus show(const DlumaHudVisibilityRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->show) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->show(table_->context, &request, &result);
+    }
+    DlumaStatus hide(const DlumaHudVisibilityRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->hide) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->hide(table_->context, &request, &result);
+    }
+    DlumaStatus reset(const DlumaHudVisibilityRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->reset) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->reset(table_->context, &request, &result);
+    }
+    DlumaStatus set_position(const DlumaHudPositionRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->set_position) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->set_position(table_->context, &request, &result);
+    }
+    DlumaStatus set_opacity(const DlumaHudOpacityRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->set_opacity) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->set_opacity(table_->context, &request, &result);
+    }
+    DlumaStatus set_color(const DlumaHudColorRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->set_color) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->set_color(table_->context, &request, &result);
+    }
+    DlumaStatus set_text_key(const DlumaHudNamedRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->set_text_key) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->set_text_key(table_->context, &request, &result);
+    }
+    DlumaStatus start_animation(const DlumaHudNamedRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->start_animation) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->start_animation(table_->context, &request, &result);
+    }
+    DlumaStatus swap_document(const DlumaHudDocumentSwapRequest& request,
+                     DlumaTokenResult& result) const noexcept {
+        if (!table_ || !table_->swap_document) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->swap_document(table_->context, &request, &result);
+    }
+    DlumaStatus restore_document(const DlumaTokenRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->restore_document) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->restore_document(table_->context, &request, &result);
+    }
+    DlumaStatus document_status(const DlumaTokenRequest& request,
+                     DlumaHudDocumentStatusResult& result) const noexcept {
+        if (!table_ || !table_->document_status) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->document_status(table_->context, &request, &result);
+    }
+    DlumaStatus cancel_document(const DlumaTokenRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->cancel_document) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->cancel_document(table_->context, &request, &result);
+    }
+    DlumaStatus swap_flashback_textures(const DlumaHudFlashbackTextureRequest& request,
+                     DlumaTokenResult& result) const noexcept {
+        if (!table_ || !table_->swap_flashback_textures) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->swap_flashback_textures(table_->context, &request, &result);
+    }
+    DlumaStatus flashback_texture_status(const DlumaTokenRequest& request,
+                     DlumaHudFlashbackTextureStatusResult& result) const noexcept {
+        if (!table_ || !table_->flashback_texture_status) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->flashback_texture_status(table_->context, &request, &result);
+    }
+    DlumaStatus restore_flashback_textures(const DlumaTokenRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->restore_flashback_textures) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->restore_flashback_textures(table_->context, &request, &result);
+    }
+};
+
+class mod_handlers_service final : public service_ref<DlumaModHandlersV1> {
+public:
+    using service_ref<DlumaModHandlersV1>::service_ref;
+    DlumaStatus register_handler(const DlumaModHandlerRegistrationRequest& request,
+                     DlumaTokenResult& result) const noexcept {
+        if (!table_ || !table_->register_handler) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->register_handler(table_->context, &request, &result);
+    }
+    DlumaStatus invoke(const DlumaModHandlerInvokeRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->invoke) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->invoke(table_->context, &request, &result);
+    }
+    DlumaStatus unregister(const DlumaTokenRequest& request,
+                     DlumaBoolResult& result) const noexcept {
+        if (!table_ || !table_->unregister) return DLUMA_STATUS_UNAVAILABLE;
+        return table_->unregister(table_->context, &request, &result);
     }
 };
 
@@ -532,6 +637,22 @@ public:
         return ui_surface_service(&storage_ui_surface_);
     }
 
+    hud_service hud() const noexcept {
+        DlumaHudV1 table{};
+        table.struct_size = sizeof(table);
+        if (!load(DLUMA_SERVICE_HUD_V1, table)) return {};
+        storage_hud_ = table;
+        return hud_service(&storage_hud_);
+    }
+
+    mod_handlers_service mod_handlers() const noexcept {
+        DlumaModHandlersV1 table{};
+        table.struct_size = sizeof(table);
+        if (!load(DLUMA_SERVICE_MOD_HANDLERS_V1, table)) return {};
+        storage_mod_handlers_ = table;
+        return mod_handlers_service(&storage_mod_handlers_);
+    }
+
 private:
     template <typename Table>
     bool load(const char* id, Table& table) const noexcept {
@@ -554,6 +675,8 @@ private:
     mutable DlumaCompanionContentV1 storage_companion_content_{};
     mutable DlumaQuestPhasesV1 storage_quest_phases_{};
     mutable DlumaUiSurfaceV1 storage_ui_surface_{};
+    mutable DlumaHudV1 storage_hud_{};
+    mutable DlumaModHandlersV1 storage_mod_handlers_{};
 };
 
 } // namespace dluma

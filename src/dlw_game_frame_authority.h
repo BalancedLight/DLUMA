@@ -278,6 +278,11 @@ typedef struct DlumaGameFrameAuthorityState {
         trace[DLUMA_GAME_FRAME_AUTHORITY_TRACE_CAPACITY];
 } DlumaGameFrameAuthorityState;
 
+/* Caller owns the authority lock. This checks copied route metadata only. */
+int dluma_game_frame_authority_matches_active_caller(
+    const DlumaGameFrameAuthorityState* state, LONG thread_id,
+    ULONG_PTR module_base, ULONG_PTR caller_rva);
+
 void dluma_game_frame_authority_initialize(
     DlumaGameFrameAuthorityState* state,
     ULONGLONG started_ms,

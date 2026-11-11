@@ -262,7 +262,8 @@ static int dluma_quest_authoring_known_command(
 {
     unsigned int index;
     if (!command) return 0;
-    if (dluma_stricmp(command, "call-lua") == 0 ||
+    if (dluma_stricmp(command, "call-mod") == 0 ||
+        dluma_stricmp(command, "call-lua") == 0 ||
         dluma_stricmp(command, "call-native") == 0)
         return 1;
     for (index = 0; index < alias_count; ++index)
@@ -409,7 +410,8 @@ static int dluma_quest_authoring_parse(
                 dluma_free(aliases);
                 return 0;
             }
-            if (!dluma_quest_editor_handler_declared(
+            if (binding->directive.runtime_kind != DLUMA_QUEST_PHASE_RUNTIME_MOD &&
+                !dluma_quest_editor_handler_declared(
                     binding->directive.provider_mod,
                     binding->directive.handler_id,
                     binding->directive.runtime_kind)) {
@@ -420,7 +422,8 @@ static int dluma_quest_authoring_parse(
                 return 0;
             }
             validator_diagnostic[0] = 0;
-            if (!dluma_native_mods_editor_validate_phase(
+            if (binding->directive.runtime_kind != DLUMA_QUEST_PHASE_RUNTIME_MOD &&
+                !dluma_native_mods_editor_validate_phase(
                     binding->directive.provider_mod,
                     binding->directive.handler_id,
                     binding->directive.phase_id,
@@ -1290,8 +1293,9 @@ static int dluma_quest_authoring_build_sidecar(
         dluma_quest_json_text(&writer, ",\"runtime_kind\":");
         dluma_quest_json_string(
             &writer,
-            binding->directive.runtime_kind == DLUMA_QUEST_PHASE_RUNTIME_LUA
-                ? "lua" : "native");
+            binding->directive.runtime_kind == DLUMA_QUEST_PHASE_RUNTIME_MOD
+                ? "mod" : binding->directive.runtime_kind == DLUMA_QUEST_PHASE_RUNTIME_LUA
+                    ? "lua" : "native");
         dluma_quest_json_text(&writer, ",\"provider_mod\":");
         dluma_quest_json_string(&writer, binding->directive.provider_mod);
         dluma_quest_json_text(&writer, ",\"handler\":");

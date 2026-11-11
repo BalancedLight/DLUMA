@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import time
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HELPER = ROOT / "build" / "package" / "Release" / "dluma_lua54.dll"
+HELPER = Path(os.environ.get("DLUMA_TEST_LUA54_HELPER", str(ROOT / "build" / "package" / "Release" / "dluma_lua54.dll")))
 ABI = 0x00050000
 SCOPE_MAP = 3
 SCOPE_GLOBAL = 1
@@ -548,6 +549,9 @@ class Harness:
         self.subtitle_update_calls: list[tuple[str, bool]] = []
         self.radio_dialog_calls: list[tuple[str, str]] = []
         self.action_chain_calls: list[str] = []
+        self.shared_api_calls: list[tuple[int, object]] = []
+        self.shared_api_uncertain = False
+        self.shared_asset_success = False
         self.quest_reports: list[dict[str, object]] = []
         self.quest_mutate_calls: list[tuple[int, str, str]] = []
         self.quest_hud_snapshot_calls = 0
@@ -908,7 +912,92 @@ class Harness:
             _user, _operation_id, _request, _request_size,
             _result, _result_size, error
         ):
+            if _operation_id == 14009:
+                class DocumentRequest(ctypes.Structure):
+                    _fields_ = [("size", ctypes.c_uint32), ("version", ctypes.c_uint32),
+                                ("original", ByteView), ("replacement", ByteView)]
+                request = ctypes.cast(_request, ctypes.POINTER(DocumentRequest)).contents
+                self.shared_api_calls.append((_operation_id, (
+                    ctypes.string_at(request.original.data, request.original.size),
+                    ctypes.string_at(request.replacement.data, request.replacement.size))))
+            if _operation_id == 14013:
+                class TextureRequest(ctypes.Structure):
+                    _fields_ = [("size", ctypes.c_uint32), ("version", ctypes.c_uint32),
+                                ("originals", ctypes.POINTER(ByteView)),
+                                ("replacements", ctypes.POINTER(ByteView)), ("count", ctypes.c_uint32)]
+                request = ctypes.cast(_request, ctypes.POINTER(TextureRequest)).contents
+                self.shared_api_calls.append((_operation_id, tuple(
+                    (ctypes.string_at(request.originals[i].data, request.originals[i].size),
+                     ctypes.string_at(request.replacements[i].data, request.replacements[i].size))
+                    for i in range(request.count))))
+            if _operation_id in (14010, 14011, 14012, 14014, 14015):
+                class TokenRequest(ctypes.Structure):
+                    _fields_ = [("size", ctypes.c_uint32), ("version", ctypes.c_uint32), ("token", ctypes.c_uint64)]
+                request = ctypes.cast(_request, ctypes.POINTER(TokenRequest)).contents
+                self.shared_api_calls.append((_operation_id, request.token))
+            if _operation_id == 8002:
+                self.shared_api_calls.append((_operation_id, None))
+            if _operation_id in (14007, 14008):
+                class NamedRequest(ctypes.Structure):
+                    _fields_ = [("size", ctypes.c_uint32), ("version", ctypes.c_uint32),
+                                ("screen", ByteView), ("target", ByteView), ("name", ByteView)]
+                request = ctypes.cast(_request, ctypes.POINTER(NamedRequest)).contents
+                self.shared_api_calls.append((_operation_id, (
+                    ctypes.string_at(request.screen.data, request.screen.size),
+                    ctypes.string_at(request.target.data, request.target.size),
+                    ctypes.string_at(request.name.data, request.name.size))))
+            if _operation_id in (14005, 14006):
+                class VisualRequest(ctypes.Structure):
+                    _fields_ = [("size", ctypes.c_uint32), ("version", ctypes.c_uint32),
+                                ("screen", ByteView), ("target", ByteView),
+                                ("first", ctypes.c_float)]
+                request = ctypes.cast(_request, ctypes.POINTER(VisualRequest)).contents
+                values = (request.first,)
+                if _operation_id == 14006:
+                    class ColorRequest(ctypes.Structure):
+                        _fields_ = VisualRequest._fields_ + [("green", ctypes.c_float),
+                            ("blue", ctypes.c_float), ("alpha", ctypes.c_float)]
+                    color = ctypes.cast(_request, ctypes.POINTER(ColorRequest)).contents
+                    values = (color.first, color.green, color.blue, color.alpha)
+                self.shared_api_calls.append((_operation_id, (
+                    ctypes.string_at(request.screen.data, request.screen.size),
+                    ctypes.string_at(request.target.data, request.target.size), *values)))
+            if _operation_id == 14004:
+                class PositionRequest(ctypes.Structure):
+                    _fields_ = [("size", ctypes.c_uint32), ("version", ctypes.c_uint32),
+                                ("screen", ByteView), ("target", ByteView),
+                                ("x", ctypes.c_float), ("y", ctypes.c_float), ("z", ctypes.c_float)]
+                request = ctypes.cast(_request, ctypes.POINTER(PositionRequest)).contents
+                self.shared_api_calls.append((_operation_id, (
+                    ctypes.string_at(request.screen.data, request.screen.size),
+                    ctypes.string_at(request.target.data, request.target.size),
+                    request.x, request.y, request.z)))
             error.contents.struct_size = ctypes.sizeof(HostError)
+            if self.shared_asset_success and 14009 <= _operation_id <= 14015:
+                class Call(ctypes.Structure):
+                    _fields_ = [("size", ctypes.c_uint32), ("version", ctypes.c_uint32),
+                                ("status", ctypes.c_uint32), ("reserved", ctypes.c_uint32),
+                                ("error", ctypes.c_void_p)]
+                class AssetResult(ctypes.Structure):
+                    _fields_ = [("size", ctypes.c_uint32), ("version", ctypes.c_uint32),
+                                ("call", Call), ("token", ctypes.c_uint64),
+                                ("state", ctypes.c_uint32), ("reason", ctypes.c_uint32),
+                                ("ready_count", ctypes.c_uint32), ("asset_count", ctypes.c_uint32)]
+                if _operation_id in (14009, 14013):
+                    ctypes.cast(_result + 32, ctypes.POINTER(ctypes.c_uint64))[0] = 37
+                elif _operation_id in (14011, 14014):
+                    result = ctypes.cast(_result, ctypes.POINTER(AssetResult)).contents
+                    result.token = 37; result.state = 4 if _operation_id == 14011 else 2
+                    result.reason = 0
+                    if _operation_id == 14014: result.ready_count = result.asset_count = 22
+                else:
+                    ctypes.cast(_result + 32, ctypes.POINTER(ctypes.c_uint32))[0] = 1
+                return 1
+            if self.shared_api_uncertain and _operation_id in (14004, 14005, 14006, 14007, 14008):
+                error.contents.retryable = 0
+                error.contents.code = b"xui_result_uncertain"
+                error.contents.message = b"UI may have changed; do not automatically retry."
+                return 0
             error.contents.retryable = 1
             error.contents.code = b"unsupported_capability"
             error.contents.message = b"test shared API backend is unavailable"
@@ -1192,6 +1281,162 @@ local mod = dluma.mod()
 {body}
 return mod
 """
+
+
+def test_hud_named_requests_forward_to_shared_api():
+    harness = Harness()
+    source = declaration('''
+local value, err = dluma.hud.set_text_key("Panel/Text", "EXAMPLE_KEY")
+assert(value == nil and err.code == "unsupported_capability")
+value, err = dluma.hud.start_animation("Panel", "Shake")
+assert(value == nil and err.code == "unsupported_capability")
+''')
+    try:
+        state, loaded = harness.create(source, approved_permissions=PERMISSION_UI_OVERLAY,
+                                       capabilities=CAP_RUNTIME, permissions="ui.overlay")
+        assert loaded == 1, bytes(harness.status(state).last_error)
+        assert harness.shared_api_calls == [
+            (14007, (b"HUD.xui", b"Panel/Text", b"EXAMPLE_KEY")),
+            (14008, (b"HUD.xui", b"Panel", b"Shake")),
+        ]
+        assert harness.destroy(state) == 1
+    finally:
+        harness.close()
+
+
+def test_hud_visual_requests_forward_to_shared_api():
+    harness = Harness()
+    source = declaration('''
+local value, err = dluma.hud.set_opacity("Panel", 0.5)
+assert(value == nil and err.code == "unsupported_capability")
+value, err = dluma.hud.set_color("Panel", 0.25, 0.5, 0.75, 1)
+assert(value == nil and err.code == "unsupported_capability")
+''')
+    try:
+        state, loaded = harness.create(source, approved_permissions=PERMISSION_UI_OVERLAY,
+                                       capabilities=CAP_RUNTIME, permissions="ui.overlay")
+        assert loaded == 1, bytes(harness.status(state).last_error)
+        assert harness.shared_api_calls == [
+            (14005, (b"HUD.xui", b"Panel", 0.5)),
+            (14006, (b"HUD.xui", b"Panel", 0.25, 0.5, 0.75, 1.0)),
+        ]
+        assert harness.destroy(state) == 1
+    finally:
+        harness.close()
+
+
+def test_infection_flashback_forwards_request_to_shared_api():
+    harness = Harness()
+    source = declaration('''
+local value, err = dluma.actions.infection_flashback()
+assert(value == nil and err.code == "unsupported_capability")
+''')
+    try:
+        state, loaded = harness.create(source, approved_permissions=PERMISSION_WORLD_WRITE,
+                                       capabilities=CAP_RUNTIME, permissions="world.write")
+        assert loaded == 1, bytes(harness.status(state).last_error)
+        assert harness.shared_api_calls == [(8002, None)]
+        assert harness.destroy(state) == 1
+    finally:
+        harness.close()
+
+
+def test_hud_asset_requests_forward_copied_values_and_owner_tokens():
+    harness = Harness()
+    source = declaration('''
+local value, err = dluma.hud.swap_document("hud/original.xui", "hud/custom.xui")
+assert(value == nil and err.code == "unsupported_capability")
+local pairs = {}
+for i = 1, 11 do pairs[i] = {original = "stock" .. i, replacement = "custom" .. i} end
+value, err = dluma.hud.swap_flashback_textures(pairs)
+assert(value == nil and err.code == "unsupported_capability")
+for _, f in ipairs({dluma.hud.restore_document, dluma.hud.document_status,
+                    dluma.hud.cancel_document, dluma.hud.flashback_texture_status,
+                    dluma.hud.restore_flashback_textures}) do
+  value, err = f(37)
+  assert(value == nil and err.code == "unsupported_capability")
+end
+''')
+    try:
+        state, loaded = harness.create(source, approved_permissions=PERMISSION_UI_OVERLAY,
+                                       capabilities=CAP_RUNTIME, permissions="ui.overlay")
+        assert loaded == 1, bytes(harness.status(state).last_error)
+        assert harness.shared_api_calls[0] == (14009, (b"hud/original.xui", b"hud/custom.xui"))
+        assert harness.shared_api_calls[1] == (14013, tuple((f"stock{i}".encode(), f"custom{i}".encode()) for i in range(1, 12)))
+        assert harness.shared_api_calls[2:] == [(op, 37) for op in (14010, 14011, 14012, 14014, 14015)]
+        assert harness.destroy(state) == 1
+    finally:
+        harness.close()
+
+
+def test_hud_asset_tokens_and_copied_status_are_returned_to_lua():
+    harness = Harness()
+    harness.shared_asset_success = True
+    source = declaration('''
+local doc = assert(dluma.hud.swap_document("hud/original.xui", "hud/custom.xui"))
+assert(doc == 37)
+local state = assert(dluma.hud.document_status(doc))
+assert(state.token == 37 and state.state == 4 and state.reason == 0)
+assert(dluma.hud.restore_document(doc))
+local pairs = {}
+for i = 1, 11 do pairs[i] = {original = "stock" .. i, replacement = "custom" .. i} end
+local tex = assert(dluma.hud.swap_flashback_textures(pairs))
+state = assert(dluma.hud.flashback_texture_status(tex))
+assert(state.token == 37 and state.state == 2 and state.ready_count == 22 and state.asset_count == 22)
+assert(dluma.hud.restore_flashback_textures(tex))
+''')
+    try:
+        state, loaded = harness.create(source, approved_permissions=PERMISSION_UI_OVERLAY,
+                                       capabilities=CAP_RUNTIME, permissions="ui.overlay")
+        assert loaded == 1, bytes(harness.status(state).last_error)
+        assert harness.destroy(state) == 1
+    finally:
+        harness.close()
+
+
+def test_hud_asset_lua_example_loads_and_registers_handlers():
+    harness = Harness()
+    source = (ROOT / "examples/hud-assets/lua/main.lua").read_text(encoding="utf-8-sig")
+    try:
+        state, loaded = harness.create(source,
+            approved_permissions=PERMISSION_UI_OVERLAY | PERMISSION_QUEST_PHASE_HANDLE,
+            capabilities=CAP_RUNTIME, permissions="ui.overlay,quest.phase.handle")
+        assert loaded == 1, bytes(harness.status(state).last_error)
+        assert harness.destroy(state) == 1
+    finally:
+        harness.close()
+
+
+def test_hud_position_forwards_selector_and_coordinates_to_shared_api():
+    harness = Harness()
+    source = declaration('''
+local value, err = dluma.hud.set_position("Panel/Item", 1.5, -2, 3, "HUD.xui")
+assert(value == nil and err.code == "unsupported_capability")
+''')
+    try:
+        state, loaded = harness.create(source, approved_permissions=PERMISSION_UI_OVERLAY,
+                                       capabilities=CAP_RUNTIME, permissions="ui.overlay")
+        assert loaded == 1, bytes(harness.status(state).last_error)
+        assert harness.shared_api_calls == [(14004, (b"HUD.xui", b"Panel/Item", 1.5, -2.0, 3.0))]
+        assert harness.destroy(state) == 1
+    finally:
+        harness.close()
+
+
+def test_hud_uncertain_error_reaches_lua_without_retry():
+    harness = Harness()
+    harness.shared_api_uncertain = True
+    source = declaration('''
+local value, err = dluma.hud.set_position("Panel/Item", 1, 2, 3, "HUD.xui")
+assert(value == nil and err.code == "xui_result_uncertain" and err.retryable == false)
+''')
+    try:
+        state, loaded = harness.create(source, approved_permissions=PERMISSION_UI_OVERLAY,
+                                       capabilities=CAP_RUNTIME, permissions="ui.overlay")
+        assert loaded == 1, bytes(harness.status(state).last_error)
+        assert harness.destroy(state) == 1
+    finally:
+        harness.close()
 
 
 def test_subtitle_and_radio_dialog_requests_cross_the_private_abi_verbatim():
@@ -2007,6 +2252,63 @@ end)
         assert status.budget_violations == 0
         assert status.last_callback_host_excluded_us >= 40_000
         assert status.last_callback_lua_us < 10_000
+    finally:
+        harness.close()
+
+
+def test_existing_event_prefix_remains_compatible_with_extended_handler_events():
+    harness = Harness()
+    try:
+        state, loaded = harness.create(declaration('''
+mod:on_update(function() assert(dluma.storage.set("prefix_update", "delivered")) end)
+'''))
+        assert loaded == 1
+        assert harness.dispatch(state, EVENT_UPDATE) == 1
+        assert harness.storage["prefix_update"] == (1, b"delivered")
+    finally:
+        harness.close()
+
+
+def test_mod_handler_requires_its_complete_event_extension():
+    class HandlerEvent(Event):
+        _fields_ = [
+            ("handler_source_kind", ctypes.c_uint32),
+            ("handler_source_mod", ByteView),
+        ]
+
+    harness = Harness()
+    try:
+        state, loaded = harness.create(
+            declaration('''
+assert(mod:handle("same_name", function(_, call)
+  assert(call.source_kind == 3 and call.source_mod == "example.sender")
+  assert(call.provider == "test.runtime" and call.handler == "same_name")
+  dluma.log("handler-extension-delivered")
+end))
+'''),
+            approved_permissions=PERMISSION_QUEST_PHASE_HANDLE,
+            permissions="quest.phase.handle",
+        )
+        assert loaded == 1
+        event = HandlerEvent()
+        event.kind = 15
+        event.name = b"same_name"
+        event.map_generation = 17
+        event.quest_phase.struct_size = ctypes.sizeof(QuestPhaseEvent)
+        event.quest_phase.map_generation = 17
+        event.quest_phase.provider = ByteView(b"test.runtime", 12)
+        event.quest_phase.handler = ByteView(b"same_name", 9)
+        event.quest_phase.arguments_json = ByteView(b"{}", 2)
+        event.handler_source_kind = 3
+        event.handler_source_mod = ByteView(b"example.sender", 14)
+        event.struct_size = ctypes.sizeof(Event)
+        pointer = ctypes.cast(ctypes.byref(event), ctypes.POINTER(Event))
+        assert harness.api.dispatch(state, pointer) == 0
+        assert harness.logs == []
+        event.struct_size = ctypes.sizeof(HandlerEvent)
+        harness.begin_pump(state)
+        assert harness.api.dispatch(state, pointer) == 1
+        assert [text for _, text in harness.logs] == ["handler-extension-delivered"]
     finally:
         harness.close()
 

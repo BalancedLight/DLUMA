@@ -108,7 +108,7 @@ def test_dual_host_quest_phase_manifest(tmp_path):
     assert parsed["quest_phase_handlers"][0]["id"] == "example.fade"
 
 
-def test_phase_declarations_reject_csharp_missing_access_and_duplicate_alias(tmp_path):
+def test_phase_declarations_accept_csharp_and_require_access_and_unique_alias(tmp_path):
     mod_dir = create_mod(tmp_path, language="csharp")
     manifest_path = mod_dir / "mod.dluma.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -116,8 +116,12 @@ def test_phase_declarations_reject_csharp_missing_access_and_duplicate_alias(tmp
         {"id": "example.one", "description": "x"}
     ]
     manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
-    with pytest.raises(PackageError, match="C# quest phase handlers"):
+    with pytest.raises(PackageError, match="require quest.phase.handle"):
         validate_manifest(mod_dir)
+    manifest["access"].append("quest.phase.handle")
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    parsed, _ = validate_manifest(mod_dir)
+    assert parsed["quest_phase_handlers"][0]["id"] == "example.one"
 
     native_dir = create_mod(tmp_path / "native", language="native", mod_id="example.native")
     native_path = native_dir / "mod.dluma.json"
@@ -186,6 +190,10 @@ def test_changed_reviewed_bytes_fail_closed(tmp_path):
     COMPATIBLE_BASE_CATALOG_SHA256,
     IMMEDIATELY_PREVIOUS_CATALOG_SHA256,
     COMPATIBLE_SCOPE_CATALOG_SHA256,
+    "04BA3325652618FE82D00847FB1DBA907B3FD27E558587DAD35CE1600F04A244",
+    "66DDFBD03AC3CE388AB89CF534257C36F396803FE12DA978133A5C6FC65BA0A6",
+    "C60DC5D283389EBBDC2AFC9376F4AD02C876E1C3087B0469426E7AD71C966840",
+    "E9E5D75D05BA7402F629A9841EA0BD2BB06BBB6A369898AF726DEE1E51CB24D3",
 ])
 def test_catalog_provenance_preserves_api_compatibility(tmp_path, compatible_catalog):
     mod_dir = create_mod(tmp_path, language="native")

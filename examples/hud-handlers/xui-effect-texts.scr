@@ -1,0 +1,4 @@
+!String(s, s)
+
+String("DLUMA_Example_EffectOne", "Keep moving.")
+String("DLUMA_Example_EffectTwo", "Stay focused.")

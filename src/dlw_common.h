@@ -780,10 +780,15 @@ void *memset(void *dst, int value, SIZE_T count);
 int memcmp(const void *a, const void *b, SIZE_T count);
 SIZE_T strlen(const char *text);
 SIZE_T wcslen(const WCHAR *text);
+int strcmp(const char *a, const char *b);
+/* Loader ASCII comparisons only; no locale-dependent CRT is imported. */
+int _stricmp(const char *a, const char *b);
+int wcsncmp(const WCHAR *a, const WCHAR *b, SIZE_T count);
 #endif
 
 char dluma_ascii_lower(char c);
 WCHAR dluma_wascii_lower(WCHAR c);
+int dluma_strcmp(const char *a, const char *b);
 int dluma_stricmp(const char *a, const char *b);
 int dluma_wstricmp(const WCHAR *a, const WCHAR *b);
 int dluma_contains_icase(const char *haystack, const char *needle);
@@ -905,6 +910,10 @@ ULONGLONG dluma_engine_game_frame_route_token(
     const DlumaEngineState *state);
 int dluma_engine_game_frame_dispatch_active_on_current_thread(
     const DlumaEngineState *state);
+int dluma_engine_game_frame_active_caller_matches(
+    DlumaEngineState *state, HMODULE module, ULONG_PTR caller_rva);
+ULONGLONG dluma_engine_game_frame_active_caller_sequence(
+    DlumaEngineState *state, HMODULE module, ULONG_PTR caller_rva);
 int dluma_engine_game_frame_hook_owned(const DlumaEngineState *state);
 int dluma_engine_configure_playtest_frame_authority(
     DlumaEngineState *state, const char *expected_level_name);

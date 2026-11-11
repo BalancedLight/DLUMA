@@ -1,0 +1,3 @@
+// Place these in the appropriate encounter and exit phases.
+CallMod("example.hud.lua", "hide-radar", "{\"reason\":\"encounter\"}");
+CallMod("example.hud.lua", "restore-radar", "{}");

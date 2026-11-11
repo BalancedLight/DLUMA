@@ -19,6 +19,12 @@
 | 41 | `ui.quest_hud` | 2 | gated |
 | 42 | `ui.overlay` | 1 | planned |
 | 43 | `ui.surface` | 6 | gated |
+| 44 | `hud.visibility` | 3 | gated |
+| 45 | `hud.position` | 1 | gated |
+| 46 | `hud.visual` | 2 | gated |
+| 47 | `hud.text_key` | 1 | gated |
+| 48 | `hud.animation` | 1 | gated |
+| 49 | `hud.document` | 4 | gated |
 | 50 | `audio.radio_dialog` | 1 | gated |
 | 51 | `audio.registered_cues` | 0 | reserved |
 | 52 | `audio.stem` | 7 | gated |
@@ -28,6 +34,9 @@
 | 60 | `quests.native` | 2 | gated, removed |
 | 61 | `quests.phase_handlers` | 3 | gated |
 | 70 | `actions.chain` | 1 | gated |
+| 71 | `actions.mod_handlers` | 3 | implemented |
+| 72 | `actions.infection_flashback` | 1 | gated |
+| 73 | `hud.flashback_textures` | 3 | gated |
 | 80 | `configuration.mod` | 2 | implemented |
 | 90 | `storage.mod` | 3 | implemented |
 | 100 | `companion.content` | 2 | implemented |

@@ -65,7 +65,8 @@
       "quests.start"
     ],
     "dluma.actions.v1": [
-      "actions.chain.run"
+      "actions.chain.run",
+      "actions.infection_flashback"
     ],
     "dluma.configuration.v1": [
       "configuration.get",
@@ -92,6 +93,21 @@
       "ui_surface.visibility",
       "ui_surface.suppress",
       "ui_surface.release"
+    ],
+    "dluma.hud.v1": [
+      "hud.show",
+      "hud.hide",
+      "hud.reset",
+      "hud.set_position",
+      "hud.set_opacity",
+      "hud.set_color",
+      "hud.set_text_key",
+      "hud.start_animation"
+    ],
+    "dluma.mod_handlers.v1": [
+      "mod_handlers.register",
+      "mod_handlers.invoke",
+      "mod_handlers.unregister"
     ]
   }
 }

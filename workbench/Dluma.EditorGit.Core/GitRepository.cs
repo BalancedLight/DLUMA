@@ -33,11 +33,67 @@ public sealed class GitRepository
         _lock = state.Lock;
     }
 
+    // The local-only diagnostic admits only a standalone .git directory in
+    // its selected fixture. Normal repository operations do not use this gate.
+    public async Task VerifyDiagnosticRepositoryAsync(CancellationToken cancellationToken = default)
+    {
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await ValidateAsync(cancellationToken).ConfigureAwait(false);
+            var gitDir = GitProcess.Text(await _git.RunAsync(_root,
+                ["rev-parse", "--absolute-git-dir"], false, cancellationToken).ConfigureAwait(false)).TrimEnd('\r', '\n');
+            var commonDir = GitProcess.Text(await _git.RunAsync(_root,
+                ["rev-parse", "--path-format=absolute", "--git-common-dir"], false, cancellationToken).ConfigureAwait(false)).TrimEnd('\r', '\n');
+            if (!DiagnosticGitMetadata.Matches(_root, gitDir, commonDir))
+                throw new GitException("The local diagnostic requires a standalone repository in this project.", GitFailureKind.InvalidInput);
+        }
+        finally { _lock.Release(); }
+    }
+
     public async Task<GitStatus> GetStatusAsync(CancellationToken cancellationToken = default)
     {
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try { await ValidateAsync(cancellationToken).ConfigureAwait(false); return await StatusAsync(cancellationToken).ConfigureAwait(false); }
         finally { _lock.Release(); }
+    }
+
+    // Restrict diffs to a currently reported literal path.
+    public async Task<string> GetDiffAsync(string path, GitDiffKind kind, CancellationToken cancellationToken = default)
+    {
+        path = ValidatePath(path);
+        if (kind is not (GitDiffKind.Staged or GitDiffKind.Worktree)) throw new ArgumentOutOfRangeException(nameof(kind));
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await ValidateAsync(cancellationToken).ConfigureAwait(false);
+            var status = await StatusAsync(cancellationToken).ConfigureAwait(false);
+            var change = status.Changes.FirstOrDefault(item => item.Path == path);
+            if (change is null) throw new GitException("The selected file changed. Refresh and try again.", GitFailureKind.InvalidInput, "diff");
+            if (change.Untracked)
+            {
+                if (kind == GitDiffKind.Staged) return "This file is not staged.";
+                var untracked = await _git.RunAsync(_root,
+                    ["--no-optional-locks", "--literal-pathspecs", "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--no-color", "--", "/dev/null", path],
+                    false, cancellationToken, allowDiffExitOne: true).ConfigureAwait(false);
+                return DiffText(untracked);
+            }
+            var args = new List<string> { "--no-optional-locks", "--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--no-color" };
+            if (kind == GitDiffKind.Staged) args.Add("--cached");
+            args.Add("--");
+            if (change.OriginalPath is string original) args.Add(ValidatePath(original));
+            args.Add(path);
+            var bytes = await _git.RunAsync(_root, args, false, cancellationToken).ConfigureAwait(false);
+            return DiffText(bytes);
+        }
+        finally { _lock.Release(); }
+    }
+
+    private static string DiffText(byte[] bytes)
+    {
+        if (bytes.Length > 1024 * 1024)
+            throw new GitException("This diff is too large to preview in the panel.", GitFailureKind.CommandFailed, "diff");
+        return Encoding.UTF8.GetString(bytes);
     }
 
     public async Task InitializeAsync(string initialBranch = "main", CancellationToken cancellationToken = default)
@@ -235,14 +291,18 @@ public sealed class GitRepository
                 await _git.RunAsync(_root, ["var", "GIT_AUTHOR_IDENT"], false, cancellationToken).ConfigureAwait(false);
                 await _git.RunAsync(_root, ["var", "GIT_COMMITTER_IDENT"], false, cancellationToken).ConfigureAwait(false);
             }
-            catch (GitException exception) when (exception.Kind == GitFailureKind.CommandFailed)
+            catch (GitException exception) when (IsCompletedIdentityCommandFailure(exception))
             {
-                throw new GitException("Set your Git name and email before committing.", GitFailureKind.IdentityMissing, "commit", exception.ExitCode);
+                throw new GitException("Git could not resolve the author or committer identity. Check the Git name, email, and configuration.",
+                    GitFailureKind.CommandFailed, "commit", exception.ExitCode);
             }
             await _git.RunAsync(_root, ["commit", "-m", message], false, cancellationToken).ConfigureAwait(false);
         }
         finally { _lock.Release(); }
     }
+
+    private static bool IsCompletedIdentityCommandFailure(GitException exception) =>
+        exception.Kind == GitFailureKind.CommandFailed && exception.Operation == "var" && exception.ExitCode is not null and not 0;
 
     public async Task SwitchBranchAsync(string branch, IEditorDocumentGate documentGate, CancellationToken cancellationToken = default)
     {

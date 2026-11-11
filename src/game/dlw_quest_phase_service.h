@@ -27,6 +27,8 @@ int dluma_quest_phase_service_attach(
 
 /* Removes every dispatcher token for this exact owner. Idempotent. */
 int dluma_quest_phase_service_detach(uint64_t owner_id);
+void dluma_quest_phase_service_clear(uint64_t owner_id);
+unsigned int dluma_quest_phase_service_count(uint64_t owner_id);
 
 /* Lua's private helper uses callback IDs as its authored cancellation tokens.
  * Native callers normally use the public token returned by the service. */
@@ -44,6 +46,13 @@ DlumaStatus dluma_quest_phase_service_invoke(
 
 void dluma_quest_phase_service_prepare_capabilities(
     DlumaCapabilityRegistry* registry);
+
+DlumaStatus dluma_quest_phase_service_dispatch_named(const char* mod_id,
+    const char* handler_id, const char* arguments_json, uint32_t map_generation,
+    const char* quest_id, const char* phase_id);
+int dluma_quest_phase_service_resolve_named(const char* mod_id,
+    const char* handler_id, uint32_t map_generation, uint64_t* owner_id,
+    uint32_t* owner_generation, uint64_t* registration_token);
 
 #ifdef __cplusplus
 }

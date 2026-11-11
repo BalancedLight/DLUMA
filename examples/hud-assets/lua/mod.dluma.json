@@ -1,0 +1,6 @@
+{
+  "schema": "dluma.mod.v1", "api_version": "1.0", "id": "example.hud.assets.lua",
+  "name": "HUD Asset Requests (Lua)", "version": "1.0.0", "description": "Requests and observes HUD asset changes.",
+  "author": "DLUMA", "language": "lua", "scope": "project", "entry": "main.lua",
+  "load_priority": 0, "hosts": ["player"], "access": ["ui.overlay", "quest.phase.handle"]
+}

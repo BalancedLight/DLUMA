@@ -4,6 +4,7 @@
 #include "core/dlw_mod_package_runtime.h"
 #include "game/dlw_game_backend.h"
 #include "game/dlw_quest_phase_service.h"
+#include "game/dlw_mod_handler_service.h"
 #include "dlw_dual_host_runtime.h"
 #include "dlw_editor_host.h"
 #include "dlw_lua_config.h"
@@ -2538,6 +2539,29 @@ static int dluma_native_quest_phase_event_sink(
     return callback_status == DLUMA_STATUS_OK;
 }
 
+static int dluma_native_mod_handler_sink(void* user, const DlumaModHandlerEventV1* event_value)
+{
+    DlumaNativeModEntry* entry = (DlumaNativeModEntry*)user;
+    DlumaModPackageSnapshot current;
+    DlumaStatus status = DLUMA_STATUS_INTERNAL_ERROR;
+    const DlumaApiV1* api;
+    if (!entry || !event_value || !entry->callbacks.mod_handler_event ||
+        !entry->snapshot.loaded || !entry->snapshot.player_approval_valid ||
+        !entry->scope_active || g_dluma_native_map_exit_frozen ||
+        (g_dluma_native_project_exit_gate && entry->package.manifest.scope != DLUMA_SCOPE_GLOBAL) ||
+        entry->lifecycle_phase != DLUMA_NATIVE_PHASE_READY) return 0;
+    memset(&current, 0, sizeof(current)); current.struct_size = sizeof(current);
+    if (dluma_mod_package_revalidate(&entry->package, &current) != DLUMA_STATUS_OK ||
+        !dluma_mod_manifest_has_access(&current.manifest, DLUMA_ACCESS_QUEST_PHASE_HANDLE)) return 0;
+    api = dluma_api_runtime_api(&entry->api_runtime);
+    if (!api) return 0;
+    dluma_atomic_increment(&entry->quest_phase_callbacks_in_flight);
+    __try { status = entry->callbacks.mod_handler_event(api, event_value); }
+    __except(1) { status = DLUMA_STATUS_INTERNAL_ERROR; }
+    dluma_atomic_decrement(&entry->quest_phase_callbacks_in_flight);
+    return status == DLUMA_STATUS_OK;
+}
+
 static int dluma_native_api_initialize_entry(
     DlumaNativeModEntry* entry,
     DWORD lifecycle_epoch,
@@ -2619,6 +2643,13 @@ static int dluma_native_api_initialize_entry(
         return 0;
     }
     entry->callbacks = *callbacks;
+    if (callbacks->mod_handler_event && !dluma_mod_handler_service_attach(
+            &entry->api_owner, &entry->package, dluma_native_mod_handler_sink, entry)) {
+        dluma_game_host_context_revoke(&entry->api_host);
+        dluma_mod_owner_begin_revoke(&entry->api_owner);
+        dluma_mod_owner_finish_revoke(&entry->api_owner);
+        return 0;
+    }
     if (callbacks->quest_phase_event &&
         !dluma_quest_phase_service_attach(
             &entry->api_owner, &entry->package,

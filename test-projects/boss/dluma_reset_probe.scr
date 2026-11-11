@@ -1,0 +1,9 @@
+sub main()
+{
+    Phase("Reset")
+    {
+        CallMod("probe.hud.asset-a", "reset", "{}");
+        PhaseTransition() { Conditions() { TimePassed(15.0); } Target("End"); }
+    }
+    Phase("End") { Finish(); }
+}

@@ -20,6 +20,9 @@ internal sealed class NativeModContext : IModContext
         Audio = new AudioApi(this);
         Quests = new QuestsApi(this);
         Actions = new ActionsApi(this);
+        QuestPhases = new QuestPhasesApi(this);
+        ModHandlers = new ModHandlersApi(this);
+        Hud = new HudApi(this);
         Configuration = new ConfigurationApi(this);
         Storage = new StorageApi(this);
         CompanionContent = new CompanionContentApi(this);
@@ -48,6 +51,9 @@ internal sealed class NativeModContext : IModContext
     public IQuestsApi Quests { get; }
 
     public IActionsApi Actions { get; }
+    public IQuestPhasesApi QuestPhases { get; }
+    public IModHandlersApi ModHandlers { get; }
+    public IHudApi Hud { get; }
 
     public IConfigurationApi Configuration { get; }
 
@@ -67,6 +73,9 @@ internal sealed class NativeModContext : IModContext
         ((EventsApi)Events).Dispatch(value);
         ((ConfigurationApi)Configuration).Dispatch(value);
     }
+
+    internal void DispatchHandler(NativeModHandlerEventV1 value) => ((ModHandlersApi)ModHandlers).Dispatch(value);
+    internal void DispatchQuestPhase(NativeQuestPhaseEventV1 value) => ((QuestPhasesApi)QuestPhases).Dispatch(value);
 
     internal DlumaCallResult RequireActive(uint operationId) =>
         _active
@@ -1081,6 +1090,22 @@ internal sealed unsafe class QuestsApi(NativeModContext context) : IQuestsApi
 
 internal sealed unsafe class ActionsApi(NativeModContext context) : IActionsApi
 {
+    public DlumaBoolResult InfectionFlashback(DlumaNoRequest request)
+    {
+        var active = context.RequireActive(8002);
+        if (!active.Succeeded) return new(active, false);
+        var nativeRequest = new NativeNoRequest
+        {
+            StructSize = (uint)sizeof(NativeNoRequest), StructVersion = NativeConstants.StructVersion,
+        };
+        var nativeResult = new NativeBoolResult
+        {
+            StructSize = (uint)sizeof(NativeBoolResult), StructVersion = NativeConstants.StructVersion,
+        };
+        var call = context.Bridge.Invoke(8002, ref nativeRequest, ref nativeResult);
+        return new(call, nativeResult.Value != 0);
+    }
+
     public DlumaBoolResult ChainRun(DlumaNamedRequest request)
     {
         var active = context.RequireActive(8001);

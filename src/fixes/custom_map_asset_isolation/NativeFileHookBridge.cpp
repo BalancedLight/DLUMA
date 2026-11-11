@@ -221,6 +221,13 @@ bool BindOriginal(State* state,windows::Route route,void* original)noexcept{
     if(!state||index>=static_cast<unsigned>(windows::Route::Count)||!original)return false;
     state->originals[index]=original;return true;
 }
+bool PreparedForPublication(const State* state)noexcept{
+    if(!state||state!=active_bridge||!state->binding.validated||!state->read||
+       !state->binding.read||!state->binding.resolve_source||state->binding.user!=state)return false;
+    for(unsigned i=0;i<static_cast<unsigned>(windows::Route::Count);++i)
+        if((windows::kRequiredHookMask&(std::uint64_t{1}<<i))&&!state->originals[i])return false;
+    return true;
+}
 bool SourcePublication(State* state,std::uintptr_t address,bool constructed)noexcept{
     if(!Observing(state)||!address)return false;
     std::uintptr_t vtable=0;

@@ -864,6 +864,216 @@
           "type": "u32"
         }
       ]
+    },
+    {
+      "name": "DlumaModHandlerRegistrationRequest",
+      "documentation": "Registers one named handler owned by the calling mod.",
+      "fields": [
+        {
+          "name": "handler",
+          "type": "string_view"
+        },
+        {
+          "name": "callback_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "DlumaModHandlerInvokeRequest",
+      "documentation": "Invokes an active mod handler with a JSON object.",
+      "fields": [
+        {
+          "name": "mod",
+          "type": "string_view"
+        },
+        {
+          "name": "handler",
+          "type": "string_view"
+        },
+        {
+          "name": "arguments_json",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaHudVisibilityRequest",
+      "documentation": "Selects an authored HUD target.",
+      "fields": [
+        {
+          "name": "screen",
+          "type": "string_view"
+        },
+        {
+          "name": "target",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaHudPositionRequest",
+      "documentation": "Selects an authored XUI element and a relative position.",
+      "fields": [
+        {
+          "name": "screen",
+          "type": "string_view"
+        },
+        {
+          "name": "target",
+          "type": "string_view"
+        },
+        {
+          "name": "position",
+          "type": "vec3"
+        }
+      ]
+    },
+    {
+      "name": "DlumaHudOpacityRequest",
+      "documentation": "Selects an authored XUI element and opacity.",
+      "fields": [
+        {
+          "name": "screen",
+          "type": "string_view"
+        },
+        {
+          "name": "target",
+          "type": "string_view"
+        },
+        {
+          "name": "opacity",
+          "type": "f32"
+        }
+      ]
+    },
+    {
+      "name": "DlumaHudColorRequest",
+      "documentation": "Selects an authored XUI view and RGBA color.",
+      "fields": [
+        {
+          "name": "screen",
+          "type": "string_view"
+        },
+        {
+          "name": "target",
+          "type": "string_view"
+        },
+        {
+          "name": "red",
+          "type": "f32"
+        },
+        {
+          "name": "green",
+          "type": "f32"
+        },
+        {
+          "name": "blue",
+          "type": "f32"
+        },
+        {
+          "name": "alpha",
+          "type": "f32"
+        }
+      ]
+    },
+    {
+      "name": "DlumaHudNamedRequest",
+      "documentation": "Selects an authored XUI element and a bounded name.",
+      "fields": [
+        {
+          "name": "screen",
+          "type": "string_view"
+        },
+        {
+          "name": "target",
+          "type": "string_view"
+        },
+        {
+          "name": "name",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaHudDocumentSwapRequest",
+      "documentation": "Selects two project-owned HUD documents.",
+      "fields": [
+        {
+          "name": "original_document",
+          "type": "string_view"
+        },
+        {
+          "name": "replacement_document",
+          "type": "string_view"
+        }
+      ]
+    },
+    {
+      "name": "DlumaHudDocumentStatusResult",
+      "documentation": "Returns copied state and reason for one owner-bound document request.",
+      "fields": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "state",
+          "type": "u32"
+        },
+        {
+          "name": "reason",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "DlumaHudFlashbackTextureStatusResult",
+      "documentation": "Returns copied state and readiness for one owner-bound flashback texture request.",
+      "fields": [
+        {
+          "name": "token",
+          "type": "u64"
+        },
+        {
+          "name": "state",
+          "type": "u32"
+        },
+        {
+          "name": "reason",
+          "type": "u32"
+        },
+        {
+          "name": "ready_count",
+          "type": "u32"
+        },
+        {
+          "name": "asset_count",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "DlumaHudFlashbackTextureRequest",
+      "documentation": "Requests eleven ordered flashback texture alias replacements.",
+      "fields": [
+        {
+          "name": "originals",
+          "type": "string_view",
+          "pointer": true,
+          "count_field": "count"
+        },
+        {
+          "name": "replacements",
+          "type": "string_view",
+          "pointer": true,
+          "count_field": "count"
+        },
+        {
+          "name": "count",
+          "type": "u32"
+        }
+      ]
     }
   ]
 }

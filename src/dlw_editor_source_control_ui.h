@@ -17,13 +17,13 @@ typedef struct DlumaEditorGitParsedRequest {
     char destination[65537];
     char git_executable[65537];
     char operation[32];
-    char lease_id[33];
+    char lease_id[33], arm_id[33];
     uint64_t project_generation, creation_time, process_handle;
     DWORD process_id;
-    int mutating, has_destination, has_executable, has_lease;
+    int mutating, has_destination, has_executable, has_lease, has_arm;
 } DlumaEditorGitParsedRequest;
 enum { DLUMA_GIT_STATE = 1, DLUMA_GIT_PROJECT_ACQUIRE, DLUMA_GIT_WORKTREE_ACQUIRE,
-       DLUMA_GIT_CHILD_STARTED, DLUMA_GIT_LEASE_RELEASE };
+       DLUMA_GIT_CHILD_STARTED, DLUMA_GIT_LEASE_RELEASE, DLUMA_GIT_PROJECT_CANCEL };
 #ifdef __cplusplus
 extern "C" {
 #endif

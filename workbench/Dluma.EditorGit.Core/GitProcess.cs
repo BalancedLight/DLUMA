@@ -12,7 +12,7 @@ internal sealed class GitProcess(string executable, Func<bool> isQuarantined, Ac
     private readonly string _executable = !string.IsNullOrWhiteSpace(executable) && Path.IsPathFullyQualified(executable) && File.Exists(executable)
         ? Path.GetFullPath(executable) : throw new GitException("Select an installed Git executable.", GitFailureKind.GitUnavailable, "git");
 
-    internal async Task<byte[]> RunAsync(string directory, IReadOnlyList<string> args, bool network, CancellationToken token, byte[]? input = null)
+    internal async Task<byte[]> RunAsync(string directory, IReadOnlyList<string> args, bool network, CancellationToken token, byte[]? input = null, bool allowDiffExitOne = false)
     {
         var commandIndex = 0;
         while (commandIndex < args.Count && args[commandIndex].StartsWith('-'))
@@ -99,7 +99,7 @@ internal sealed class GitProcess(string executable, Func<bool> isQuarantined, Ac
         if (streams[0].Overflow || streams[1].Overflow)
             throw new GitException("Git returned too much output. Refresh the repository before retrying.", GitFailureKind.CommandFailed, operation, process.ExitCode, network);
         // Do not surface stderr: Git and helpers can echo credential-bearing remote URLs.
-        if (process.ExitCode != 0)
+        if (process.ExitCode != 0 && !(allowDiffExitOne && operation == "diff" && process.ExitCode == 1))
         {
             // Porcelain reports a rejected destination with a leading ! and a tab.
             var rejected = operation == "push" && args.Contains("--porcelain") &&

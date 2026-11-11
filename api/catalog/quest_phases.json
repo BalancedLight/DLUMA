@@ -11,8 +11,14 @@
       "ordinal": 1,
       "status": "gated",
       "capability": "quests.phase_handlers",
-      "access": ["quest.phase.handle"],
-      "scopes": ["global", "project", "map"],
+      "access": [
+        "quest.phase.handle"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
       "thread": "game",
       "request": "DlumaQuestPhaseRegistrationRequest",
       "result": "DlumaTokenResult",
@@ -32,7 +38,7 @@
       "adapters": {
         "core": "dluma_quest_phase_register_provider",
         "lua": "mod:handle_quest_phase",
-        "csharp": "",
+        "csharp": "IModContext.QuestPhases.ProviderRegister",
         "c": "DlumaQuestPhasesV1.register_provider",
         "cpp": "context.quest_phases().register_provider"
       },
@@ -46,8 +52,14 @@
       "ordinal": 2,
       "status": "gated",
       "capability": "quests.phase_handlers",
-      "access": ["quest.phase.observe"],
-      "scopes": ["global", "project", "map"],
+      "access": [
+        "quest.phase.observe"
+      ],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
       "thread": "game",
       "request": "DlumaQuestPhaseRegistrationRequest",
       "result": "DlumaTokenResult",
@@ -67,7 +79,7 @@
       "adapters": {
         "core": "dluma_quest_phase_register_observer",
         "lua": "mod:observe_quest_phase",
-        "csharp": "",
+        "csharp": "IModContext.QuestPhases.ObserverRegister",
         "c": "DlumaQuestPhasesV1.register_observer",
         "cpp": "context.quest_phases().register_observer"
       },
@@ -82,7 +94,11 @@
       "status": "gated",
       "capability": "quests.phase_handlers",
       "access": [],
-      "scopes": ["global", "project", "map"],
+      "scopes": [
+        "global",
+        "project",
+        "map"
+      ],
       "thread": "game",
       "request": "DlumaTokenRequest",
       "result": "DlumaBoolResult",
@@ -97,7 +113,7 @@
       "adapters": {
         "core": "dluma_quest_phase_unregister",
         "lua": "mod:off",
-        "csharp": "",
+        "csharp": "IModContext.QuestPhases.Unregister",
         "c": "DlumaQuestPhasesV1.unregister",
         "cpp": "context.quest_phases().unregister"
       },

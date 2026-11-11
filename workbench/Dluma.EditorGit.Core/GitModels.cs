@@ -50,3 +50,5 @@ public sealed class GitException : Exception
         OutcomeUncertain = outcomeUncertain;
     }
 }
+
+public enum GitDiffKind { Staged, Worktree }

@@ -2,13 +2,18 @@
 #include "core/dlw_api_runtime.h"
 #include "core/dlw_mod_package_runtime.h"
 #include "game/dlw_game_backend.h"
+#include "game/dlw_hud_visibility_backend.h"
 #include "game/dlw_quest_phase_service.h"
+#include "game/dlw_mod_handler_service.h"
+#include "game/dlw_xui_document_native.h"
+#include "game/dlw_texture_swap_native.h"
 #include "hosts/dlw_managed_host.h"
 #include "dlw_animation_refresh_runtime.h"
 #include "dlw_path_security.h"
 #include "dlw_lua_config.h"
 #include "dlw_lua54_api.h"
 #include "dlw_native_gameplay.h"
+#include "dlw_boss_actions.h"
 #include "dlw_native_mods.h"
 #include "dlw_quest_phase_player.h"
 #include "dlw_quest_hud.h"
@@ -1191,6 +1196,8 @@ static int dluma_lua_runtime_subscription_added(
         operation_id = 12001U;
     else if (kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER)
         operation_id = 12002U;
+    else if (kind == DLUMA_LUA54_EVENT_MOD_HANDLER)
+        operation_id = 15001U;
     else {
         dluma_lua_runtime_host_error(
             error, "unsupported_event",
@@ -1201,7 +1208,8 @@ static int dluma_lua_runtime_subscription_added(
     memset(&request, 0, sizeof(request));
     memset(&phase_request, 0, sizeof(phase_request));
     memset(&result, 0, sizeof(result));
-    if (kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
+    if (kind == DLUMA_LUA54_EVENT_MOD_HANDLER ||
+        kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
         kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER) {
         phase_request.struct_size = (uint32_t)sizeof(phase_request);
         phase_request.struct_version = 1U;
@@ -1217,19 +1225,22 @@ static int dluma_lua_runtime_subscription_added(
     result.struct_version = 1U;
     status = dluma_api_runtime_invoke(
         &slot->api_runtime, operation_id,
+        kind == DLUMA_LUA54_EVENT_MOD_HANDLER ||
         kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
                 kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER
             ? (const void*)&phase_request : (const void*)&request,
+        kind == DLUMA_LUA54_EVENT_MOD_HANDLER ||
         kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
                 kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER
             ? (uint32_t)sizeof(phase_request) : (uint32_t)sizeof(request),
         &result, (uint32_t)sizeof(result));
-    capability = kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
+    capability = kind == DLUMA_LUA54_EVENT_MOD_HANDLER ? "actions.mod_handlers" :
+        kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
             kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER
         ? "quests.phase_handlers" :
         kind == DLUMA_LUA54_EVENT_INTERACT_BEGIN
             ? "events.interact" : "events.sensor";
-    permission = kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER
+    permission = kind == DLUMA_LUA54_EVENT_MOD_HANDLER || kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER
         ? "quest.phase.handle" :
         kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER
             ? "quest.phase.observe" :
@@ -1249,6 +1260,8 @@ static int dluma_lua_runtime_subscription_removed(
     DlumaLuaRuntimeSlot* slot;
     int removed;
     if (!dluma_lua_runtime_host_slot(host_user, &slot, error)) return 0;
+    if (kind == DLUMA_LUA54_EVENT_MOD_HANDLER)
+        return dluma_mod_handler_service_unregister_callback(slot->owner_id, token);
     if (kind == DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER ||
         kind == DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER)
         return dluma_quest_phase_service_unregister_callback(
@@ -2226,6 +2239,7 @@ static int dluma_lua_runtime_quest_phase_event_sink(
     event.kind = event_kind == DLUMA_MOD_EVENT_QUEST_PHASE_PROVIDER
         ? DLUMA_LUA54_EVENT_QUEST_PHASE_PROVIDER
         : DLUMA_LUA54_EVENT_QUEST_PHASE_OBSERVER;
+    if (!event_value->binding_hash[0]) event.state = DLUMA_LUA54_QUEST_PHASE_SHARED_CONTEXT;
     event.name = event_kind == DLUMA_MOD_EVENT_QUEST_PHASE_PROVIDER
         ? event_value->handler_id : event_value->contract_id;
     event.quest_phase.struct_size =
@@ -2250,6 +2264,36 @@ static int dluma_lua_runtime_quest_phase_event_sink(
         event_value->binding_hash, strlen(event_value->binding_hash));
     event.quest_phase.arguments_json = dluma_lua_runtime_phase_view(
         event_value->arguments_json, event_value->arguments_size);
+    return dluma_lua_runtime_dispatch_helper_event(slot, &event) > 0;
+}
+
+static int dluma_lua_runtime_mod_handler_sink(void* user, const DlumaModHandlerEventV1* input)
+{
+    DlumaLuaRuntimeSlot* slot = (DlumaLuaRuntimeSlot*)user;
+    DlumaModPackageSnapshot current;
+    DlumaLua54Event event;
+    if (!slot || !input || !slot->occupied || slot->teardown_pending || !slot->helper_script ||
+        slot->api_owner.state != DLUMA_MOD_OWNER_ACTIVE ||
+        slot->api_owner.map_generation != input->map_generation ||
+        !(slot->approved_permissions & DLUMA_LUA54_PERMISSION_QUEST_PHASE_HANDLE)) return 0;
+    memset(&current, 0, sizeof(current)); current.struct_size = sizeof(current);
+    if (dluma_mod_package_revalidate(&slot->api_package, &current) != DLUMA_STATUS_OK ||
+        !dluma_mod_manifest_has_access(&current.manifest, DLUMA_ACCESS_QUEST_PHASE_HANDLE)) return 0;
+    memset(&event, 0, sizeof(event));
+    event.kind = DLUMA_LUA54_EVENT_MOD_HANDLER; event.name = input->handler.data;
+    event.quest_phase.struct_size = sizeof(event.quest_phase);
+    event.quest_phase.map_generation = input->map_generation;
+    event.quest_phase.runtime_kind = 1U; event.quest_phase.completion = 1U;
+    event.quest_phase.sequence = input->token; event.quest_phase.local_peer = 1U;
+    event.quest_phase.quest_id = dluma_lua_runtime_phase_view(input->quest_id.data, (size_t)input->quest_id.size);
+    event.quest_phase.phase_id = dluma_lua_runtime_phase_view(input->phase_id.data, (size_t)input->phase_id.size);
+    event.quest_phase.contract_id = dluma_lua_runtime_phase_view("", 0);
+    event.quest_phase.binding_hash = dluma_lua_runtime_phase_view("", 0);
+    event.quest_phase.provider = dluma_lua_runtime_phase_view(input->provider.data, (size_t)input->provider.size);
+    event.quest_phase.handler = dluma_lua_runtime_phase_view(input->handler.data, (size_t)input->handler.size);
+    event.quest_phase.arguments_json = dluma_lua_runtime_phase_view(input->arguments_json.data, (size_t)input->arguments_json.size);
+    event.handler_source_kind = input->source_kind;
+    event.handler_source_mod = dluma_lua_runtime_phase_view(input->source_mod.data, (size_t)input->source_mod.size);
     return dluma_lua_runtime_dispatch_helper_event(slot, &event) > 0;
 }
 
@@ -2295,6 +2339,18 @@ static void dluma_lua_runtime_destroy_slot(
 unsigned int dluma_lua_runtime_current_map_generation(void)
 {
     return g_dluma_lua_runtime.map_generation;
+}
+int dluma_lua_runtime_copy_project_root(unsigned int map_generation,WCHAR* out,unsigned int capacity)
+{
+    unsigned int n=0;
+    if(!out || !capacity) return 0;
+    out[0]=0;
+    if(!map_generation || map_generation!=g_dluma_lua_runtime.map_generation ||
+       !dluma_engine_game_frame_dispatch_active_on_current_thread(&g_dluma.engine)) return 0;
+    while(n<DLUMA_MAX_WPATH && g_dluma_lua_runtime.current_project_root[n]) ++n;
+    if(!n || n>=DLUMA_MAX_WPATH || n>=capacity) return 0;
+    memcpy(out,g_dluma_lua_runtime.current_project_root,(n+1U)*sizeof(WCHAR));
+    return 1;
 }
 
 int dluma_lua_runtime_revoke_local_scopes_for_exit(
@@ -2764,6 +2820,11 @@ static int dluma_lua_runtime_api_invoke(
         result_size);
     (void)dluma_api_runtime_operation_context(
         operation_id, &capability, &permission);
+    if (dluma_api_status_xui_uncertain(operation_id, status)) {
+        dluma_lua_runtime_host_error(error, "xui_result_uncertain",
+            "UI may have changed; do not automatically retry.", capability, permission, "");
+        return 0;
+    }
     return dluma_lua_runtime_api_status(
         status, error, capability, permission, "");
 }
@@ -2839,6 +2900,13 @@ static int dluma_lua_runtime_initialize_api(
             &slot->api_backend) != DLUMA_STATUS_OK) {
         dluma_game_host_context_revoke(
             &slot->api_host);
+        dluma_mod_owner_begin_revoke(&slot->api_owner);
+        dluma_mod_owner_finish_revoke(&slot->api_owner);
+        return 0;
+    }
+    if (!dluma_mod_handler_service_attach(&slot->api_owner, &slot->api_package,
+            dluma_lua_runtime_mod_handler_sink, slot)) {
+        dluma_game_host_context_revoke(&slot->api_host);
         dluma_mod_owner_begin_revoke(&slot->api_owner);
         dluma_mod_owner_finish_revoke(&slot->api_owner);
         return 0;
@@ -3215,6 +3283,8 @@ static void dluma_lua_runtime_apply_context(void)
                      g_dluma_lua_runtime.next_project_root) == 0;
     unsigned int slot_index;
     if (had_map) {
+        /* Private diagnostic mutations must not start during scope unload. */
+        dluma_hud_visibility_backend_diagnostic_context(0,0,0);
         dluma_lua_runtime_dispatch_scope(DLUMA_LUA_SCOPE_GLOBAL,
                                        DLUMA_LUA54_EVENT_MAP_UNLOAD,
                                        g_dluma_lua_runtime.current_map);
@@ -3254,6 +3324,8 @@ static void dluma_lua_runtime_apply_context(void)
         DlumaLuaRuntimeSlot* slot =
             &g_dluma_lua_runtime.slots[slot_index];
         if (slot->occupied && !slot->teardown_pending) {
+            dluma_xui_document_service_revoke(slot->api_owner.owner_id,slot->api_owner.generation);
+            dluma_texture_service_revoke(slot->api_owner.owner_id,slot->api_owner.generation);
             dluma_mod_owner_advance_scope(
                 &slot->api_owner,
                 g_dluma_lua_runtime.map_generation);
@@ -3278,10 +3350,18 @@ static void dluma_lua_runtime_apply_context(void)
     dluma_str_copy(g_dluma_lua_runtime.current_map,
                  DLUMA_ARRAY_COUNT(g_dluma_lua_runtime.current_map),
                  g_dluma_lua_runtime.next_map);
+    dluma_hud_visibility_backend_diagnostic_context(
+        g_dluma_lua_runtime.current_project_root,
+        g_dluma_lua_runtime.current_map,
+        g_dluma_lua_runtime.map_generation);
     dluma_native_gameplay_on_map_generation_changed(
         g_dluma_lua_runtime.map_generation,
         g_dluma_lua_runtime.current_map,
         g_dluma.engine.last_level_interface);
+    dluma_boss_actions_set_periodic_context(
+        g_dluma_lua_runtime.map_generation,
+        g_dluma_lua_runtime.current_project_root,
+        g_dluma_lua_runtime.current_map);
     for(slot_index=0;slot_index<DLUMA_LUA_RUNTIME_MAX_STATES;++slot_index){
         DlumaLuaRuntimeSlot* slot=&g_dluma_lua_runtime.slots[slot_index];
         if(slot->occupied && slot->metadata.scope==DLUMA_LUA_SCOPE_GLOBAL &&

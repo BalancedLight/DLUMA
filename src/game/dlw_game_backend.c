@@ -3,10 +3,17 @@
 #include "dlw_media_service.h"
 #include "dlw_quest_phase_service.h"
 #include "dlw_hud_surface_service.h"
+#include "dlw_hud_visibility_service.h"
+#include "dlw_mod_handler_service.h"
+#include "dlw_hud_asset_service.h"
+#include "dlw_xui_document_native.h"
+#include "dlw_texture_swap_native.h"
 
 #include "../dlw_common.h"
 #include "../dlw_lua54_api.h"
+#include "../dlw_lua_project_exit.h"
 #include "../dlw_native_gameplay.h"
+#include "../bindings/dlw_player_actor_binding.h"
 
 #include <string.h>
 
@@ -88,6 +95,23 @@ void dluma_game_backend_prepare_capabilities(
     dluma_media_service_prepare_capabilities(registry);
     dluma_quest_phase_service_prepare_capabilities(registry);
     dluma_hud_surface_prepare_capabilities(registry);
+    dluma_hud_visibility_prepare_capabilities(registry);
+    dluma_mod_handler_service_prepare_capabilities(registry);
+    {
+        int document_ready=dluma_xui_document_service_available();
+        dluma_game_backend_set_capability(registry,DLUMA_CAPABILITY_HUD_DOCUMENT,
+            document_ready,document_ready,document_ready ? "ready" : "HUD document swapping unavailable");
+    }
+    {
+        int texture_ready=dluma_texture_service_available();
+        dluma_game_backend_set_capability(registry,DLUMA_CAPABILITY_HUD_FLASHBACK_TEXTURES,
+            texture_ready,texture_ready,texture_ready ? "ready" : "flashback texture replacement unavailable");
+    }
+    {
+        int infection_ready=dluma_player_actor_binding_infection_flashback_ready();
+        dluma_game_backend_set_capability(registry,DLUMA_CAPABILITY_ACTIONS_INFECTION_FLASHBACK,
+            infection_ready,infection_ready,infection_ready ? "ready" : "infection flashback unavailable");
+    }
     dluma_game_backend_set_capability(
         registry, DLUMA_CAPABILITY_UI_OVERLAY, 0, 0, "planned");
     dluma_game_backend_set_capability(
@@ -463,6 +487,35 @@ static DlumaStatus dluma_game_backend_invoke(
     (void)request_size;
     (void)result_size;
     switch (operation_id) {
+    case 8002U: {
+        DlumaPlayerInfectionRequestResult status=dluma_player_actor_binding_request_infection_flashback();
+        ((DlumaBoolResult*)result)->value=status==DLUMA_PLAYER_INFECTION_ACCEPTED;
+        if(status==DLUMA_PLAYER_INFECTION_ACCEPTED) return DLUMA_STATUS_OK;
+        if(status==DLUMA_PLAYER_INFECTION_NATIVE_FAILED) return DLUMA_STATUS_INTERNAL_ERROR;
+        return DLUMA_STATUS_UNAVAILABLE;
+    }
+    case 14001U:
+    case 14002U:
+    case 14003U:
+    case 14004U:
+    case 14005U:
+    case 14006U:
+    case 14007U:
+    case 14008U:
+        return dluma_hud_visibility_invoke(owner, operation_id, request, result);
+    case 14009U:
+    case 14010U:
+    case 14011U:
+    case 14012U:
+        return dluma_game_document_invoke(owner, operation_id, request, result);
+    case 14013U:
+    case 14014U:
+    case 14015U:
+        return dluma_game_texture_invoke(owner, operation_id, request, result);
+    case 15001U:
+    case 15002U:
+    case 15003U:
+        return dluma_mod_handler_service_invoke(owner, operation_id, request, result);
     case 13001U:
     case 13002U:
     case 13003U:

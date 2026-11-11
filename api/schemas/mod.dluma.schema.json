@@ -267,6 +267,7 @@
           "language": {
             "enum": [
               "lua",
+              "csharp",
               "native"
             ]
           },

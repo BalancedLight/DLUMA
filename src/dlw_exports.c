@@ -21,7 +21,12 @@ extern "C" {
 #include "hosts/dlw_managed_host.h"
 #include "dlw_native_mods.h"
 #include "dlw_quest_phase_player.h"
+#include "dlw_boss_actions.h"
 #include "game/dlw_media_service.h"
+#include "game/dlw_hud_visibility_service.h"
+#include "game/dlw_xui_document_native.h"
+#include "game/dlw_texture_swap_native.h"
+#include "game/dlw_player_infection_callbacks.h"
 
 #include "fixes/FixRegistry.h"
 #include <intrin.h>
@@ -597,7 +602,12 @@ static void* dluma_player_initialize(void)
         dluma_log_line(
             "WARN",
             "Custom quest phase observation is unavailable for this gamedll profile; stock quest progression remains unchanged.");
+    if (!dluma_boss_actions_start_cold(g_original_game_dll, 1))
+        dluma_log_line("WARN", "Boss scenario mod actions are unavailable for this game build.");
     dluma_media_service_start();
+    /* Closed draft installer: no cells are changed until its independent
+     * native identity and cold-bootstrap review gates are qualified. */
+    (void)dluma_player_infection_callbacks_prepare_cold((uintptr_t)g_original_game_dll);
     dluma_native_mods_pre_game_init(g_original_game_dll);
     dluma_log_pair("INFO", "native_mod_chain_phase", "pre_game_complete");
     manager = g_original_initialize();
@@ -607,13 +617,20 @@ static void* dluma_player_initialize(void)
     if (!manager) {
         dluma_log_line("ERROR", "Original InitializeGameScriptDLL returned null.");
         dluma_player_startup_abort("game_script_initialization_failed");
+        int document_stopped=dluma_xui_document_service_shutdown();
+        int texture_stopped=dluma_texture_service_shutdown();
+        if (!document_stopped || !texture_stopped || !dluma_boss_actions_stop() || !dluma_hud_visibility_shutdown() ||
+            !dluma_quest_phase_player_stop()) {
+            dluma_editor_model_animation_fix_retain();
+            dluma_log_line("WARN", "Initialization cleanup retained active HUD, boss, or quest callbacks.");
+            return manager;
+        }
         dluma_localization_shutdown();
         (void)dluma_custom_main_menu_runtime_stop();
         (void)dluma_asset_mod_native_stop();
         dluma_ui_restore_workshop_menu_redirect();
         dluma_ui_restore_main_menu_redirect();
         dluma::fixes::ShutdownAllFixes();
-        (void)dluma_quest_phase_player_stop();
         services_stopped = dluma_media_service_quiesce_all();
         dluma_native_mods_shutdown_chain(g_original_game_dll, services_stopped);
         dluma_unmount_content_pack();
@@ -718,6 +735,13 @@ static __int64 dluma_player_shutdown(void)
         return 0;
     }
 
+    int document_stopped=dluma_xui_document_service_shutdown();
+    int texture_stopped=dluma_texture_service_shutdown();
+    if (!document_stopped || !texture_stopped || !dluma_boss_actions_stop() || !dluma_hud_visibility_shutdown()) {
+        dluma_editor_model_animation_fix_retain();
+        dluma_log_line("WARN", "HUD or boss action callbacks remain active; retaining loader dependencies.");
+        return 0;
+    }
     quest_phase_stopped = dluma_quest_phase_player_stop();
     if (!quest_phase_stopped) {
         dluma_editor_model_animation_fix_retain();

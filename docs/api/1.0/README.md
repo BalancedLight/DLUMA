@@ -41,3 +41,5 @@ Configuration schemas can declare `type: "keybind"` with an integer default Wind
 Mods receive an integer from `configuration.get`. Key bindings use the same saved-value format as integer settings; bounds and step are implicit.
 
 Integer settings may specify `legacyDefault` in JSON schemas (or `legacy_default` in Lua schemas) to map one previously saved, now out-of-range integer to the current default. Other invalid saved values remain errors. The value is saved when the player changes the setting.
+
+[HUD visibility and shared handlers](HUD_ACTIONS.md)

@@ -43,6 +43,10 @@ typedef struct DlumaApiRuntime {
 extern "C" {
 #endif
 
+/* All internal failures from these immediate XUI calls are conservatively
+ * reported as possibly partial; never retry them automatically. */
+int dluma_api_status_xui_uncertain(uint32_t operation_id, DlumaStatus status);
+
 DlumaStatus dluma_api_runtime_initialize(
     DlumaApiRuntime* runtime,
     DlumaModOwner* owner,

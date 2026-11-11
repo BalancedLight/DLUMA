@@ -47,7 +47,8 @@ internal sealed class NativeGitSession : IEditorGitProjectGate, IEditorDocumentG
         {
             if (_disposed) return;
             _retired |= retired;
-            if (_recovery) context = context with { MutationsAvailable = false, WorktreeAvailable = false, Message = "Git cleanup needs attention. Reopen Git after checking the operation." };
+            if (_recovery) context = context with { MutationsAvailable = false, WorktreeAvailable = false, LocalWritesOnly = false,
+                BranchCreateAvailable = false, DiagnosticFixtureOnly = false, Message = "Git cleanup needs attention. Reopen Git after checking the operation." };
             _context = context;
         }
         ContextChanged?.Invoke(context);
@@ -78,21 +79,74 @@ internal sealed class NativeGitSession : IEditorGitProjectGate, IEditorDocumentG
                 throw new GitException("Another Git operation is still finishing.", GitFailureKind.InvalidInput);
             _acquiring = true;
         }
+        string? armId = null;
+        var started = Stopwatch.GetTimestamp();
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            // Acquire is a native state transition. Receive its grant/refusal
-            // even when the UI cancels, so an issued lease cannot be lost.
-            var result = await TransitionAsync<GitProjectAcquireRequest, GitLeaseResult>("gitProjectAcquire",
-                new(projectRoot, projectGeneration, OperationName(operation), destination)).ConfigureAwait(false);
-            if (!result.Granted) throw Refused(result.Code, result.Message);
-            lock (_sync) _projectLease = result.LeaseId!;
-            var lease = new NativeLease(this, result.LeaseId!, false);
-            try { cancellationToken.ThrowIfCancellationRequested(); RequireCurrent(); }
-            catch { await lease.DisposeAsync().ConfigureAwait(false); throw; }
-            return lease;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                // Complete each native transition even if the UI cancels, so
+                // an issued arm or lease is never lost with its reply.
+                var result = await TransitionAsync<GitProjectAcquireRequest, GitLeaseResult>("gitProjectAcquire",
+                    new(projectRoot, projectGeneration, OperationName(operation), destination, armId)).ConfigureAwait(false);
+                if (result.Granted)
+                {
+                    armId = null;
+                    lock (_sync) _projectLease = result.LeaseId!;
+                    var lease = new NativeLease(this, result.LeaseId!, false);
+                    try { cancellationToken.ThrowIfCancellationRequested(); RequireCurrent(); }
+                    catch { await lease.DisposeAsync().ConfigureAwait(false); throw; }
+                    return lease;
+                }
+                // Before an arm exists, a busy result can be a read child or
+                // Job accounting still draining. Retry admission only; no Git
+                // mutation or synthetic arm/lease has been issued here.
+                if (result.Code == "busy" && armId is null)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(15))
+                        throw new GitException("The Editor did not finish preparing Git. Try again.", GitFailureKind.Timeout);
+                    await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                    RequireCurrent();
+                    continue;
+                }
+                if (result.Code != "pending") throw Refused(result.Code, result.Message);
+                if (armId is not null && !string.Equals(armId, result.ArmId, StringComparison.Ordinal))
+                {
+                    armId = null;
+                    MarkRecovery();
+                    _bridge.AbortProtocolSession("Git arm identity changed.");
+                    throw new GitException("The Editor connection changed during Git admission. Reopen Git after cleanup.", GitFailureKind.RecoveryRequired);
+                }
+                armId = result.ArmId!;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(15))
+                    throw new GitException("The Editor did not finish preparing Git. Try again.", GitFailureKind.Timeout);
+                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                RequireCurrent();
+            }
         }
-        finally { lock (_sync) _acquiring = false; }
+        finally
+        {
+            try
+            {
+                if (armId is not null)
+                {
+                    var canceled = await TransitionAsync<GitProjectCancelRequest, GitArmCancelResult>("gitProjectCancel",
+                        new(projectRoot, projectGeneration, armId)).ConfigureAwait(false);
+                    if (!canceled.Cancelled) throw Refused(canceled.Code, canceled.Message);
+                }
+            }
+            catch
+            {
+                MarkRecovery();
+                lock (_sync) _retired = true;
+                _bridge.AbortProtocolSession("Git arm cancellation could not be confirmed.");
+                throw new GitException("Git preparation could not be canceled. Reopen Git after cleanup.", GitFailureKind.RecoveryRequired);
+            }
+            finally { lock (_sync) _acquiring = false; }
+        }
     }
 
     public async Task<IAsyncDisposable?> AcquireWorktreeLeaseAsync(string projectRoot, GitWorktreeOperation operation,

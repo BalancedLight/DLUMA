@@ -1,0 +1,21 @@
+{
+  "schema": "dluma.mod.v1",
+  "api_version": "1.0",
+  "id": "example.hud.csharp",
+  "name": "HUD Handlers (C#)",
+  "version": "1.0.0",
+  "description": "Shows named handlers controlling the radar.",
+  "author": "DLUMA",
+  "language": "csharp",
+  "scope": "global",
+  "entry": "HudHandlers.dll",
+  "load_priority": 0,
+  "hosts": [
+    "player"
+  ],
+  "access": [
+    "ui.overlay",
+    "quest.phase.handle"
+  ],
+  "entry_type": "HudHandlers.Mod"
+}

@@ -363,7 +363,25 @@ public static unsafe class BootstrapEntryPoints
                     return 1;
                 }
 
-                state.Context.Dispatch(*value);
+                if (value->Kind is 11 or 12 or 13)
+                {
+                    if (value->StructSize < (uint)sizeof(NativeExtendedEventV1))
+                        return Fail(diagnostic, diagnosticCapacity, "Malformed extended managed event.");
+                    var extended = (NativeExtendedEventV1*)value;
+                    if (value->Kind == 13)
+                    {
+                        if (extended->ModHandler is null || extended->ModHandler->StructSize < (uint)sizeof(NativeModHandlerEventV1))
+                            return Fail(diagnostic, diagnosticCapacity, "Malformed mod handler event.");
+                        state.Context.DispatchHandler(*extended->ModHandler);
+                    }
+                    else
+                    {
+                        if (extended->QuestPhase is null || extended->QuestPhase->StructSize < (uint)sizeof(NativeQuestPhaseEventV1))
+                            return Fail(diagnostic, diagnosticCapacity, "Malformed quest phase event.");
+                        state.Context.DispatchQuestPhase(*extended->QuestPhase);
+                    }
+                }
+                else state.Context.Dispatch(*value);
             }
 
             NativeUtf8.WriteDiagnostic(

@@ -310,8 +310,6 @@ def validate_manifest(mod_dir: Path) -> tuple[dict[str, Any], bytes]:
     handlers = manifest.get("quest_phase_handlers", [])
     if not isinstance(handlers, list) or len(handlers) > 32:
         raise PackageError("quest_phase_handlers must contain at most 32 entries")
-    if handlers and language == "csharp":
-        raise PackageError("C# quest phase handlers are unavailable")
     if handlers and "player" not in hosts:
         raise PackageError("quest_phase_handlers require the player host")
     if handlers and "quest.phase.handle" not in access:

@@ -601,6 +601,18 @@ static DlumaStatus DLUMA_API_CALL dluma_generated_operation_8001(
         result, (uint32_t)sizeof(DlumaBoolResult));
 }
 
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_8002(
+    void* context,
+    const DlumaNoRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        8002U,
+        request, (uint32_t)sizeof(DlumaNoRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
 static DlumaStatus DLUMA_API_CALL dluma_generated_operation_9001(
     void* context,
     const DlumaConfigGetRequest* request,
@@ -793,6 +805,222 @@ static DlumaStatus DLUMA_API_CALL dluma_generated_operation_13006(
         result, (uint32_t)sizeof(DlumaBoolResult));
 }
 
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14001(
+    void* context,
+    const DlumaHudVisibilityRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14001U,
+        request, (uint32_t)sizeof(DlumaHudVisibilityRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14002(
+    void* context,
+    const DlumaHudVisibilityRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14002U,
+        request, (uint32_t)sizeof(DlumaHudVisibilityRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14003(
+    void* context,
+    const DlumaHudVisibilityRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14003U,
+        request, (uint32_t)sizeof(DlumaHudVisibilityRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14004(
+    void* context,
+    const DlumaHudPositionRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14004U,
+        request, (uint32_t)sizeof(DlumaHudPositionRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14005(
+    void* context,
+    const DlumaHudOpacityRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14005U,
+        request, (uint32_t)sizeof(DlumaHudOpacityRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14006(
+    void* context,
+    const DlumaHudColorRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14006U,
+        request, (uint32_t)sizeof(DlumaHudColorRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14007(
+    void* context,
+    const DlumaHudNamedRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14007U,
+        request, (uint32_t)sizeof(DlumaHudNamedRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14008(
+    void* context,
+    const DlumaHudNamedRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14008U,
+        request, (uint32_t)sizeof(DlumaHudNamedRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14009(
+    void* context,
+    const DlumaHudDocumentSwapRequest* request,
+    DlumaTokenResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14009U,
+        request, (uint32_t)sizeof(DlumaHudDocumentSwapRequest),
+        result, (uint32_t)sizeof(DlumaTokenResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14010(
+    void* context,
+    const DlumaTokenRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14010U,
+        request, (uint32_t)sizeof(DlumaTokenRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14011(
+    void* context,
+    const DlumaTokenRequest* request,
+    DlumaHudDocumentStatusResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14011U,
+        request, (uint32_t)sizeof(DlumaTokenRequest),
+        result, (uint32_t)sizeof(DlumaHudDocumentStatusResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14012(
+    void* context,
+    const DlumaTokenRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14012U,
+        request, (uint32_t)sizeof(DlumaTokenRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14013(
+    void* context,
+    const DlumaHudFlashbackTextureRequest* request,
+    DlumaTokenResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14013U,
+        request, (uint32_t)sizeof(DlumaHudFlashbackTextureRequest),
+        result, (uint32_t)sizeof(DlumaTokenResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14014(
+    void* context,
+    const DlumaTokenRequest* request,
+    DlumaHudFlashbackTextureStatusResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14014U,
+        request, (uint32_t)sizeof(DlumaTokenRequest),
+        result, (uint32_t)sizeof(DlumaHudFlashbackTextureStatusResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_14015(
+    void* context,
+    const DlumaTokenRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        14015U,
+        request, (uint32_t)sizeof(DlumaTokenRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_15001(
+    void* context,
+    const DlumaModHandlerRegistrationRequest* request,
+    DlumaTokenResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        15001U,
+        request, (uint32_t)sizeof(DlumaModHandlerRegistrationRequest),
+        result, (uint32_t)sizeof(DlumaTokenResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_15002(
+    void* context,
+    const DlumaModHandlerInvokeRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        15002U,
+        request, (uint32_t)sizeof(DlumaModHandlerInvokeRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
+static DlumaStatus DLUMA_API_CALL dluma_generated_operation_15003(
+    void* context,
+    const DlumaTokenRequest* request,
+    DlumaBoolResult* result)
+{
+    return dluma_api_runtime_invoke(
+        (DlumaApiRuntime*)context,
+        15003U,
+        request, (uint32_t)sizeof(DlumaTokenRequest),
+        result, (uint32_t)sizeof(DlumaBoolResult));
+}
+
 static int dluma_generated_fill_core_service(
     DlumaApiRuntime* runtime, void* output, uint32_t output_size)
 {
@@ -935,6 +1163,7 @@ static int dluma_generated_fill_actions_service(
     table.version = 1U;
     table.context = runtime;
     table.chain_run = dluma_generated_operation_8001;
+    table.infection_flashback = dluma_generated_operation_8002;
     return dluma_api_copy_service_table(
         output, output_size, &table, (uint32_t)sizeof(table));
 }
@@ -1015,6 +1244,48 @@ static int dluma_generated_fill_ui_surface_service(
         output, output_size, &table, (uint32_t)sizeof(table));
 }
 
+static int dluma_generated_fill_hud_service(
+    DlumaApiRuntime* runtime, void* output, uint32_t output_size)
+{
+    DlumaHudV1 table;
+    memset(&table, 0, sizeof(table));
+    table.struct_size = (uint32_t)sizeof(table);
+    table.version = 1U;
+    table.context = runtime;
+    table.show = dluma_generated_operation_14001;
+    table.hide = dluma_generated_operation_14002;
+    table.reset = dluma_generated_operation_14003;
+    table.set_position = dluma_generated_operation_14004;
+    table.set_opacity = dluma_generated_operation_14005;
+    table.set_color = dluma_generated_operation_14006;
+    table.set_text_key = dluma_generated_operation_14007;
+    table.start_animation = dluma_generated_operation_14008;
+    table.swap_document = dluma_generated_operation_14009;
+    table.restore_document = dluma_generated_operation_14010;
+    table.document_status = dluma_generated_operation_14011;
+    table.cancel_document = dluma_generated_operation_14012;
+    table.swap_flashback_textures = dluma_generated_operation_14013;
+    table.flashback_texture_status = dluma_generated_operation_14014;
+    table.restore_flashback_textures = dluma_generated_operation_14015;
+    return dluma_api_copy_service_table(
+        output, output_size, &table, (uint32_t)sizeof(table));
+}
+
+static int dluma_generated_fill_mod_handlers_service(
+    DlumaApiRuntime* runtime, void* output, uint32_t output_size)
+{
+    DlumaModHandlersV1 table;
+    memset(&table, 0, sizeof(table));
+    table.struct_size = (uint32_t)sizeof(table);
+    table.version = 1U;
+    table.context = runtime;
+    table.register_handler = dluma_generated_operation_15001;
+    table.invoke = dluma_generated_operation_15002;
+    table.unregister = dluma_generated_operation_15003;
+    return dluma_api_copy_service_table(
+        output, output_size, &table, (uint32_t)sizeof(table));
+}
+
 static DlumaStatus dluma_generated_fill_service(
     DlumaApiRuntime* runtime,
     DlumaStringView service_id,
@@ -1087,6 +1358,16 @@ static DlumaStatus dluma_generated_fill_service(
     if (dluma_api_string_equals_literal(
             service_id, "dluma.ui.surface.v1"))
         return dluma_generated_fill_ui_surface_service(
+            runtime, output, output_size)
+            ? DLUMA_STATUS_OK : DLUMA_STATUS_INSUFFICIENT_BUFFER;
+    if (dluma_api_string_equals_literal(
+            service_id, "dluma.hud.v1"))
+        return dluma_generated_fill_hud_service(
+            runtime, output, output_size)
+            ? DLUMA_STATUS_OK : DLUMA_STATUS_INSUFFICIENT_BUFFER;
+    if (dluma_api_string_equals_literal(
+            service_id, "dluma.mod_handlers.v1"))
+        return dluma_generated_fill_mod_handlers_service(
             runtime, output, output_size)
             ? DLUMA_STATUS_OK : DLUMA_STATUS_INSUFFICIENT_BUFFER;
     return DLUMA_STATUS_NOT_FOUND;
