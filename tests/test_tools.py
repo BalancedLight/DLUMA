@@ -296,6 +296,23 @@ def test_package_manifest_rejects_extra_runtime_files(tmp_path):
         mod_name,
     ]
     subprocess.run(command, check=True, capture_output=True, text=True)
+    required = [*command, "--require-editor-splash"]
+    subprocess.run(required, check=True, capture_output=True, text=True)
+    splash = package / "dluma_runtime/editor/startup.gif"
+    splash_bytes = splash.read_bytes()
+    splash.write_bytes(b"modified")
+    rejected_splash = subprocess.run(required, capture_output=True, text=True)
+    assert rejected_splash.returncode != 0
+    splash.write_bytes(splash_bytes)
+    splash.unlink()
+    manifest_path = package / "dluma_runtime/runtime-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"] = [record for record in manifest["files"] if record["path"] != "editor/startup.gif"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    subprocess.run(command, check=True, capture_output=True, text=True)
+    missing_splash = subprocess.run(required, capture_output=True, text=True)
+    assert missing_splash.returncode != 0
+    assert "startup.gif" in missing_splash.stderr
     (package / "foreign.dll").write_bytes(b"x")
     rejected = subprocess.run(command, check=False, capture_output=True, text=True)
     assert rejected.returncode != 0
@@ -388,20 +405,33 @@ def test_quest_graph_button_uses_visible_stock_toolbar_slot():
     assert "dialog_origin.y + 8" not in source
 
 
-def test_quest_graph_document_resolution_has_bounded_workshop_fallback():
+def test_quest_graph_document_resolution_binds_owned_mounted_source():
     bridge = (ROOT / "src" / "dlw_editor_quest_graph_bridge.c").read_text(
         encoding="utf-8"
     )
     launch = (ROOT / "src" / "dlw_editor_launch.c").read_text(
         encoding="utf-8"
     )
+    mounted = bridge[bridge.index("static int dluma_qg_mounted_source_path_core("):
+                     bridge.index("static int dluma_qg_mounted_identity_matches(")]
+    ownership = bridge[bridge.index("static int dluma_qg_project_from_native_source("):
+                       bridge.index("int dluma_editor_quest_resolve_compile_paths(")]
+    binding = bridge[bridge.index("static int dluma_qg_resolve_document("):
+                     bridge.index("static int dluma_qg_json_append(")]
 
     assert "dluma_editor_launch_resolve_workshop_root(" in launch
-    assert "dluma_qg_search_workshop_document(" in bridge
-    assert "DLUMA_QG_MAX_WORKSHOP_PROJECTS" in bridge
-    assert "DLUMA_QG_MAX_PROJECT_ENTRIES - entries" in bridge
-    assert "dluma_project_candidate_root_is_contained(" in bridge
-    assert "dluma_project_regular_file_is_contained(" in bridge
+    assert "g_dluma_qg.native_full_path(" in mounted
+    assert 'dluma_qg_wide_ends_icase(wide, L".pxsl")' in mounted
+    assert "dluma_qg_regular_file_path(wide, canonical, capacity)" in mounted
+    assert "GetCurrentThreadId() == g_dluma_qg.owner_thread_id" in mounted
+    assert "dluma_editor_launch_resolve_workshop_root(" in ownership
+    assert "dluma_project_candidate_root_is_contained(" in ownership
+    assert "dluma_final_path_equal_or_under(source_path, paths->quest_directory.final_path)" in ownership
+    assert "dluma_project_regular_file_is_contained(paths->project.final_path, source_path)" in ownership
+    assert "dluma_wstricmp(paths->canonical, source_path)" in ownership
+    assert binding.index("dluma_qg_native_document(") < binding.index("dluma_qg_mounted_source_path(")
+    assert binding.index("dluma_qg_mounted_source_path(") < binding.index("dluma_qg_project_from_native_source(")
+    assert binding.index("dluma_qg_project_from_native_source(") < binding.index("slot->native_document = native_document")
 
 
 def test_private_runtime_hash_admission_is_hex_case_insensitive():

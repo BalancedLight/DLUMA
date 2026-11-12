@@ -20,6 +20,7 @@ def main() -> int:
     parser.add_argument("--mod-name", required=True)
     parser.add_argument("--require-editor-wiki", action="store_true")
     parser.add_argument("--require-editor-git", action="store_true")
+    parser.add_argument("--require-editor-splash", action="store_true")
     parser.add_argument(
         "--catalog-hash",
         type=Path,
@@ -85,6 +86,8 @@ def main() -> int:
             for record in runtime_manifest.get("files", [])
             if isinstance(record, dict)
         }
+        if args.require_editor_splash and "editor/startup.gif" not in runtime_paths:
+            raise ValueError("runtime manifest omits editor/startup.gif")
         required_editor = {
             f"editor/{name}".casefold()
             for name in EDITOR_THEME_ARTIFACTS
