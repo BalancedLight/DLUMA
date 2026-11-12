@@ -425,37 +425,31 @@ def test_editor_shutdown_intent_suppresses_only_the_popup() -> None:
 
 def test_editor_exit_observer_is_cancellation_safe_and_process_lifetime() -> None:
     observer = read("src/dlw_editor_exit_observer.c")
-    window_proc = block(
-        observer,
-        "static LRESULT CALLBACK dluma_editor_exit_window_proc",
-        "int dluma_editor_exit_observer_start",
-    )
-    assert "WM_QUERYENDSESSION" not in window_proc
-    for message in ("WM_CLOSE", "WM_SYSCOMMAND", "SC_CLOSE", "WM_ENDSESSION"):
-        assert message in window_proc
-    assert "WM_NCDESTROY" in window_proc
-    assert window_proc.index("dluma_editor_exit_intent_begin(") < window_proc.index(
-        "CallWindowProcW(original"
-    )
-    assert "!IsWindow(window) || !IsWindowVisible(window)" in window_proc
-    assert "dluma_editor_exit_intent_resolve" in window_proc
-    assert "DLUMA_EDITOR_EXIT_REASON_ALT_F4" in window_proc
-    assert "DLUMA_EDITOR_EXIT_REASON_SYSTEM_MENU_CLOSE" in window_proc
-    assert "DLUMA_EDITOR_EXIT_REASON_SYSTEM_SESSION_END" in window_proc
+    listener = block(observer, "static int dluma_editor_exit_listener(",
+                     "int dluma_editor_exit_observer_dispatch_command")
+    dispatcher = block(read("src/dlw_editor_ui.c"),
+                       "static LRESULT CALLBACK ui_window_proc(HWND window, UINT message, WPARAM wparam,",
+                       "static int ui_enroll_owner(")
+    assert "WM_QUERYENDSESSION" not in listener
+    for message in ("WM_CLOSE", "WM_SYSCOMMAND", "SC_CLOSE", "WM_ENDSESSION", "WM_NCDESTROY"):
+        assert message in listener
+    assert listener.index("DLUMA_EDITOR_UI_BEFORE") < listener.index("dluma_editor_exit_intent_begin(")
+    assert "DLUMA_EDITOR_UI_AFTER" in listener
+    assert "!IsWindow(window) || !IsWindowVisible(window)" in listener
+    assert "dluma_editor_exit_intent_resolve" in listener
+    for reason in ("DLUMA_EDITOR_EXIT_REASON_ALT_F4", "DLUMA_EDITOR_EXIT_REASON_SYSTEM_MENU_CLOSE",
+                   "DLUMA_EDITOR_EXIT_REASON_SYSTEM_SESSION_END"):
+        assert reason in listener
+    assert dispatcher.index("DLUMA_EDITOR_UI_BEFORE") < dispatcher.index("ui.def_subclass(window")
+    assert dispatcher.index("ui.def_subclass(window") < dispatcher.index("DLUMA_EDITOR_UI_AFTER")
     assert "EnumWindows(" in observer
     assert "GetCurrentProcessId()" in observer
     assert "GetWindow(window, GW_OWNER)" in observer
     assert "IsWindowVisible(window)" in observer
-    assert "process_id != candidate.process_id" in observer
+    assert "process_id != candidate->process_id" in observer
     observer_start = observer.split("int dluma_editor_exit_observer_start", 1)[1]
-    assert "installed_predecessor = (WNDPROC)SetWindowLongPtrW" in observer_start
-    assert "if (!installed_predecessor)" in observer_start
-    assert (
-        "g_dluma_editor_exit_observer.original = installed_predecessor"
-        in observer_start
-    )
-    assert ") != observed" not in observer_start
-    assert "state.observer_active = 0U" not in observer
+    assert "dluma_editor_ui_subscribe(DLUMA_EDITOR_UI_OWNER_EXIT" in observer_start
+    assert "dluma_editor_ui_request_enroll(candidate.window)" in observer_start
     assert "dluma_editor_exit_observer_stop" not in observer
 
 

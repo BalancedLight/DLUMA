@@ -1052,7 +1052,9 @@ def test_atomic_detours_install_one_unified_reset_and_evidence_plan():
     assert "ValidateAtomicRouteMutationSafety()" in plan
     assert "AddRelativeCallRoute(" not in source
     assert "std::memcpy(reinterpret_cast<void*>(address), bytes, size)" not in source
-    assert "_InterlockedCompareExchange128(" in source
+    route_mutation = (SOURCE_PATH.parent / "NativeHookRouteMutation.inl").read_text(encoding="utf-8")
+    assert '#include "NativeHookRouteMutation.inl"' in source
+    assert "_InterlockedCompareExchange128(" in route_mutation
     _, initialize = _extract_cpp_function(source, "Initialize")
     compact = _compact(initialize)
     assert "options.trace_enabled" not in compact

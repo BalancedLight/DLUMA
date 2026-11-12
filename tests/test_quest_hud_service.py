@@ -43,7 +43,7 @@ def test_managed_quest_hud_marshaling(tmp_path: Path) -> None:
     production = ET.parse(bootstrap / "Dluma.Managed.Bootstrap.csproj")
     framework = production.findtext(".//TargetFramework")
     runtime = production.findtext(".//RuntimeFrameworkVersion")
-    sources = [bootstrap / name for name in ("ModContext.cs", "Interop.cs", "NativeBridge.cs")]
+    sources = [bootstrap / name for name in ("ModContext.cs", "Interop.cs", "NativeBridge.cs", "HandlerApis.cs")]
     sources.append(ROOT / "tests/quest_hud_managed_fake_harness.cs")
     includes = "".join(f'<Compile Include="{escape(str(path))}" />' for path in sources)
     sdk = ROOT / "sdk/dotnet/Dluma.Managed.Sdk/Dluma.Managed.Sdk.csproj"
@@ -51,7 +51,7 @@ def test_managed_quest_hud_marshaling(tmp_path: Path) -> None:
     project.write_text(
         f'<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
         f'<OutputType>Exe</OutputType><TargetFramework>{framework}</TargetFramework>'
-        f'<RuntimeFrameworkVersion>{runtime}</RuntimeFrameworkVersion><RollForward>Disable</RollForward>'
+        f'<RuntimeFrameworkVersion>{runtime}</RuntimeFrameworkVersion><RollForward>LatestPatch</RollForward>'
         '<AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings>'
         '<Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors>'
         '<PlatformTarget>x64</PlatformTarget><EnableDefaultCompileItems>false</EnableDefaultCompileItems>'
@@ -61,6 +61,7 @@ def test_managed_quest_hud_marshaling(tmp_path: Path) -> None:
     )
     completed = subprocess.run(
         ["dotnet", "run", "--project", str(project), "-c", "Release", "--verbosity", "quiet"],
-        cwd=ROOT, check=True, capture_output=True, text=True, encoding="utf-8", timeout=90,
+        cwd=ROOT, check=False, capture_output=True, text=True, encoding="utf-8", timeout=90,
     )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "Managed quest HUD bridge passed:" in completed.stdout

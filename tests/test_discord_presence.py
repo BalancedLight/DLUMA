@@ -308,7 +308,7 @@ def test_editor_presence_setting_and_stock_options_contract() -> None:
     assert 'L"editor_discord_rich_presence_enabled", 1' in host
     assert "editor_discord_rich_presence_enabled=1" in config
     assert 'L"Editor options"' in source
-    assert 'L"Workbench Mods"' in source
+    assert 'item.text = L"DLUMA"' in source
     assert 'L"Discord Rich Presence"' in source
     for label in ('L"Misc"', 'L"Actions"', 'L"Tabs"', 'L"Classes"'):
         assert label in source

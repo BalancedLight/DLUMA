@@ -244,7 +244,8 @@ def test_exact_full_path_selected_source_probe_is_bounded_and_abi_preserving():
 
 
 def test_full_path_probe_route_validates_and_restores_complete_stolen_range():
-    source = PRODUCTION.read_text(encoding="utf-8")
+    source = (PRODUCTION.parent / "NativeHookRouteMutation.inl").read_text(encoding="utf-8")
+    assert '#include "NativeHookRouteMutation.inl"' in PRODUCTION.read_text(encoding="utf-8")
     original_range = _cpp_function_body(
         source, "bool RouteOriginalRangeMatches"
     )

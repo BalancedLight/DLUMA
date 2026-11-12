@@ -1191,13 +1191,15 @@ def test_game_thread_drain_fails_closed_on_incomplete_output():
 def test_route_transaction_source_contract_matches_failure_safe_model():
     source = FIX_SOURCE.read_text(encoding="utf-8")
     _, prepare_relay = _extract_cpp_function(source, "PrepareRelay")
-    _, patch_pointer = _extract_cpp_function(source, "AtomicPatchPointer")
-    _, patch_detour = _extract_cpp_function(source, "AtomicPatchDetour")
+    route_mutation = (FIX_SOURCE.parent / "NativeHookRouteMutation.inl").read_text(encoding="utf-8")
+    assert '#include "NativeHookRouteMutation.inl"' in source
+    _, patch_pointer = _extract_cpp_function(route_mutation, "AtomicPatchPointer")
+    _, patch_detour = _extract_cpp_function(route_mutation, "AtomicPatchDetour")
     _, validate_atomic = _extract_cpp_function(
         source, "ValidateAtomicRouteMutationSafety"
     )
-    _, apply_route = _extract_cpp_function(source, "ApplyRoute")
-    _, restore_route = _extract_cpp_function(source, "RestoreRoute")
+    _, apply_route = _extract_cpp_function(route_mutation, "ApplyRoute")
+    _, restore_route = _extract_cpp_function(route_mutation, "RestoreRoute")
     _, restore_all = _extract_cpp_function(source, "RestoreInstalledRoutes")
     _, install_mandatory = _extract_cpp_function(source, "InstallMandatoryRoutes")
     _, install_optional = _extract_cpp_function(source, "InstallOptionalRoutes")

@@ -80,6 +80,8 @@ unsigned char __fastcall XuiFileOriginal(void* manager,const void* path,unsigned
 auto g_original_xui_xml_load = &XuiXmlOriginal;
 auto g_original_xui_binary_pack_load = &XuiPackOriginal;
 auto g_original_xui_binary_file_load = &XuiFileOriginal;
+// Document redirection is outside this admission-order harness.
+const void* DocumentXmlInput(void*, const void* path) noexcept { return path; }
 #include "xui_load_observers.generated.h"
 bool ExerciseXui(bool admitted) {
     const auto calls = xui_original_calls, touches = xui_touches;

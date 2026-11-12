@@ -66,6 +66,10 @@ void dluma_quest_hud_on_map_generation_changed(uint32_t map_generation)
     (void)map_generation;
 }
 
+/* These map-scoped services are exercised by their own harnesses. */
+void dluma_hud_visibility_reset_map(uint32_t generation) { (void)generation; }
+void dluma_boss_actions_on_map_generation_changed(unsigned int generation) { (void)generation; }
+
 /* The shared native gameplay dispatcher now fans validated events out to
  * native, managed, and Lua hosts. This focused harness observes the Lua-side
  * queue and supplies bounded no-op peers for the other two language hosts. */

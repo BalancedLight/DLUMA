@@ -84,7 +84,10 @@ def test_stock_splash_and_focus_safe_reveal_contract():
     assert restore < reveal
     assert "SetForegroundWindow" not in runtime
     assert "__declspec(dllimport) HGDIOBJ WINAPI GetStockObject" not in runtime
-    assert "gdi32.lib" not in PROJECT.read_text(encoding="utf-8")
+    assert "gdi32.lib" in PROJECT.read_text(encoding="utf-8")
+    editor_splash = (ROOT / "src/dlw_editor_splash.c").read_text(encoding="utf-8")
+    assert "CreateCompatibleDC(" in editor_splash
+    assert "DeleteObject(" in editor_splash
 
 
 def test_project_diagnostics_and_repository_hygiene_contract():

@@ -31,11 +31,15 @@ def test_file_hook_plan_is_complete_and_reuses_existing_open_routes():
 
 def test_file_bridge_is_prepared_before_planning_and_not_reset_afterward():
     source = (ROOT / "src/fixes/custom_map_asset_isolation/CustomMapAssetIsolationFix.cpp").read_text()
-    plan = source.index("if (!BuildHookPlan() || !PrepareAllRelays())")
-    prepared = source.index("    PrepareNativeFileBridge();")
+    initialize = function("Initialize")
+    plan = initialize.index("if (!BuildHookPlan() || !PrepareAllRelays())")
+    prepared = initialize.index("PrepareNativeFileBridge();")
     assert prepared < plan
-    assert source.count("    PrepareNativeFileBridge();") == 1
-    assert plan < source.index("    PrepareNativeResourceBridge();", plan)
+    assert initialize.count("PrepareNativeFileBridge();") == 1
+    assert plan < initialize.index("PrepareNativeResourceBridge();", plan)
+    xui_only = function("InitializeXuiObservationOnly")
+    assert xui_only.count("PrepareNativeFileBridge();") == 1
+    assert xui_only.index("PrepareNativeFileBridge();") < xui_only.index("BuildNativeFileHookPlan()")
 
 
 def test_factory_admission_precedes_original_and_speech_pin_sees_observed_file():
@@ -72,7 +76,7 @@ def test_native_relays_keep_registered_unwind_and_atomic_envelopes():
     assert "RtlAddFunctionTable" in interior
     assert "prepared.original_envelope" in interior
     assert "prepared.patched_envelope" in interior
-    entry = function("PrepareNativeFileEntryUnwind")
+    entry = function("PrepareNativeEntryUnwind")
     assert "CopyEntryUnwind" in entry and "RtlAddFunctionTable" in entry
     free = function("FreeRouteRelay")
     assert free.index("RtlDeleteFunctionTable") < free.index("VirtualFree(")
