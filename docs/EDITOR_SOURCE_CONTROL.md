@@ -13,3 +13,5 @@ The Editor's legacy **Source control enabled** setting must be off and its built
 Git operations run asynchronously and can be canceled. Cancellation can occur after Git has changed local state, so refresh and inspect the result before retrying. If a Git process cannot be stopped or the Editor connection is lost during a write, further writes are blocked until cleanup is complete; check the repository before restarting the Editor.
 
 For troubleshooting, Developer Mode can enable `editor_git_guard_diagnostics=1` in the `[loader]` configuration. After restarting the Editor and opening Git, it records bounded numeric routing and admission observations without command text or file paths. Turn the setting off when finished.
+
+If Git or Wiki cannot start, check `editor_companion_private_runtime` in `dluma_runtime/dluma.log` for a runtime verification error. Install the complete matching DLUMA package, including `dluma_runtime`, preserve your settings and mod data, then restart the Editor. Companion startup verifies the packaged runtime separately from DLUMA-generated session and content-bank data.

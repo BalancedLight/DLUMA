@@ -32,7 +32,11 @@ static const WCHAR* const g_dluma_runtime_mutable_root_files[] = {
 static const WCHAR* const g_dluma_runtime_mutable_root_directories[] = {
     L"asset_mods",
     L"cache",
+    L"companion_banks",
+    L"custom_main_menu",
     L"developer_mode",
+    L"editor_sessions",
+    L"prepared_banks",
     L"workshop_thumbnails",
     L"crashes",
     L"markers",

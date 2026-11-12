@@ -386,7 +386,7 @@ def test_native_runtime_admission_matches_loader_owned_mutable_root_contract():
     assert array_entries("g_dluma_runtime_mutable_root_files") == expected_files
     assert array_entries(
         "g_dluma_runtime_mutable_root_directories"
-    ) == {"asset_mods", "cache", "developer_mode", "workshop_thumbnails", "crashes", "markers", "mod_config", "mod_data"}
+    ) == {"asset_mods", "cache", "companion_banks", "custom_main_menu", "developer_mode", "editor_sessions", "prepared_banks", "workshop_thumbnails", "crashes", "markers", "mod_config", "mod_data"}
     assert "depth == 0U" in source
     assert "dluma_runtime_tree_mutable_root_entry(" in source
     assert 'L"quest_extensions.edf"' in source

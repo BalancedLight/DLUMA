@@ -14,6 +14,7 @@ void *dluma_editor_companion_runtime_acquire(
     lease->struct_size = (unsigned int)sizeof(*lease);
     if (!dluma_runtime_tree_acquire(runtime_root, runtime_version,
             DLUMA_API_CATALOG_SHA256, lease)) {
+        dluma_log_pair("WARN", "editor_companion_private_runtime", lease->diagnostic);
         dluma_runtime_tree_release(lease);
         dluma_free(lease);
         return 0;

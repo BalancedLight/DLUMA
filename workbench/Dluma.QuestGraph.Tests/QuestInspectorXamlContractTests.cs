@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Xunit;
 
 namespace Dluma.QuestGraph.Tests;
@@ -9,11 +10,31 @@ public sealed class QuestInspectorXamlContractTests
     {
         var source = ReadWorkspaceFile("workbench", "Dluma.QuestGraph", "MainWindow.xaml");
 
-        Assert.Contains("QuestInspectorPanel", source, StringComparison.Ordinal);
+        var inspector = Assert.Single(XDocument.Parse(source).Descendants(),
+            element => element.Name.LocalName == "QuestInspectorPanel");
+        Assert.Equal("{Binding ActiveDocument}", inspector.Attribute("DataContext")?.Value);
         Assert.DoesNotContain("Header=\"Context\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Refresh Context", source, StringComparison.Ordinal);
         Assert.DoesNotContain("EncodingDescription", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("GlobalStatus", source, StringComparison.Ordinal);
+        var inspectorSource = ReadWorkspaceFile(
+            "workbench", "Dluma.QuestGraph", "Views", "QuestInspectorPanel.xaml");
+        Assert.DoesNotContain("GlobalStatus", inspectorSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindowKeepsGlobalStatusInScrollableFooterOutsideInspector()
+    {
+        var document = XDocument.Parse(ReadWorkspaceFile(
+            "workbench", "Dluma.QuestGraph", "MainWindow.xaml"));
+        XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+        var status = Assert.Single(document.Descendants(presentation + "TextBlock"),
+            element => (string?)element.Attribute("Text") == "{Binding GlobalStatus}");
+
+        Assert.Equal("Wrap", status.Attribute("TextWrapping")?.Value);
+        Assert.Equal(presentation + "ScrollViewer", status.Parent?.Name);
+        Assert.Equal("Auto", status.Parent?.Attribute("VerticalScrollBarVisibility")?.Value);
+        var footer = Assert.Single(status.Ancestors(presentation + "Border"));
+        Assert.Equal("2", footer.Attribute("Grid.Row")?.Value);
     }
 
     [Fact]
