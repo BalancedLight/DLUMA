@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import zipfile
 from pathlib import Path, PurePosixPath
 import xml.etree.ElementTree as ET
 
@@ -31,6 +32,29 @@ def load_module(name: str, path: Path):
 
 validator = load_module("validate_dlscript", ROOT / "tools" / "validate_dlscript.py")
 peverify = load_module("verify_pe", ROOT / "tools" / "verify_pe.py")
+
+
+def test_editor_startup_artwork_is_required_by_build_and_release():
+    project = ET.parse(ROOT / "DLUMA.vcxproj")
+    namespace = {"m": "http://schemas.microsoft.com/developer/msbuild/2003"}
+    copies = [item for item in project.findall(".//m:Copy", namespace)
+              if "assets\\editor-splash\\startup.gif" in item.get("SourceFiles", "")]
+    assert len(copies) == 1
+    assert "Condition" not in copies[0].attrib
+    verifiers = [item.get("Command", "") for item in project.findall(".//m:Exec", namespace)
+                 if "verify_package_manifest.py" in item.get("Command", "")]
+    assert verifiers and all("--require-editor-splash" in command for command in verifiers)
+    assert '"--require-editor-splash"' in (ROOT / "tools/prepare_release.py").read_text(encoding="utf-8")
+
+
+def test_editor_startup_artwork_survives_source_archive(tmp_path):
+    relative = "assets/editor-splash/startup.gif"
+    archive = tmp_path / "splash-source.zip"
+    result = subprocess.run(["git", "archive", "--format=zip", "--output", str(archive),
+                             "HEAD", relative], cwd=ROOT, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    with zipfile.ZipFile(archive) as source:
+        assert source.read(relative) == (ROOT / relative).read_bytes()
 
 
 def test_invalid_script_is_rejected():

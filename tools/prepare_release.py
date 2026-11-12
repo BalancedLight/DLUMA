@@ -234,7 +234,7 @@ def main() -> int:
             parser.error("--refresh-workshop cannot be combined with --workshop-config")
         version = loader_version()
         mod_name = f"DLUMA ({version}).mod"
-        subprocess.run([sys.executable, str(ROOT / "tools" / "verify_package_manifest.py"), "--package-dir", str(package), "--mod-name", mod_name], check=True)
+        subprocess.run([sys.executable, str(ROOT / "tools" / "verify_package_manifest.py"), "--package-dir", str(package), "--mod-name", mod_name, "--require-editor-splash"], check=True)
         files = package_files(package)
         if args.refresh_workshop:
             staging = refresh_workshop(package, output)

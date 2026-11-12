@@ -1,7 +1,9 @@
-# Custom startup image
+# Editor startup animation
 
-Place a GIF named `startup.gif` in this directory to include a custom animated startup image in a local build. The image is copied into `dluma_runtime/editor/` and recorded in the runtime manifest. Startup progress and version text are drawn over the image.
+`startup.gif` is a required, tracked Editor asset. Release, Debug, and nightly builds copy it into `dluma_runtime/editor/` and record its hash in the runtime manifest. Startup progress and version text are drawn over the animation.
 
-The GIF is optional and excluded from source control. Builds without it use the Editor's normal startup window.
+Package and release validation require the animation, so a build missing it cannot become an auto-update package. Git source exports include the same artwork as a checkout.
 
-For a source export intended to include the artwork, supply the exact local `startup.gif` in this directory before building. After the build, run `python tools/verify_package_manifest.py --package-dir <package-dir> --mod-name <loader-mod-name> --require-editor-splash` to require the image and verify its manifest-bound contents. Clean-source builds can omit the image and this option.
+To verify a package directly, run `python tools/verify_package_manifest.py --package-dir <package-dir> --mod-name <loader-mod-name> --require-editor-splash`.
+
+The illustration contains Dying Light game artwork, characters, and Techland branding. These remain subject to their original rights and are excluded from DLUMA's MIT source-code license; see [third-party notices](../../THIRD_PARTY_NOTICES.md).

@@ -1315,8 +1315,7 @@
     <MakeDir Directories="$(DlumaEditorThemeOutputDir)" />
     <Exec Command="call &quot;$(ProjectDir)tools\build_editor_theme_helper_msvc.bat&quot; $(Configuration) &quot;$(DlumaEditorThemeOutputDir).&quot;" />
     <Exec Command="dotnet build &quot;$(ProjectDir)tools\editor-theme\Dluma.EditorTheme.Framework\Dluma.EditorTheme.Framework.csproj&quot; -c $(Configuration) --nologo -p:Platform=&quot;Any CPU&quot; -o &quot;$(DlumaEditorThemeOutputDir).&quot;" />
-    <Copy Condition="Exists('$(ProjectDir)assets\editor-splash\startup.gif')"
-          SourceFiles="$(ProjectDir)assets\editor-splash\startup.gif" DestinationFolder="$(DlumaEditorThemeOutputDir)" />
+    <Copy SourceFiles="$(ProjectDir)assets\editor-splash\startup.gif" DestinationFolder="$(DlumaEditorThemeOutputDir)" />
     <Exec Command="dotnet build &quot;$(ProjectDir)sdk\dotnet\Dluma.Managed.slnx&quot; -c $(Configuration) --nologo -p:Platform=&quot;Any CPU&quot;" />
     <RemoveDir Directories="$(DlumaQuestGraphOutputDir)" />
     <Exec Command="dotnet restore &quot;$(ProjectDir)workbench\Dluma.QuestGraph\Dluma.QuestGraph.csproj&quot; --locked-mode --nologo" />
@@ -1337,7 +1336,7 @@
           DestinationFolder="$(DlumaPackageDir)" />
     <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\build_content_pack.ps1&quot; -OutputPath &quot;$(DlumaContentPackPath)&quot;" />
     <Exec Command="python &quot;$(ProjectDir)tools\build_managed_runtime.py&quot; --output-dir &quot;$(DlumaPackageDir).&quot; --managed-output &quot;$(DlumaManagedOutputDir).&quot; --quest-graph-output &quot;$(DlumaQuestGraphOutputDir).&quot; --editor-wiki-output &quot;$(DlumaEditorWikiOutputDir).&quot; --editor-git-output &quot;$(DlumaEditorGitOutputDir).&quot; --require-editor-wiki --require-editor-git --editor-theme-output &quot;$(DlumaEditorThemeOutputDir).&quot; --catalog-hash &quot;$(ProjectDir)api\generated\dluma_api_catalog.sha256&quot; --loader-symbol-manifest &quot;$(DlumaLoaderAddressManifestPath)&quot;" />
-    <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot; --require-editor-wiki --require-editor-git" />
+    <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot; --require-editor-wiki --require-editor-git --require-editor-splash" />
     <Exec Condition="'$(Configuration)' == 'Release'" Command="python &quot;$(ProjectDir)tools\prepare_release.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --output-dir &quot;$(ProjectDir)release&quot; --refresh-workshop" />
     <Message Importance="high"
              Text="Built clean $(Configuration) package at $(DlumaPackageDir). Any enabled local deployment runs only after package and PE verification." />
@@ -1366,7 +1365,7 @@
            Text="Local deployment requires Configuration=Debug or Release and Platform=x64." />
     <Error Condition="'$(DlumaSkipPackage)' == 'true'"
            Text="Local deployment cannot run when DlumaSkipPackage=true." />
-    <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot; --require-editor-wiki --require-editor-git" />
+    <Exec Command="python &quot;$(ProjectDir)tools\verify_package_manifest.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --mod-name &quot;$(TargetFileName)&quot; --require-editor-wiki --require-editor-git --require-editor-splash" />
     <Exec Command="python &quot;$(ProjectDir)tools\verify_pe.py&quot; &quot;$(DlumaPackageDir)$(TargetFileName)&quot;" />
     <Exec Command="python &quot;$(ProjectDir)tools\deploy_local_package.py&quot; --package-dir &quot;$(DlumaPackageDir).&quot; --subscribed-dir &quot;$(DlumaSubscribedWorkshopModsDir).&quot; --devtools-dir &quot;$(DlumaDevToolsWorkshopModsDir).&quot; --built-mod &quot;$(TargetPath)&quot; --built-pak &quot;$(DlumaContentPackPath)&quot; --mod-name &quot;$(TargetFileName)&quot;"
           StandardOutputImportance="High" />
