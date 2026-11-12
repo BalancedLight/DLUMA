@@ -30,7 +30,15 @@ def run_git(repo: Path, *args: str) -> str:
     return completed.stdout
 
 
-def source_archive_header() -> tuple[str, str, int, str]:
+def source_archive_header(repo: Path) -> tuple[str, str, int, str]:
+    try:
+        metadata = (repo / "tools" / ".git_archival.txt").read_text(encoding="ascii")
+    except (OSError, UnicodeError):
+        metadata = ""
+    match = re.fullmatch(r"commit=([0-9a-fA-F]{40})\r?\n?", metadata)
+    if match:
+        head = match.group(1).lower()
+        return head, head[:12], 0, "source-archive"
     return "unavailable", "unavailable", 0, "source-archive"
 
 
@@ -86,16 +94,22 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--allow-source-archive", action="store_true")
     args = parser.parse_args()
-    try:
-        values = checkout_header(args.repo.resolve())
-    except (OSError, RuntimeError) as error:
+    repo = args.repo.resolve()
+    git_marker = repo / ".git"
+    if not (git_marker.exists() or git_marker.is_symlink()):
         if not args.allow_source_archive:
+            print("ERROR: verified Git HEAD is required for this build: no .git marker", file=sys.stderr)
+            return 1
+        values = source_archive_header(repo)
+    else:
+        try:
+            values = checkout_header(repo)
+        except (OSError, RuntimeError) as error:
             print(
                 f"ERROR: verified Git HEAD is required for this build: {error}",
                 file=sys.stderr,
             )
             return 1
-        values = source_archive_header()
     write_if_changed(args.output.resolve(), render(*values))
     return 0
 

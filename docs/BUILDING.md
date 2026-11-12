@@ -28,6 +28,8 @@ From the repository root in an x64 Visual Studio Native Tools command prompt:
 build_windows_msvc.bat Release Offline
 ```
 
+A `git archive` source export includes its commit revision in `tools/.git_archival.txt` via Git export substitution. Builds from that archive display the recorded revision; source archives without valid revision metadata display it as unavailable. A checkout uses its own Git HEAD. The archive revision identifies the exported commit and does not attest to changes made after extraction.
+
 Use `Debug` instead of `Release` for a debug build. The optional `Offline` argument disables automatic local deployment even if local deployment settings exist. A normal checkout builds into repository-local output directories.
 
 You can also open `DLUMA.sln` in Visual Studio and build `Release | x64` or `Debug | x64`.
